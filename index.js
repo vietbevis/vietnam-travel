@@ -4,8 +4,7 @@ require('dotenv').config();
 const mongoose = require('mongoose');
 mongoose.connect(process.env.DATABASE);
 
-const tourController = require("./controllers/client/tour.controller");
-const homeController = require("./controllers/client/home.controller");
+const clientRoutes = require("./routes/client/index.route");
 
 const app = express()
 const port = 3000
@@ -17,9 +16,8 @@ app.set('view engine', 'pug');
 // Thiết lập thư mục chứa file tĩnh của Frontend
 app.use(express.static(path.join(__dirname, "public")));
 
-app.get('/', homeController.home)
-
-app.get('/tours', tourController.list)
+// Thiết lập đường dẫn
+app.use("/", clientRoutes);
 
 app.listen(port, () => {
   console.log(`Website đang chạy trên cổng ${port}`)
