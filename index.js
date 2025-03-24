@@ -1,7 +1,8 @@
 const express = require('express')
 const path = require('path');
+require('dotenv').config();
 const mongoose = require('mongoose');
-mongoose.connect('mongodb+srv://namdp28tech:cIAUM1sRQhjarj2s@cluster0.4bjx7.mongodb.net/tour-management');
+mongoose.connect(process.env.DATABASE);
 
 const Tour = mongoose.model('Tour', {
   name: String,
