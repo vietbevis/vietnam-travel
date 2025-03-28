@@ -42,7 +42,7 @@ block main
             for="remember-password"
           ) Nhớ mật khẩu
         a(
-          href="/admin/account/forgot-password" 
+          href=`/${pathAdmin}/account/forgot-password` 
           class="inner-forgot-password"
         ) Quên mật khẩu?
       button(class="inner-button") Đăng Nhập
@@ -50,5 +50,5 @@ block main
     .inner-more
       span Bạn chưa có tài khoản?
       a(
-        href="/admin/account/register"
+        href=`/${pathAdmin}/account/register`
       ) Tạo tài khoản
