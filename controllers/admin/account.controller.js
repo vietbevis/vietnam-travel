@@ -128,3 +128,11 @@ module.exports.resetPassword = async (req, res) => {
     pageTitle: "Đổi mật khẩu"
   })
 }
+
+module.exports.logoutPost = async (req, res) => {
+  res.clearCookie("token");
+  res.json({
+    code: "success",
+    message: "Đăng xuất thành công!"
+  })
+}
