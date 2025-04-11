@@ -231,6 +231,27 @@ module.exports.resetPassword = async (req, res) => {
   })
 }
 
+module.exports.resetPasswordPost = async (req, res) => {
+  const { password } = req.body;
+
+  // Mã hóa mật khẩu với bcrypt
+  const salt = await bcrypt.genSalt(10); // Tạo ra chuỗi ngẫu nhiên có 10 ký tự
+  const hashedPassword = await bcrypt.hash(password, salt);
+  
+  await AccountAdmin.updateOne({
+    _id: req.account.id,
+    deleted: false,
+    status: "active"
+  }, {
+    password: hashedPassword
+  })
+
+  res.json({
+    code: "success",
+    message: "Đổi mật khẩu thành công!"
+  })
+}
+
 module.exports.logoutPost = async (req, res) => {
   res.clearCookie("token");
   res.json({
