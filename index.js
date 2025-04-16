@@ -6,6 +6,8 @@ const adminRoutes = require("./routes/admin/index.route");
 const clientRoutes = require("./routes/client/index.route");
 const variableConfig = require("./config/variable");
 const cookieParser = require('cookie-parser');
+const flash = require('express-flash');
+const session = require('express-session');
 
 const app = express()
 const port = 3000
@@ -30,7 +32,11 @@ global.pathAdmin = variableConfig.pathAdmin;
 app.use(express.json());
 
 // Sử dụng cookie-parser
-app.use(cookieParser());
+app.use(cookieParser("SFGWHSDSGSDSD"));
+
+// Nhúng Flash
+app.use(session({ cookie: { maxAge: 60000 }}));
+app.use(flash());
 
 // Thiết lập đường dẫn
 app.use(`/${variableConfig.pathAdmin}`, adminRoutes);

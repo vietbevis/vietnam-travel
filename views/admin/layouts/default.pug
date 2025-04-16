@@ -13,6 +13,10 @@ html
       const pathAdmin = "#{pathAdmin}";
     script(src="/admin/assets/js/tinymce-config.js")
   body
+
+    - if (messages.success)
+      div(class="alert alert-success" alert-time="3000")
+        span #{messages.success}
     
     //- Header
     include ../partials/header.pug
