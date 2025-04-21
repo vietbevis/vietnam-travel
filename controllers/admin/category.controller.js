@@ -196,3 +196,40 @@ module.exports.deletePatch = async (req, res) => {
     })
   }
 }
+
+module.exports.changeMultiPatch = async (req, res) => {
+  try {
+    const { option, ids } = req.body;
+
+    switch (option) {
+      case "active":
+      case "inactive":
+        await Category.updateMany({
+          _id: { $in: ids }
+        }, {
+          status: option
+        });
+        req.flash("success", "Đổi trạng thái thành công!");
+        break;
+      case "delete":
+        await Category.updateMany({
+          _id: { $in: ids }
+        }, {
+          deleted: true,
+          deletedBy: req.account.id,
+          deletedAt: Date.now()
+        });
+        req.flash("success", "Xóa thành công!");
+        break;
+    }
+
+    res.json({
+      code: "success"
+    })
+  } catch (error) {
+    res.json({
+      code: "error",
+      message: "Id không tồn tại trong hệ thông!"
+    })
+  }
+}
