@@ -31,4 +31,6 @@ router.patch(
   tourController.editPatch
 )
 
+router.patch('/delete/:id', tourController.deletePatch)
+
 module.exports = router;
