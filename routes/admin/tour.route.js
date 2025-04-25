@@ -22,4 +22,13 @@ router.post(
 
 router.get('/trash', tourController.trash)
 
+router.get('/edit/:id', tourController.edit)
+
+router.patch(
+  '/edit/:id', 
+  upload.single('avatar'), 
+  tourValidate.createPost,
+  tourController.editPatch
+)
+
 module.exports = router;
