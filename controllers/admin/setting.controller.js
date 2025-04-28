@@ -62,8 +62,13 @@ module.exports.accountAdminCreate = async (req, res) => {
 }
 
 module.exports.roleList = async (req, res) => {
+  const roleList = await Role.find({
+    deleted: false
+  })
+
   res.render("admin/pages/setting-role-list", {
-    pageTitle: "Nhóm quyền"
+    pageTitle: "Nhóm quyền",
+    roleList: roleList
   })
 }
 
