@@ -1,5 +1,7 @@
 const SettingWebsiteInfo = require("../../models/setting-website-info.model")
 const Role = require("../../models/role.model");
+const AccountAdmin = require("../../models/account-admin.model");
+const bcrypt = require("bcryptjs");
 
 const permissionConfig = require("../../config/permission");
 
@@ -56,8 +58,44 @@ module.exports.accountAdminList = async (req, res) => {
 }
 
 module.exports.accountAdminCreate = async (req, res) => {
+  const roleList = await Role.find({
+    deleted: false
+  })
+
   res.render("admin/pages/setting-account-admin-create", {
-    pageTitle: "Tạo tài khoản quản trị"
+    pageTitle: "Tạo tài khoản quản trị",
+    roleList: roleList
+  })
+}
+
+module.exports.accountAdminCreatePost = async (req, res) => {
+  const existAccount = await AccountAdmin.findOne({
+    email: req.body.email
+  })
+
+  if(existAccount) {
+    res.json({
+      code: "error",
+      message: "Email đã tồn tại trong hệ thống!"
+    })
+    return;
+  }
+
+  req.body.createdBy = req.account.id;
+  req.body.updatedBy = req.account.id;
+  req.body.avatar = req.file ? req.file.path : "";
+
+  // Mã hóa mật khẩu với bcrypt
+  const salt = await bcrypt.genSalt(10); // Tạo ra chuỗi ngẫu nhiên có 10 ký tự
+  req.body.password = await bcrypt.hash(req.body.password, salt);
+
+  const newAccount = new AccountAdmin(req.body);
+  await newAccount.save();
+
+  req.flash("success", "Tạo tài khoản quản trị thành công!");
+
+  res.json({
+    code: "success"
   })
 }
 
