@@ -119,6 +119,65 @@ module.exports.accountAdminCreatePost = async (req, res) => {
   })
 }
 
+module.exports.accountAdminEdit = async (req, res) => {
+  try {
+    const roleList = await Role.find({
+      deleted: false
+    })
+  
+    const id = req.params.id;
+    const accountAdminDetail = await AccountAdmin.findOne({
+      _id: id,
+      deleted: false
+    })
+  
+    if(!accountAdminDetail) {
+      res.redirect(`/${pathAdmin}/setting/account-admin/list`);
+      return;
+    }
+  
+    res.render("admin/pages/setting-account-admin-edit", {
+      pageTitle: "Chỉnh sửa tài khoản quản trị",
+      roleList: roleList,
+      accountAdminDetail: accountAdminDetail
+    })
+  } catch (error) {
+    res.redirect(`/${pathAdmin}/setting/account-admin/list`);
+  }
+}
+
+module.exports.accountAdminEditPatch = async (req, res) => {
+  try {
+    const id = req.params.id;
+
+    req.body.updatedBy = req.account.id;
+    if(req.file) {
+      req.body.avatar = req.file.path;
+    } else {
+      delete req.body.avatar;
+    }
+    
+    // Mã hóa mật khẩu với bcrypt
+    if(req.body.password) {
+      const salt = await bcrypt.genSalt(10); // Tạo salt - Chuỗi ngẫu nhiên có 10 ký tự
+      req.body.password = await bcrypt.hash(req.body.password, salt); // Mã hóa mật khẩu
+    }
+
+    await AccountAdmin.updateOne({
+      _id: id,
+      deleted: false
+    }, req.body);
+
+    req.flash('success', 'Cập nhật tài khoản quản trị thành công!');
+
+    res.json({
+      code: "success"
+    });
+  } catch (error) {
+    res.redirect(`/${pathAdmin}/setting/account-admin/list`);
+  }
+}
+
 module.exports.roleList = async (req, res) => {
   const roleList = await Role.find({
     deleted: false
