@@ -2,15 +2,18 @@
 .top-header
   .container
     .inner-wrap
-      .inner-item
-        i.fa-solid.fa-phone
-        | 0123.456.789
-      .inner-item
-        i.fa-solid.fa-envelope
-        | contact@28travel.com
-      .inner-item
-        i.fa-solid.fa-building
-        | Số 123, đường ABC, thành phố XYZ
+      if(settingWebsiteInfo.phone)
+        .inner-item
+          i.fa-solid.fa-phone
+          | #{settingWebsiteInfo.phone}
+      if(settingWebsiteInfo.email)
+        .inner-item
+          i.fa-solid.fa-envelope
+          | #{settingWebsiteInfo.email}
+      if(settingWebsiteInfo.address)
+        .inner-item
+          i.fa-solid.fa-building
+          | #{settingWebsiteInfo.address}
 // End Top Header
 // Header
 header.header
