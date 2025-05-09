@@ -1,4 +1,7 @@
 const Category = require("../../models/category.model");
+const Tour = require("../../models/tour.model");
+const moment = require("moment");
+const categoryHelper = require("../../helpers/category.helper");
 
 module.exports.list = async (req, res) => {
   // Lấy slug từ params
@@ -47,9 +50,33 @@ module.exports.list = async (req, res) => {
     })
     // End Breadcrumb
 
+    // Danh sách tour
+    const listCategoryId = await categoryHelper.getAllSubcategoryIds(category.id);
+    const find = {
+      category: { $in: listCategoryId },
+      deleted: false,
+      status: "active"
+    };
+
+    const totalTour = await Tour.countDocuments(find);
+
+    const tourList = await Tour
+      .find(find)
+      .sort({
+        position: "desc"
+      })
+
+    for(const item of tourList) {
+      item.departureDateFormat = moment(item.departureDate).format("DD/MM/YYYY");
+    }
+    // Hết Danh sách tour
+
     res.render("client/pages/tour-list", {
       pageTitle: "Danh sách tour",
-      breadcrumb: breadcrumb
+      breadcrumb: breadcrumb,
+      category: category,
+      tourList: tourList,
+      totalTour: totalTour
     });
   } else {
     res.redirect("/");
