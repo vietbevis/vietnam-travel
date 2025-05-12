@@ -13,7 +13,7 @@ router.use(settingMiddleware.websiteInfo);
 router.use(categoryMiddleware.list);
 
 router.use('/', homeRoutes)
-router.use('/tours', tourRoutes)
+router.use('/tour', tourRoutes)
 router.use('/cart', cartRoutes)
 router.use('/contact', contactRoutes)
 router.use('/category', categoryRoutes)
