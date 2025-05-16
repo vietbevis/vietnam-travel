@@ -573,3 +573,125 @@ if(miniCart) {
   miniCart.innerHTML = cart.length;
 }
 // End Mini Cart
+
+// Page Cart
+const drawCart = () => {
+  const cart = localStorage.getItem("cart");
+
+  fetch(`/cart/detail`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: cart
+  })
+    .then(res => res.json())
+    .then(data => {
+      if(data.code == "success") {
+        // Hiển thị các item
+        const htmlCart = data.cart.map(item => `
+          <div class="inner-tour-item">
+            <div class="inner-actions">
+              <button class="inner-delete">
+                <i class="fa-solid fa-xmark"></i>
+              </button>
+              <input class="inner-check" type="checkbox">
+            </div>
+            <div class="inner-product">
+              <div class="inner-image">
+                <a href="/tour/detail/${item.slug}">
+                  <img alt="" src="${item.avatar}">
+                </a>
+              </div>
+              <div class="inner-content">
+                <div class="inner-title">
+                  <a href="/tour/detail/${item.slug}">
+                    ${item.name}
+                  </a>
+                </div>
+                <div class="inner-meta">
+                  <div class="inner-meta-item">Ngày Khởi Hành: <b>${item.departureDateFormat}</b>
+                  </div>
+                  <div class="inner-meta-item">Khởi Hành Tại: <b>${item.locationFromName}</b>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="inner-quantity">
+              <label class="inner-label">Số Lượng Hành Khách</label>
+              <div class="inner-list">
+                <div class="inner-item">
+                  <div class="inner-item-label">Người lớn:</div>
+                  <div class="inner-item-input">
+                    <input value="${item.quantityAdult}" min="0" type="number">
+                  </div>
+                  <div class="inner-item-price">
+                    <span>${item.quantityAdult}</span>
+                    <span>x</span>
+                    <span class="inner-highlight">
+                      ${item.priceNewAdult.toLocaleString("vi-VN")}
+                    </span>
+                  </div>
+                </div>
+                <div class="inner-item">
+                  <div class="inner-item-label">Trẻ em:</div>
+                  <div class="inner-item-input">
+                    <input value="${item.quantityChildren}" min="0" type="number">
+                  </div>
+                  <div class="inner-item-price">
+                    <span>${item.quantityChildren}</span>
+                    <span>x</span>
+                    <span class="inner-highlight">
+                      ${item.priceNewChildren.toLocaleString("vi-VN")}
+                    </span>
+                  </div>
+                </div>
+                <div class="inner-item">
+                  <div class="inner-item-label">Em bé:</div>
+                  <div class="inner-item-input">
+                    <input value="${item.quantityBaby}" min="0" type="number">
+                  </div>
+                  <div class="inner-item-price">
+                    <span>${item.quantityBaby}</span>
+                    <span>x</span>
+                    <span class="inner-highlight">
+                      ${item.priceNewBaby.toLocaleString("vi-VN")}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        `);
+
+        const cartList = document.querySelector("[cart-list]");
+        cartList.innerHTML = htmlCart.join("");
+        // Hết Hiển thị các item
+
+        // Cập nhật lại giỏ hàng
+        localStorage.setItem("cart", JSON.stringify(data.cart));
+        miniCart.innerHTML = data.cart.length;
+        // Hết Cập nhật lại giỏ hàng
+
+        // Tính tổng tiền
+        const subTotalPrice = data.cart.reduce((sum, item) => {
+          return sum + ((item.priceNewAdult * item.quantityAdult) + (item.priceNewChildren * item.quantityChildren) + (item.priceNewBaby * item.quantityBaby));
+        }, 0);
+        const discount = 0;
+        const totalPrice = subTotalPrice - discount;
+        
+        const cartSubTotal = document.querySelector("[cart-sub-total]");
+        cartSubTotal.innerHTML = subTotalPrice.toLocaleString("vi-VN");
+
+        const cartTotal = document.querySelector("[cart-total]");
+        cartTotal.innerHTML = totalPrice.toLocaleString("vi-VN");
+        // Hết Tính tổng tiền
+      }
+    })
+}
+
+const pageCart = document.querySelector("[page-cart]");
+if(pageCart) {
+  drawCart();
+}
+// End Page Cart
