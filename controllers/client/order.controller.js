@@ -80,3 +80,9 @@ module.exports.createPost = async (req, res) => {
     })
   }
 }
+
+module.exports.success = (req, res) => {
+  res.render("client/pages/order-success", {
+    pageTitle: "Đặt hàng thành công"
+  });
+}
