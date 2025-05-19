@@ -1,8 +1,16 @@
 const Tour = require("../../models/tour.model");
 const Order = require("../../models/order.model");
+const City = require("../../models/city.model");
+
+const variableHelper = require("../../config/variable");
+const gererateHelper = require("../../helpers/generate.helper");
+
+const moment = require("moment");
 
 module.exports.createPost = async (req, res) => {
   try {
+    req.body.orderCode = "OD" + gererateHelper.generateRandomNumber(10);
+
     // Danh sách tour
     for (const item of req.body.items) {
       const infoTour = await Tour.findOne({
@@ -81,8 +89,56 @@ module.exports.createPost = async (req, res) => {
   }
 }
 
-module.exports.success = (req, res) => {
-  res.render("client/pages/order-success", {
-    pageTitle: "Đặt hàng thành công"
-  });
+module.exports.success = async (req, res) => {
+  try {
+    const { orderId, phone } = req.query;
+
+    const orderDetail = await Order.findOne({
+      _id: orderId,
+      phone: phone
+    })
+
+    if(!orderDetail) {
+      res.redirect("/");
+      return;
+    }
+
+    orderDetail.paymentMethodName = variableHelper.paymentMethod.find(item => item.value == orderDetail.paymentMethod).label;
+
+    orderDetail.paymentStatusName = variableHelper.paymentStatus.find(item => item.value == orderDetail.paymentStatus).label;
+
+    orderDetail.statusName = variableHelper.orderStatus.find(item => item.value == orderDetail.status).label;
+
+    orderDetail.createdAtFormat = moment(orderDetail.createdAt).format("HH:mm - DD/MM/YYYY");
+
+    for (const item of orderDetail.items) {
+      const infoTour = await Tour.findOne({
+        _id: item.tourId,
+        deleted: false
+      })
+
+      if(infoTour) {
+        item.slug = infoTour.slug;
+      }
+
+      item.departureDateFormat = moment(item.departureDate).format("DD/MM/YYYY");
+
+      const city = await City.findOne({
+        _id: item.locationFrom
+      })
+
+      if(city) {
+        item.locationFromName = city.name;
+      }
+    }
+
+    console.log(orderDetail);
+
+    res.render("client/pages/order-success", {
+      pageTitle: "Đặt hàng thành công",
+      orderDetail: orderDetail
+    });
+  } catch (error) {
+    res.redirect("/");
+  }
 }
