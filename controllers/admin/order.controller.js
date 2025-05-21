@@ -1,4 +1,5 @@
 const Order = require("../../models/order.model");
+const City = require("../../models/city.model");
 const variableConfig = require("../../config/variable");
 const moment = require("moment");
 
@@ -31,7 +32,67 @@ module.exports.list = async (req, res) => {
 }
 
 module.exports.edit = async (req, res) => {
-  res.render("admin/pages/order-edit", {
-    pageTitle: "Đơn hàng: OD000001"
-  })
+  try {
+    const id = req.params.id;
+
+    const orderDetail = await Order.findOne({
+      _id: id,
+      deleted: false
+    })
+
+    orderDetail.createdAtFormat = moment(orderDetail.createdAt).format("YYYY-MM-DDTHH:mm");
+
+    for (const item of orderDetail.items) {
+      const city = await City.findOne({
+        _id: item.locationFrom
+      });
+      item.locationFromName = city.name;
+      item.departureDateFormat = moment(item.departureDate).format("DD/MM/YYYY");
+    }
+
+    res.render("admin/pages/order-edit", {
+      pageTitle: `Đơn hàng: ${orderDetail.orderCode}`,
+      orderDetail: orderDetail,
+      paymentMethod: variableConfig.paymentMethod,
+      paymentStatus: variableConfig.paymentStatus,
+      orderStatus: variableConfig.orderStatus
+    })
+  } catch (error) {
+    res.redirect(`/${pathAdmin}/order/list`);
+  }
+}
+
+module.exports.editPatch = async (req, res) => {
+  try {
+    const id = req.params.id;
+
+    const order = await Order.findOne({
+      _id: id,
+      deleted: false
+    });
+
+    if(!order) {
+      res.json({
+        code: "error",
+        message: "Thông tin đơn hàng không hợp lệ!"
+      })
+      return;
+    }
+
+    await Order.updateOne({
+      _id: id,
+      deleted: false
+    }, req.body);
+
+    req.flash("success", "Cập nhật đơn hàng thành công!");
+
+    res.json({
+      code: "success"
+    })
+  } catch (error) {
+    res.json({
+      code: "error",
+      message: "Thông tin đơn hàng không hợp lệ!"
+    })
+  }
 }
