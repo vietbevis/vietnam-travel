@@ -139,96 +139,109 @@ if(listFilepondImageMulti.length > 0) {
 // Biểu đồ doanh thu
 const revenueChart = document.querySelector("#revenue-chart");
 if(revenueChart) {
-  // Lấy ngày hiện tại
-  const now = new Date();
+  let chart = null;
+  const drawChart = (date) => {
+    // Lấy tháng và năm hiện tại
+      const currentMonth = date.getMonth() + 1; // getMonth() trả về giá trị từ 0 đến 11, nên cần +1
+      const currentYear = date.getFullYear();
 
-  // Lấy tháng và năm hiện tại
-  const currentMonth = now.getMonth() + 1; // getMonth() trả về giá trị từ 0 đến 11, nên cần +1
-  const currentYear = now.getFullYear();
+      // Tạo một đối tượng Date mới cho tháng trước
+      // Nếu hiện tại là tháng 1 thì new Date(currentYear, 0 - 1, 1) sẽ tự động chuyển thành tháng 12 của năm trước.
+      const previousMonthDate = new Date(currentYear, date.getMonth() - 1, 1);
 
-  // Tạo một đối tượng Date mới cho tháng trước
-  // Nếu hiện tại là tháng 1 thì new Date(currentYear, 0 - 1, 1) sẽ tự động chuyển thành tháng 12 của năm trước.
-  const previousMonthDate = new Date(currentYear, now.getMonth() - 1, 1);
+      // Lấy tháng và năm từ đối tượng previousMonthDate
+      const previousMonth = previousMonthDate.getMonth() + 1;
+      const previousYear = previousMonthDate.getFullYear();
 
-  // Lấy tháng và năm từ đối tượng previousMonthDate
-  const previousMonth = previousMonthDate.getMonth() + 1;
-  const previousYear = previousMonthDate.getFullYear();
+      // Lấy ra tổng số ngày
+      const daysInMonthCurrent = new Date(currentYear, currentMonth, 0).getDate();
+      const daysInMonthPrevious = new Date(previousYear, previousMonth, 0).getDate();
+      const days = daysInMonthCurrent > daysInMonthPrevious ? daysInMonthCurrent : daysInMonthPrevious;
+      const arrayDay = [];
+      for(let i = 1; i <= days; i++) {
+        arrayDay.push(i);
+      }
 
-  // Lấy ra tổng số ngày
-  const daysInMonthCurrent = new Date(currentYear, currentMonth, 0).getDate();
-  const daysInMonthPrevious = new Date(previousYear, previousMonth, 0).getDate();
-  const days = daysInMonthCurrent > daysInMonthPrevious ? daysInMonthCurrent : daysInMonthPrevious;
-  const arrayDay = [];
-  for(let i = 1; i <= days; i++) {
-    arrayDay.push(i);
+      const dataFinal = {
+        currentMonth: currentMonth,
+        currentYear: currentYear,
+        previousMonth: previousMonth,
+        previousYear: previousYear,
+        arrayDay: arrayDay
+      };
+
+      fetch(`/${pathAdmin}/dashboard/revenue-chart`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(dataFinal),
+      })
+        .then(res => res.json())
+        .then(data => {
+          if(data.code == "error") {
+            alert(data.message);
+          }
+
+          if(data.code == "success") {
+            if(chart) {
+              chart.destroy();
+            }
+            chart = new Chart(revenueChart, {
+              type: 'line',
+              data: {
+                labels: arrayDay,
+                datasets: [
+                  {
+                    label: `Tháng ${currentMonth}/${currentYear}`, // Nhãn của dataset
+                    data: data.dataMonthCurrent, // Dữ liệu
+                    borderColor: '#4379EE', // Màu viền
+                    borderWidth: 1.5, // Độ dày của đường
+                  },
+                  {
+                    label: `Tháng ${previousMonth}/${previousYear}`, // Nhãn của dataset
+                    data: data.dataMonthPrevious, // Dữ liệu
+                    borderColor: '#EF3826', // Màu viền
+                    borderWidth: 1.5, // Độ dày của đường
+                  }
+                ]
+              },
+              options: {
+                plugins: {
+                  legend: {
+                    position: 'bottom'
+                  }
+                },
+                scales: {
+                  x: {
+                    title: {
+                      display: true,
+                      text: 'Ngày'
+                    }
+                  },
+                  y: {
+                    title: {
+                      display: true,
+                      text: 'Doanh thu (VND)'
+                    }
+                  }
+                },
+                maintainAspectRatio: false, // Không giữ tỷ lệ khung hình mặc định
+              }
+            });
+          }
+        })
   }
 
-  const dataFinal = {
-    currentMonth: currentMonth,
-    currentYear: currentYear,
-    previousMonth: previousMonth,
-    previousYear: previousYear,
-    arrayDay: arrayDay
-  };
+  // Lấy ngày hiện tại
+  const now = new Date();
+  drawChart(now);
 
-  fetch(`/${pathAdmin}/dashboard/revenue-chart`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(dataFinal),
+  const inputMonth = document.querySelector(".section-2 input[type='month']");
+  inputMonth.addEventListener("change", () => {
+    const value = inputMonth.value;
+    drawChart(new Date(value));
   })
-    .then(res => res.json())
-    .then(data => {
-      if(data.code == "error") {
-        alert(data.message);
-      }
-
-      if(data.code == "success") {
-        new Chart(revenueChart, {
-          type: 'line',
-          data: {
-            labels: arrayDay,
-            datasets: [
-              {
-                label: `Tháng ${currentMonth}/${currentYear}`, // Nhãn của dataset
-                data: data.dataMonthCurrent, // Dữ liệu
-                borderColor: '#4379EE', // Màu viền
-                borderWidth: 1.5, // Độ dày của đường
-              },
-              {
-                label: `Tháng ${previousMonth}/${previousYear}`, // Nhãn của dataset
-                data: data.dataMonthPrevious, // Dữ liệu
-                borderColor: '#EF3826', // Màu viền
-                borderWidth: 1.5, // Độ dày của đường
-              }
-            ]
-          },
-          options: {
-            plugins: {
-              legend: {
-                position: 'bottom'
-              }
-            },
-            scales: {
-              x: {
-                title: {
-                  display: true,
-                  text: 'Ngày'
-                }
-              },
-              y: {
-                title: {
-                  display: true,
-                  text: 'Doanh thu (VND)'
-                }
-              }
-            },
-            maintainAspectRatio: false, // Không giữ tỷ lệ khung hình mặc định
-          }
-        });
-      }
-    })
 }
 // Hết Biểu đồ doanh thu
 
