@@ -162,14 +162,14 @@ module.exports.paymentZaloPay = async (req, res) => {
 
     // APP INFO
     const config = {
-      app_id: "2554",
-      key1: "sdngKKJmqEMzvh5QQcdD2A9XBSKUNaYn",
-      key2: "trMrHtvjo6myautxDUiAcYsVtaeQ8nhf",
-      endpoint: "https://sb-openapi.zalopay.vn/v2/create"
+      app_id: process.env.ZALOPAY_APPID,
+      key1: process.env.ZALOPAY_KEY1,
+      key2: process.env.ZALOPAY_KEY2,
+      endpoint: `${process.env.ZALOPAY_DOMAIN}/v2/create`
     };
 
     const embed_data = {
-      redirecturl: `https://810f-2405-4802-1bf2-d830-4401-74a4-5de7-bfcd.ngrok-free.app/order/success?orderId=${orderDetail.id}&phone=${orderDetail.phone}`
+      redirecturl: `${process.env.DOMAIN_WEBSITE}/order/success?orderId=${orderDetail.id}&phone=${orderDetail.phone}`
     };
 
     const items = [{}];
@@ -184,7 +184,7 @@ module.exports.paymentZaloPay = async (req, res) => {
       amount: orderDetail.total,
       description: `Thanh toán đơn hàng ${orderDetail.orderCode}`,
       bank_code: "",
-      callback_url: `https://810f-2405-4802-1bf2-d830-4401-74a4-5de7-bfcd.ngrok-free.app/order/payment-zalopay-result`
+      callback_url: `${process.env.DOMAIN_WEBSITE}/order/payment-zalopay-result`
     };
 
     // appid|app_trans_id|appuser|amount|apptime|embeddata|item
@@ -204,7 +204,7 @@ module.exports.paymentZaloPay = async (req, res) => {
 
 module.exports.paymentZaloPayResultPost = async (req, res) => {
   const config = {
-    key2: "trMrHtvjo6myautxDUiAcYsVtaeQ8nhf"
+    key2: process.env.ZALOPAY_KEY2
   };
 
   let result = {};
