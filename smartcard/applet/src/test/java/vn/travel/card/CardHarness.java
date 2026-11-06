@@ -112,6 +112,36 @@ public final class CardHarness {
         ok(0x20, 0, 0, ascii(pin));
     }
 
+    public byte[] getChallenge() {
+        return ok(0x30, 0, 0, null);
+    }
+
+    /** M_cmd = 0x43 || challenge16 || cardId16 || INS || P1 || P2 || payload (spec 3.2). */
+    public static byte[] mCmd(byte[] challenge, byte[] cardId, int ins, int p1, int p2, byte[] payload) {
+        byte[] m = new byte[36 + payload.length];
+        m[0] = 0x43;
+        System.arraycopy(challenge, 0, m, 1, 16);
+        System.arraycopy(cardId, 0, m, 17, 16);
+        m[33] = (byte) ins;
+        m[34] = (byte) p1;
+        m[35] = (byte) p2;
+        System.arraycopy(payload, 0, m, 36, payload.length);
+        return m;
+    }
+
+    /** GET_CHALLENGE, then returns payload || sig128 signed for the given cardId. */
+    public byte[] signedData(byte[] cardId, int ins, int p1, int p2, byte[] payload) {
+        byte[] sig = TestServer.sign(mCmd(getChallenge(), cardId, ins, p1, p2, payload));
+        byte[] d = Arrays.copyOf(payload, payload.length + sig.length);
+        System.arraycopy(sig, 0, d, payload.length, sig.length);
+        return d;
+    }
+
+    /** GET_CHALLENGE -> M_cmd -> TestServer.sign -> send payload || sig. */
+    public ResponseAPDU signed(int ins, int p1, int p2, byte[] payload) {
+        return send(ins, p1, p2, signedData(CARD_ID, ins, p1, p2, payload));
+    }
+
     static byte[] ascii(String s) {
         return s.getBytes(java.nio.charset.StandardCharsets.US_ASCII);
     }

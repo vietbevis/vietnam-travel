@@ -12,6 +12,7 @@ import javacard.framework.Util;
 public class TravelCardApplet extends Applet {
     private final PinGuard pin;
     private final CardKeys keys;
+    private final ServerAuth auth;
     private final RSAPublicKey serverKey;
     private final byte[] exponent;
     private final byte[] cardId;
@@ -26,6 +27,7 @@ public class TravelCardApplet extends Applet {
         keys = new CardKeys();
         serverKey = (RSAPublicKey) KeyBuilder.buildKey(KeyBuilder.TYPE_RSA_PUBLIC, KeyBuilder.LENGTH_RSA_1024, false);
         exponent = new byte[] {0x01, 0x00, 0x01};
+        auth = new ServerAuth(serverKey);
         cardId = new byte[16];
         status = new byte[2];
         status[S_TYPE] = CardConst.TYPE_BLANK;
@@ -62,12 +64,23 @@ public class TravelCardApplet extends Applet {
             case CardConst.INS_CHANGE_PIN:
                 changePin(apdu);
                 break;
+            case CardConst.INS_GET_CHALLENGE:
+                auth.issueChallenge(buf, (short) 0);
+                apdu.setOutgoingAndSend((short) 0, (short) 16);
+                break;
+            case CardConst.INS_SET_STATE:
+                setState(apdu);
+                break;
+            case CardConst.INS_RESET_PIN:
+                resetPin(apdu);
+                break;
             default:
                 ISOException.throwIt(CardConst.SW_INS_NOT_SUPPORTED);
         }
     }
 
     public void deselect() {
+        auth.clear();
         pin.clearSession();
     }
 
@@ -106,6 +119,58 @@ public class TravelCardApplet extends Applet {
             pin.change(buf, off, (short) (off + CardConst.PIN_LEN));
         } finally {
             Util.arrayFillNonAtomic(buf, off, (short) (2 * CardConst.PIN_LEN), (byte) 0);
+        }
+    }
+
+    /** Receives the whole command data and verifies the server signature; returns the payload length. */
+    private short receiveSigned(APDU apdu) {
+        byte[] buf = apdu.getBuffer();
+        short lc = (short) (buf[ISO7816.OFFSET_LC] & 0xFF);
+        short got = apdu.setIncomingAndReceive();
+        if (got != lc) {
+            auth.clear();
+            ISOException.throwIt(CardConst.SW_WRONG_LENGTH);
+        }
+        return auth.verifySigned(buf, ISO7816.OFFSET_CDATA, lc, buf[ISO7816.OFFSET_INS],
+                buf[ISO7816.OFFSET_P1], buf[ISO7816.OFFSET_P2], cardId);
+    }
+
+    private void setState(APDU apdu) {
+        byte[] buf = apdu.getBuffer();
+        short payloadLen = receiveSigned(apdu);
+        if (payloadLen != 0) {
+            ISOException.throwIt(CardConst.SW_WRONG_LENGTH);
+        }
+        byte target = buf[ISO7816.OFFSET_P1];
+        if (target != CardConst.STATE_ACTIVE && target != CardConst.STATE_LOCKED
+                && target != CardConst.STATE_TERMINATED) {
+            ISOException.throwIt(CardConst.SW_BAD_P1P2);
+        }
+        if (target == status[S_STATE]) {
+            return;
+        }
+        JCSystem.beginTransaction();
+        if (target == CardConst.STATE_TERMINATED) {
+            pin.wipe();
+            keys.clear();
+            serverKey.clearKey();
+        } else if (target == CardConst.STATE_LOCKED) {
+            pin.clearSession();
+        }
+        status[S_STATE] = target;
+        JCSystem.commitTransaction();
+    }
+
+    private void resetPin(APDU apdu) {
+        byte[] buf = apdu.getBuffer();
+        short payloadLen = receiveSigned(apdu);
+        try {
+            if (payloadLen != 16) {
+                ISOException.throwIt(CardConst.SW_WRONG_LENGTH);
+            }
+            pin.resetWithEscrow(buf, ISO7816.OFFSET_CDATA);
+        } finally {
+            Util.arrayFillNonAtomic(buf, ISO7816.OFFSET_CDATA, (short) 16, (byte) 0);
         }
     }
 

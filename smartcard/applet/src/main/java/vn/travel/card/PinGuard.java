@@ -143,15 +143,59 @@ final class PinGuard {
         return pin;
     }
 
+    /**
+     * RESET_PIN: buf[encPinOff..+16] = AES-128-ECB(kEscrow, newPin6 || 0x00*10). The DEK is
+     * re-wrapped under a KEK from the new PIN, the PIN is replaced and unblocked, mustChange = 1.
+     * The 16 bytes at encPinOff are overwritten (plaintext PIN is wiped before returning).
+     */
+    void resetWithEscrow(byte[] buf, short encPinOff) {
+        ecb.init(escrowKey, Cipher.MODE_DECRYPT);
+        ecb.doFinal(buf, encPinOff, (short) 16, buf, encPinOff);
+        boolean digits = true;
+        for (short i = 0; i < CardConst.PIN_LEN; i++) {
+            byte d = buf[(short) (encPinOff + i)];
+            if (d < 0x30 || d > 0x39) {
+                digits = false;
+            }
+        }
+        if (!digits) {
+            Util.arrayFillNonAtomic(buf, encPinOff, (short) 16, (byte) 0);
+            ISOException.throwIt(CardConst.SW_BAD_DATA);
+        }
+        // DEK -> tmp[0..15]
+        ecb.init(escrowKey, Cipher.MODE_DECRYPT);
+        ecb.doFinal(encDekEscrow, (short) 0, (short) 16, tmp, (short) 0);
+        JCSystem.beginTransaction();
+        rnd.generateData(salt, (short) 0, (short) 16);
+        deriveKek(buf, encPinOff);
+        wrap(kekKey, encDekPin);
+        pin.update(buf, encPinOff, CardConst.PIN_LEN);
+        pin.resetAndUnblock();
+        mustChange[0] = 1;
+        JCSystem.commitTransaction();
+        Util.arrayFillNonAtomic(buf, encPinOff, (short) 16, (byte) 0);
+        clearSession();
+    }
+
+    /** TERMINATE: destroys all key material and leaves the PIN random and blocked (never a known PIN). */
     void wipe() {
         clearSession();
         escrowKey.clearKey();
         Util.arrayFillNonAtomic(salt, (short) 0, (short) 16, (byte) 0);
         Util.arrayFillNonAtomic(encDekPin, (short) 0, (short) 16, (byte) 0);
         Util.arrayFillNonAtomic(encDekEscrow, (short) 0, (short) 16, (byte) 0);
-        // PIN becomes 000000 and the flag is cleared; the card state (TERMINATED) gates everything.
+        // Random PIN with the high bit set on every byte (not a digit string, so no APDU can match it).
+        rnd.generateData(tmp, (short) 0, CardConst.PIN_LEN);
+        for (short i = 0; i < CardConst.PIN_LEN; i++) {
+            tmp[i] = (byte) (tmp[i] | 0x80);
+        }
         pin.update(tmp, (short) 0, CardConst.PIN_LEN);
-        pin.resetAndUnblock();
-        mustChange[0] = 0;
+        Util.arrayFillNonAtomic(tmp, (short) 0, CardConst.PIN_LEN, (byte) 0);
+        // Exhaust the try counter: an all-zero guess never matches the random PIN above.
+        for (short i = 0; i < CardConst.PIN_TRIES; i++) {
+            pin.check(tmp, (short) 0, CardConst.PIN_LEN);
+        }
+        pin.reset();
+        mustChange[0] = 1;
     }
 }
