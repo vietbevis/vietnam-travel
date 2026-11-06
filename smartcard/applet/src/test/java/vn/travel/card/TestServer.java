@@ -14,7 +14,7 @@ import java.util.Base64;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 
-/** Test-side stand-in for the server: RSA test key + escrow derivation. */
+/** Đối tượng thay thế server phía kiểm thử: khóa RSA thử nghiệm + sinh khóa escrow. */
 public final class TestServer {
     public static final byte[] ESCROW_MASTER = filled(32, (byte) 0x5A);
 
@@ -44,7 +44,7 @@ public final class TestServer {
         }
     }
 
-    /** 128-byte unsigned big-endian modulus. */
+    /** Modulus 128 byte, không dấu, big-endian. */
     public static byte[] modulus() {
         byte[] m = ((RSAPrivateCrtKey) KEY).getModulus().toByteArray();
         byte[] out = new byte[128];

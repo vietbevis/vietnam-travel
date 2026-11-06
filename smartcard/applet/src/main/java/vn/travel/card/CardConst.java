@@ -1,6 +1,6 @@
 package vn.travel.card;
 
-/** Protocol constants (spec section 3.1, 3.3, 3.4). */
+/** Các hằng số giao thức (spec mục 3.1, 3.3, 3.4). */
 final class CardConst {
     private CardConst() {}
 
@@ -20,7 +20,7 @@ final class CardConst {
     static final byte PIN_TRIES = 5;
     static final byte PIN_LEN = 6;
 
-    // BALANCE_MAX = 50 000 000 = 0x02FAF080 as hi/lo shorts (no int in applet code)
+    // BALANCE_MAX = 50 000 000 = 0x02FAF080 dưới dạng hai short hi/lo (applet không dùng int)
     static final short BALANCE_MAX_HI = (short) 0x02FA;
     static final short BALANCE_MAX_LO = (short) 0xF080;
 

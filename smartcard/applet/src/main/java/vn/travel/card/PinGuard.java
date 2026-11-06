@@ -10,9 +10,9 @@ import javacard.security.MessageDigest;
 import javacard.security.RandomData;
 import javacardx.crypto.Cipher;
 
-/** PIN, DEK wrapping (PIN-derived KEK and escrow key) and session DEK. */
+/** PIN, đóng gói DEK (KEK sinh từ PIN và khóa escrow) và DEK của phiên. */
 final class PinGuard {
-    /** tmp: [0..15] DEK, [16..47] SHA-256 output, [48..63] new salt, [64..79] new encDekPin, [80..95] new encDekEscrow. */
+    /** tmp: [0..15] DEK, [16..47] kết quả SHA-256, [48..63] salt mới, [64..79] encDekPin mới, [80..95] encDekEscrow mới. */
     private static final short TMP_LEN = 96;
     private static final short NEW_SALT = 48;
     private static final short NEW_ENC_PIN = 64;
@@ -49,8 +49,8 @@ final class PinGuard {
     }
 
     /**
-     * buf[pinOff..+6] = PIN digits, buf[escrowOff..+16] = escrow key. All crypto output goes to the
-     * transient tmp first; the persistent fields are only written by Util.arrayCopy (journaled).
+     * buf[pinOff..+6] = các chữ số PIN, buf[escrowOff..+16] = khóa escrow. Mọi kết quả mật mã đều ghi vào
+     * tmp transient trước; các trường persistent chỉ được ghi bằng Util.arrayCopy (có journal).
      */
     void init(byte[] buf, short pinOff, short escrowOff) {
         // DEK -> tmp[0..15]
@@ -68,7 +68,7 @@ final class PinGuard {
         mustChange[0] = 1;
     }
 
-    /** KEK = SHA-256(salt16 || pin6)[0..15] -> kekKey (hash lands in tmp[16..47]). */
+    /** KEK = SHA-256(salt16 || pin6)[0..15] -> kekKey (hash nằm ở tmp[16..47]). */
     private void deriveKek(byte[] saltBuf, short saltOff, byte[] buf, short pinOff) {
         sha.reset();
         sha.update(saltBuf, saltOff, (short) 16);
@@ -76,13 +76,13 @@ final class PinGuard {
         kekKey.setKey(tmp, (short) 16);
     }
 
-    /** Encrypts tmp[0..15] (the DEK) under key into tmp[destOff..+16]. */
+    /** Mã hóa tmp[0..15] (DEK) bằng key vào tmp[destOff..+16]. */
     private void wrap(AESKey key, short destOff) {
         ecb.init(key, Cipher.MODE_ENCRYPT);
         ecb.doFinal(tmp, (short) 0, (short) 16, tmp, destOff);
     }
 
-    /** Throws 63Cx / 6983 unless the PIN at buf[off..+6] is correct. */
+    /** Ném 63Cx / 6983 trừ khi PIN tại buf[off..+6] đúng. */
     private void checkPin(byte[] buf, short off) {
         if (pin.getTriesRemaining() == 0) {
             clearSession();
@@ -94,7 +94,7 @@ final class PinGuard {
         }
     }
 
-    /** Unwraps encDekPin with the KEK from the PIN at buf[off..+6] into tmp[0..15]. */
+    /** Giải mã encDekPin bằng KEK sinh từ PIN tại buf[off..+6] vào tmp[0..15]. */
     private void unwrapDek(byte[] buf, short off) {
         deriveKek(salt, (short) 0, buf, off);
         ecb.init(kekKey, Cipher.MODE_DECRYPT);
@@ -103,7 +103,7 @@ final class PinGuard {
         Util.arrayFillNonAtomic(tmp, (short) 16, (short) 32, (byte) 0);
     }
 
-    /** VERIFY_PIN: on success the DEK is opened into the transient key. */
+    /** VERIFY_PIN: khi thành công, DEK được mở vào khóa transient. */
     void verify(byte[] buf, short off) {
         checkPin(buf, off);
         unwrapDek(buf, off);
@@ -111,7 +111,7 @@ final class PinGuard {
         Util.arrayFillNonAtomic(tmp, (short) 0, TMP_LEN, (byte) 0);
     }
 
-    /** CHANGE_PIN: re-wraps the DEK under a KEK from the new PIN and a fresh salt. */
+    /** CHANGE_PIN: đóng gói lại DEK bằng KEK sinh từ PIN mới và salt mới. */
     void change(byte[] buf, short oldOff, short newOff) {
         checkPin(buf, oldOff);
         unwrapDek(buf, oldOff);
@@ -132,7 +132,7 @@ final class PinGuard {
         return pin.isValidated();
     }
 
-    /** Only valid once the PIN has been validated in this session. */
+    /** Chỉ hợp lệ khi PIN đã được xác thực trong phiên này. */
     AESKey dek() {
         return dekKey;
     }
@@ -157,9 +157,9 @@ final class PinGuard {
     }
 
     /**
-     * RESET_PIN: buf[encPinOff..+16] = AES-128-ECB(kEscrow, newPin6 || 0x00*10). The DEK is
-     * re-wrapped under a KEK from the new PIN, the PIN is replaced and unblocked, mustChange = 1.
-     * The 16 bytes at encPinOff are overwritten (plaintext PIN is wiped before returning).
+     * RESET_PIN: buf[encPinOff..+16] = AES-128-ECB(kEscrow, newPin6 || 0x00*10). DEK được
+     * đóng gói lại bằng KEK sinh từ PIN mới, PIN được thay và mở khóa, mustChange = 1.
+     * 16 byte tại encPinOff bị ghi đè (PIN dạng rõ được xóa trước khi trả về).
      */
     void resetWithEscrow(byte[] buf, short encPinOff) {
         ecb.init(escrowKey, Cipher.MODE_DECRYPT);
@@ -192,21 +192,21 @@ final class PinGuard {
         clearSession();
     }
 
-    /** TERMINATE: destroys all key material (idempotent, runs outside any transaction; re-run until the wipe flag clears) and leaves the PIN random and blocked (never a known PIN). */
+    /** TERMINATE: hủy toàn bộ vật liệu khóa (idempotent, chạy ngoài mọi transaction; chạy lại đến khi cờ xóa được gỡ) và để PIN ở trạng thái ngẫu nhiên và bị khóa (không bao giờ là PIN đã biết). */
     void wipe() {
         clearSession();
         escrowKey.clearKey();
         Util.arrayFillNonAtomic(salt, (short) 0, (short) 16, (byte) 0);
         Util.arrayFillNonAtomic(encDekPin, (short) 0, (short) 16, (byte) 0);
         Util.arrayFillNonAtomic(encDekEscrow, (short) 0, (short) 16, (byte) 0);
-        // Random PIN with the high bit set on every byte (not a digit string, so no APDU can match it).
+        // PIN ngẫu nhiên có bit cao được đặt ở mọi byte (không phải chuỗi chữ số, nên không APDU nào khớp được).
         rnd.generateData(tmp, (short) 0, CardConst.PIN_LEN);
         for (short i = 0; i < CardConst.PIN_LEN; i++) {
             tmp[i] = (byte) (tmp[i] | 0x80);
         }
         pin.update(tmp, (short) 0, CardConst.PIN_LEN);
         Util.arrayFillNonAtomic(tmp, (short) 0, CardConst.PIN_LEN, (byte) 0);
-        // Exhaust the try counter: an all-zero guess never matches the random PIN above.
+        // Làm cạn bộ đếm số lần thử: đoán toàn số 0 không bao giờ khớp PIN ngẫu nhiên ở trên.
         for (short i = 0; i < CardConst.PIN_TRIES; i++) {
             pin.check(tmp, (short) 0, CardConst.PIN_LEN);
         }

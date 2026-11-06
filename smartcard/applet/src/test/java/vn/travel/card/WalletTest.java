@@ -64,7 +64,7 @@ class WalletTest {
     void creditOverMaxAtBoundaryFromBelow() {
         CardHarness c = active();
         credit(c, 1, 49_999_999);
-        credit(c, 2, 1); // exactly BALANCE_MAX
+        credit(c, 2, 1); // đúng bằng BALANCE_MAX
         assertBalance(c, 50_000_000, 2);
         CardHarness d = active();
         credit(d, 1, 49_999_999);
@@ -103,7 +103,7 @@ class WalletTest {
         c.verifyPin();
         assertEquals(0x6F10, c.signed(0x52, 0, 0, CardHarness.txPayload(2, 101)).getSW());
         assertBalance(c, 100, 1);
-        // exact balance works
+        // số dư vừa đủ vẫn thực hiện được
         c.verifyPin();
         CardHarness.Receipt r = c.parseReceipt(c.signedOk(0x52, CardHarness.txPayload(3, 100)));
         assertEquals(0, r.balanceAfter);
@@ -169,7 +169,7 @@ class WalletTest {
         CardHarness c = active();
         c.assertSw(0x6F21, 0x51, 0, 0, Arrays.copyOf(CardHarness.txPayload(1, 5), 140));
         byte[] d = c.signedData(CardHarness.CARD_ID, 0x51, 0, 0, CardHarness.txPayload(1, 5));
-        d[8] ^= 1; // tamper amount
+        d[8] ^= 1; // sửa amount
         assertEquals(0x6F20, c.send(0x51, 0, 0, d).getSW());
         assertBalance(c, 0, 0);
     }
@@ -225,7 +225,7 @@ class WalletTest {
         CardHarness.Receipt r = c.parseReceipt(again);
         assertEquals(777, r.amount);
         assertEquals(1, r.counter);
-        // PKCS#1 v1.5 is deterministic, so the whole receipt is identical
+        // PKCS#1 v1.5 mang tính xác định, nên toàn bộ biên nhận giống hệt nhau
         assertArrayEquals(first, again);
     }
 
@@ -235,7 +235,7 @@ class WalletTest {
         credit(c, 1, 5);
         c.assertSw(0x6A88, 0x54, 0, 0, CardHarness.filled(8, (byte) 9));
         for (int i = 2; i <= 11; i++) {
-            credit(c, i, 1); // 11 total -> ref 1 pushed out of the ring
+            credit(c, i, 1); // tổng 11 -> ref 1 bị đẩy ra khỏi vòng
         }
         c.assertSw(0x6A88, 0x54, 0, 0, CardHarness.filled(8, (byte) 1));
         CardHarness.Receipt r = c.parseReceipt(c.ok(0x54, 0, 0, CardHarness.filled(8, (byte) 2)));
@@ -298,7 +298,7 @@ class WalletTest {
         CardHarness c = active();
         byte[] rc = c.signedOk(0x51, CardHarness.txPayload(1, 5));
         byte[] sig = Arrays.copyOfRange(rc, 38, 166);
-        // Same 38 bytes with tag swapped to M_auth, or truncated to 37: both must fail.
+        // Cùng 38 byte nhưng đổi tag thành M_auth, hoặc cắt còn 37: cả hai đều phải thất bại.
         byte[] asAuth = Arrays.copyOf(rc, 38);
         asAuth[0] = 0x41;
         assertTrue(!c.verifyCardSig(asAuth, sig));

@@ -9,7 +9,7 @@ import javacard.framework.AID;
 import javax.smartcardio.CommandAPDU;
 import javax.smartcardio.ResponseAPDU;
 
-/** Test harness: installs the applet in jCardSim and sends APDUs. */
+/** Harness kiểm thử: cài applet vào jCardSim và gửi APDU. */
 public final class CardHarness {
     public static final byte[] CARD_ID = filled(16, (byte) 0x11);
     public static final String PIN = "482915";
@@ -22,7 +22,7 @@ public final class CardHarness {
     };
 
     public byte[] cardModulus;
-    /** PIN currently set on the card (changes with activate()). */
+    /** PIN hiện đang đặt trên thẻ (thay đổi theo activate()). */
     public String pin = PIN;
     private final CardSimulator sim;
     private final AID aid;
@@ -44,7 +44,7 @@ public final class CardHarness {
     }
 
 
-    /** Minimal applet used only to deselect ours. */
+    /** Applet tối giản chỉ dùng để deselect applet của ta. */
     public static final class OtherApplet extends javacard.framework.Applet {
         public static void install(byte[] b, short o, byte l) {
             new OtherApplet().register();
@@ -53,7 +53,7 @@ public final class CardHarness {
         public void process(javacard.framework.APDU apdu) {}
     }
 
-    /** Fresh card with the applet installed and selected, in CREATED state. */
+    /** Thẻ mới đã cài và chọn applet, ở trạng thái CREATED. */
     public static CardHarness fresh() {
         return new CardHarness();
     }
@@ -79,7 +79,7 @@ public final class CardHarness {
         assertEquals(expectedSw, send(ins, p1, p2, data).getSW());
     }
 
-    /** INIT with test server data; returns and stores the card modulus. */
+    /** INIT với dữ liệu server thử nghiệm; trả về và lưu modulus của thẻ. */
     public byte[] personalize(byte cardType) {
         byte[] d = new byte[167];
         System.arraycopy(CARD_ID, 0, d, 0, 16);
@@ -93,7 +93,7 @@ public final class CardHarness {
 
     public static final String ACTIVE_PIN = "715043";
 
-    /** personalize + CHANGE_PIN(PIN -> ACTIVE_PIN); leaves mustChangePin = 0. */
+    /** personalize + CHANGE_PIN(PIN -> ACTIVE_PIN); để mustChangePin = 0. */
     public byte[] activate() {
         byte[] mod = personalize((byte) 0x01);
         changePin(PIN, ACTIVE_PIN);
@@ -129,7 +129,7 @@ public final class CardHarness {
         return m;
     }
 
-    /** GET_CHALLENGE, then returns payload || sig128 signed for the given cardId. */
+    /** GET_CHALLENGE, rồi trả về payload || sig128 đã ký cho cardId được chỉ định. */
     public byte[] signedData(byte[] cardId, int ins, int p1, int p2, byte[] payload) {
         byte[] sig = TestServer.sign(mCmd(getChallenge(), cardId, ins, p1, p2, payload));
         byte[] d = Arrays.copyOf(payload, payload.length + sig.length);
@@ -137,12 +137,12 @@ public final class CardHarness {
         return d;
     }
 
-    /** GET_CHALLENGE -> M_cmd -> TestServer.sign -> send payload || sig. */
+    /** GET_CHALLENGE -> M_cmd -> TestServer.sign -> gửi payload || sig. */
     public ResponseAPDU signed(int ins, int p1, int p2, byte[] payload) {
         return send(ins, p1, p2, signedData(CARD_ID, ins, p1, p2, payload));
     }
 
-    /** signed(...) that requires 9000 and returns the response data. */
+    /** signed(...) yêu cầu 9000 và trả về dữ liệu phản hồi. */
     public byte[] signedOk(int ins, byte[] payload) {
         ResponseAPDU r = signed(ins, 0, 0, payload);
         assertEquals(0x9000, r.getSW(), () -> String.format("SW=%04X", r.getSW()));
@@ -163,7 +163,7 @@ public final class CardHarness {
         return s.getBytes(java.nio.charset.StandardCharsets.US_ASCII);
     }
 
-    /** Deselect by selecting another applet (or none), then select ours again. */
+    /** Deselect bằng cách chọn applet khác (hoặc không chọn), rồi chọn lại applet của ta. */
     public void reselect() {
         sim.selectApplet(AIDUtil.create(OTHER_AID));
         sim.selectApplet(aid);
@@ -175,7 +175,7 @@ public final class CardHarness {
         return b;
     }
 
-    /** Verifies a card signature (SHA256withRSA, e = 65537) against cardModulus using java.security. */
+    /** Xác minh chữ ký của thẻ (SHA256withRSA, e = 65537) với cardModulus bằng java.security. */
     public boolean verifyCardSig(byte[] msg, byte[] sig) {
         try {
             java.security.PublicKey pk = java.security.KeyFactory.getInstance("RSA").generatePublic(
@@ -206,7 +206,7 @@ public final class CardHarness {
         return send(0x42, target, index, chunk);
     }
 
-    /** COMMIT_WRITE with payload sha256_32 || len2, signed by the test server. */
+    /** COMMIT_WRITE với payload sha256_32 || len2, do server thử nghiệm ký. */
     public ResponseAPDU commit(int target, byte[] hash, int len) {
         byte[] p = Arrays.copyOf(hash, 34);
         p[32] = (byte) (len >> 8);
@@ -214,7 +214,7 @@ public final class CardHarness {
         return signed(0x43, target, 0, p);
     }
 
-    /** BEGIN, WRITE each chunk, signed COMMIT; every step must return 9000. */
+    /** BEGIN, WRITE từng chunk, COMMIT có chữ ký; mọi bước đều phải trả 9000. */
     public void writeTarget(int target, byte[] data) {
         ok(0x41, target, 0, new byte[] {(byte) (data.length >> 8), (byte) data.length});
         for (int i = 0, idx = 0; i < data.length; i += 224, idx++) {
@@ -224,7 +224,7 @@ public final class CardHarness {
         assertEquals(0x9000, r.getSW(), () -> String.format("COMMIT SW=%04X", r.getSW()));
     }
 
-    /** Length via P2 = FF, then every chunk concatenated. */
+    /** Độ dài qua P2 = FF, rồi nối tất cả các chunk. */
     public byte[] readTarget(int target) {
         byte[] l = ok(0x40, target, 0xFF, null);
         int len = ((l[0] & 0xFF) << 8) | (l[1] & 0xFF);
@@ -236,7 +236,7 @@ public final class CardHarness {
         return out.toByteArray();
     }
 
-    /** Parsed wallet receipt; construction asserts the card signature over r[0..38). */
+    /** Biên nhận ví đã phân tích; khi khởi tạo sẽ kiểm tra chữ ký của thẻ trên r[0..38). */
     public static final class Receipt {
         public int type;
         public byte[] txRef;
@@ -276,7 +276,7 @@ public final class CardHarness {
         return x;
     }
 
-    /** The in-process applet instance, for white-box checks of persistent state. */
+    /** Instance applet trong cùng tiến trình, dùng để kiểm tra white-box trạng thái persistent. */
     Object appletInstance() throws Exception {
         java.lang.reflect.Field rf = null;
         for (Class<?> k = sim.getClass(); k != null && rf == null; k = k.getSuperclass()) {

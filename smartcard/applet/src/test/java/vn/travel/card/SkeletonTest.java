@@ -16,7 +16,7 @@ class SkeletonTest {
         assertEquals(0x00, r[16]); // cardType
         assertEquals(0x00, r[17]); // state CREATED
         assertEquals(5, r[19]);    // triesRemaining
-        assertEquals(0x01, r[20]); // version
+        assertEquals(0x01, r[20]); // phiên bản
     }
 
     @Test

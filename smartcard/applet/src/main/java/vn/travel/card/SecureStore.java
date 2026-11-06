@@ -9,9 +9,9 @@ import javacard.security.RandomData;
 import javacardx.crypto.Cipher;
 
 /**
- * Encrypted chunked storage for the profile and photo targets (spec 3.2, 3.3 INS 40..43).
- * Data is AES-128-CBC encrypted with the session DEK; chunk i uses IV with last byte IV[15] ^ i.
- * A target is empty (length 0) from BEGIN_WRITE until a valid COMMIT_WRITE.
+ * Kho lưu trữ mã hóa theo chunk cho hai đích hồ sơ và ảnh (spec 3.2, 3.3 INS 40..43).
+ * Dữ liệu được mã hóa AES-128-CBC bằng DEK của phiên; chunk i dùng IV có byte cuối IV[15] ^ i.
+ * Một đích rỗng (độ dài 0) từ BEGIN_WRITE cho đến khi có COMMIT_WRITE hợp lệ.
  */
 final class SecureStore {
     private static final short S_TARGET = 0;
@@ -22,11 +22,11 @@ final class SecureStore {
 
     private final byte[] profile;
     private final byte[] photo;
-    /** Persistent: IV of profile at [0..15], photo at [16..31]. */
+    /** Persistent: IV của hồ sơ ở [0..15], của ảnh ở [16..31]. */
     private final byte[] iv;
-    /** Persistent: committed length of profile at [0..1], photo at [2..3]. */
+    /** Persistent: độ dài đã commit của hồ sơ ở [0..1], của ảnh ở [2..3]. */
     private final byte[] lens;
-    /** Write session (CLEAR_ON_DESELECT): target, nextIndex, declaredLen2, written2. */
+    /** Phiên ghi (CLEAR_ON_DESELECT): target, nextIndex, declaredLen2, written2. */
     private final byte[] sess;
     private final byte[] chunkBuf;
     private final byte[] ivTmp;
@@ -49,7 +49,7 @@ final class SecureStore {
         rnd = RandomData.getInstance(RandomData.ALG_SECURE_RANDOM);
     }
 
-    /** Throws 6A86 unless target is 01 (profile) or 02 (photo). */
+    /** Ném 6A86 trừ khi target là 01 (hồ sơ) hoặc 02 (ảnh). */
     static void checkTarget(byte target) {
         if (target != CardConst.TARGET_PROFILE && target != CardConst.TARGET_PHOTO) {
             ISOException.throwIt(CardConst.SW_BAD_P1P2);
@@ -68,13 +68,13 @@ final class SecureStore {
         return target == CardConst.TARGET_PROFILE ? (short) 0 : (short) 2;
     }
 
-    /** Committed length of the target (0 = empty). */
+    /** Độ dài đã commit của đích (0 = rỗng). */
     short length(byte target) {
         checkTarget(target);
         return Util.getShort(lens, lenOff(target));
     }
 
-    /** BEGIN_WRITE: empties the target, draws a fresh IV and opens a write session. */
+    /** BEGIN_WRITE: làm rỗng đích, sinh IV mới và mở phiên ghi. */
     void begin(byte target, short totalLen) {
         checkTarget(target);
         short max = target == CardConst.TARGET_PROFILE ? CardConst.PROFILE_MAX : CardConst.PHOTO_MAX;
@@ -96,7 +96,7 @@ final class SecureStore {
         Util.setShort(sess, S_WRITTEN, (short) 0);
     }
 
-    /** WRITE_CHUNK: encrypts buf[off..off+len] as chunk index. Non-last chunks must be CHUNK bytes. */
+    /** WRITE_CHUNK: mã hóa buf[off..off+len] thành chunk số index. Các chunk không phải cuối phải đúng CHUNK byte. */
     void writeChunk(byte target, byte index, byte[] buf, short off, short len, AESKey dek) {
         checkTarget(target);
         if (sess[S_TARGET] != target) {
@@ -131,9 +131,9 @@ final class SecureStore {
     }
 
     /**
-     * COMMIT_WRITE (signature already verified): buf[hashOff..+32] is the SHA-256 of the plaintext,
-     * len the claimed length. Succeeds only if every chunk was written and the hash matches.
-     * The write session always ends; on failure the target stays empty. Throws 6A80 on mismatch.
+     * COMMIT_WRITE (chữ ký đã được xác minh): buf[hashOff..+32] là SHA-256 của bản rõ,
+     * len là độ dài khai báo. Chỉ thành công khi mọi chunk đã được ghi và hash khớp.
+     * Phiên ghi luôn kết thúc; nếu thất bại thì đích vẫn rỗng. Ném 6A80 khi không khớp.
      */
     void commit(byte target, byte[] buf, short hashOff, short len) {
         checkTarget(target);
@@ -156,8 +156,8 @@ final class SecureStore {
     }
 
     /**
-     * READ_DATA chunk: decrypts chunk index into out[off..], returns the plaintext length
-     * (last chunk trimmed to the committed length). 6A88 if empty, 6A86 if out of range.
+     * READ_DATA chunk: giải mã chunk số index vào out[off..], trả về độ dài bản rõ
+     * (chunk cuối được cắt theo độ dài đã commit). 6A88 nếu rỗng, 6A86 nếu ngoài phạm vi.
      */
     short readChunk(byte target, byte index, AESKey dek, byte[] out, short off) {
         checkTarget(target);
@@ -187,7 +187,7 @@ final class SecureStore {
         digest.reset();
     }
 
-    /** TERMINATE: clears stored ciphertext, IVs and lengths. */
+    /** TERMINATE: xóa bản mã, IV và độ dài đã lưu. */
     void wipe() {
         endSession();
         Util.arrayFillNonAtomic(profile, (short) 0, CardConst.PROFILE_MAX, (byte) 0);

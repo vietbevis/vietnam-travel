@@ -24,7 +24,7 @@ class AuthenticateTest {
         byte[] r = c.ok(0x31, 0, 0, nonce);
         assertEquals(132, r.length);
         byte[] counter = Arrays.copyOfRange(r, 0, 4);
-        assertArrayEquals(new byte[4], counter); // fresh wallet: txCounter = 0
+        assertArrayEquals(new byte[4], counter); // ví mới: txCounter = 0
         byte[] msg = new byte[37];
         msg[0] = 0x41;
         System.arraycopy(nonce, 0, msg, 1, 16);

@@ -15,9 +15,9 @@ import javax.crypto.Cipher;
 import javax.crypto.spec.SecretKeySpec;
 import org.junit.jupiter.api.Test;
 
-/** Final-review fixes: tear-safe TERMINATE (I1), staged receive (I2), tmp-first crypto (M1), buffer wipe (M2), vectors flag (M5). */
+/** Các sửa lỗi sau review cuối: TERMINATE an toàn khi mất điện (I1), nhận dữ liệu qua staging (I2), mật mã ghi tmp trước (M1), xóa buffer (M2), cờ vectors (M5). */
 class FinalFixTest {
-    /** Simulates power loss between the state commit and the wipe; records the APDU buffer after each command. */
+    /** Mô phỏng mất điện giữa lúc commit state và lúc xóa; ghi lại buffer APDU sau mỗi lệnh. */
     public static class Probe extends TravelCardApplet {
         static boolean tear;
         static byte[] lastBuf;
@@ -82,14 +82,14 @@ class FinalFixTest {
         c.writeTarget(2, CardHarness.filled(300, (byte) 5));
         Object a = c.appletInstance();
 
-        Probe.tear = true; // commit happens, wipe does not run
+        Probe.tear = true; // commit xảy ra, đợt xóa không chạy
         assertEquals(0x9000, c.signed(0x70, 0x7F, 0, new byte[0]).getSW());
         assertEquals(1, bytes(a, TravelCardApplet.class, null, "status")[2], "wipePending set");
         assertEquals(0x7F, bytes(a, TravelCardApplet.class, null, "status")[1]);
         assertFalse(allZero(bytes(a, Wallet.class, "wallet", "state")), "wipe has not run yet");
         assertFalse(allZero(bytes(a, PinGuard.class, "pin", "encDekPin")));
 
-        Probe.tear = false; // power back: next command (even GET_PUBLIC_INFO) finishes the wipe
+        Probe.tear = false; // có điện lại: lệnh kế tiếp (kể cả GET_PUBLIC_INFO) hoàn tất đợt xóa
         byte[] info = c.ok(0x10, 0, 0, null);
         assertEquals(0x7F, info[17]);
         assertEquals(0, info[19], "PIN blocked");
@@ -167,11 +167,11 @@ class FinalFixTest {
         System.arraycopy(TestServer.modulus(), 0, d, 17, 128);
         System.arraycopy(CardHarness.ascii("482915"), 0, d, 145, 6);
         System.arraycopy(CardHarness.filled(16, (byte) 0x66), 0, d, 151, 16);
-        d[16] = 0x09; // bad cardType, digits fine
+        d[16] = 0x09; // cardType sai, các chữ số vẫn đúng
         c.assertSw(0x6A80, 0x01, 0, 0, d);
         assertDataRegionZero(167);
         d[16] = 0x01;
-        d[147] = 'x'; // non-digit PIN
+        d[147] = 'x'; // PIN chứa ký tự không phải chữ số
         c.assertSw(0x6A80, 0x01, 0, 0, d);
         assertDataRegionZero(167);
 

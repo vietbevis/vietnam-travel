@@ -19,17 +19,17 @@ public class TravelCardApplet extends Applet {
     private final RSAPublicKey serverKey;
     private final byte[] exponent;
     private final byte[] cardId;
-    // [0] cardType, [1] state, [2] wipePending (TERMINATE wipe not yet completed)
+    // [0] cardType, [1] state, [2] wipePending (đợt xóa của TERMINATE chưa hoàn tất)
     private final byte[] status;
-    /** Transient staging buffer for command data (header bytes stay in the APDU buffer); see receiveAll. */
+    /** Buffer staging transient cho dữ liệu lệnh (các byte header vẫn nằm trong buffer APDU); xem receiveAll. */
     private final byte[] in;
-    /** M_auth scratch (spec 3.2): 0x41 || nonce16 || cardId16 || txCounter4. */
+    /** Vùng nháp M_auth (spec 3.2): 0x41 || nonce16 || cardId16 || txCounter4. */
     private final byte[] authMsg;
 
     private static final short S_TYPE = 0;
     private static final short S_STATE = 1;
     private static final short S_WIPE = 2;
-    /** Staging size: 5 header offset + maximum Lc 255. */
+    /** Kích thước staging: offset header 5 + Lc tối đa 255. */
     private static final short IN_LEN = 260;
 
     TravelCardApplet() {
@@ -55,7 +55,7 @@ public class TravelCardApplet extends Applet {
 
     public void process(APDU apdu) {
         if (status[S_WIPE] != 0) {
-            // An interrupted TERMINATE wipe (power loss) is completed before anything else.
+            // Đợt xóa TERMINATE bị gián đoạn (mất điện) được hoàn tất trước mọi việc khác.
             completeWipe();
         }
         if (selectingApplet()) {
@@ -75,7 +75,7 @@ public class TravelCardApplet extends Applet {
         } finally {
             Util.arrayFillNonAtomic(in, (short) 0, IN_LEN, (byte) 0);
             if (ins == CardConst.INS_DEBIT) {
-                // Spec 3.3: DEBIT always drops the PIN session and DEK, whatever the outcome.
+                // Spec 3.3: DEBIT luôn hủy phiên PIN và DEK, bất kể kết quả.
                 pin.clearSession();
             }
         }
@@ -193,11 +193,11 @@ public class TravelCardApplet extends Applet {
     }
 
     /**
-     * Receives all Lc data bytes (looping over receiveBytes, since a first read may be partial on
-     * chained T=1 / contactless) into the transient staging buffer at ISO7816.OFFSET_CDATA, and wipes
-     * every received chunk from the APDU buffer. The APDU buffer must hold at least 5 + 128 bytes
-     * (Java Card minimum is 133); a short or stalled transfer fails with 6700. Handlers read the
-     * data from {@code in}; the staging buffer is zeroed in process() on every exit path.
+     * Nhận toàn bộ Lc byte dữ liệu (lặp qua receiveBytes, vì lần đọc đầu có thể chỉ nhận một phần với
+     * T=1 chained / contactless) vào buffer staging transient tại ISO7816.OFFSET_CDATA, và xóa
+     * từng chunk đã nhận khỏi buffer APDU. Buffer APDU phải chứa ít nhất 5 + 128 byte
+     * (mức tối thiểu của Java Card là 133); truyền thiếu hoặc bị đứng sẽ lỗi 6700. Các handler đọc
+     * dữ liệu từ {@code in}; buffer staging được xóa về 0 trong process() ở mọi đường thoát.
      */
     private void receiveAll(APDU apdu, short lc) {
         byte[] buf = apdu.getBuffer();
@@ -246,7 +246,7 @@ public class TravelCardApplet extends Applet {
         pin.change(in, off, (short) (off + CardConst.PIN_LEN));
     }
 
-    /** Receives the whole command data and verifies the server signature; returns the payload length. */
+    /** Nhận toàn bộ dữ liệu lệnh và xác minh chữ ký server; trả về độ dài payload. */
     private short receiveSigned(APDU apdu) {
         byte[] buf = apdu.getBuffer();
         short lc = (short) (buf[ISO7816.OFFSET_LC] & 0xFF);
@@ -291,9 +291,9 @@ public class TravelCardApplet extends Applet {
             return;
         }
         if (target == CardConst.STATE_TERMINATED) {
-            // Commit only the state flip + wipePending (small, tear-safe). The wipes are not
-            // journaled (arrayFillNonAtomic, key clearing, OwnerPIN counter), so they run outside
-            // the transaction and are idempotent; process() re-runs them while wipePending is set.
+            // Chỉ commit việc đổi state + wipePending (nhỏ, an toàn khi mất điện). Các thao tác xóa không được
+            // ghi journal (arrayFillNonAtomic, xóa khóa, bộ đếm OwnerPIN), nên chúng chạy ngoài
+            // transaction và là idempotent; process() chạy lại chúng khi wipePending còn được đặt.
             JCSystem.beginTransaction();
             status[S_STATE] = CardConst.STATE_TERMINATED;
             status[S_WIPE] = 1;
@@ -309,7 +309,7 @@ public class TravelCardApplet extends Applet {
         JCSystem.commitTransaction();
     }
 
-    /** Idempotent TERMINATE wipe of all secrets and user data; clears wipePending last. */
+    /** Xóa TERMINATE idempotent toàn bộ bí mật và dữ liệu người dùng; xóa wipePending sau cùng. */
     void completeWipe() {
         pin.wipe();
         keys.clear();
@@ -458,7 +458,7 @@ public class TravelCardApplet extends Applet {
         }
     }
 
-    /** Spec 3.3 command-blocking matrix, customer-only rule, and PIN requirement. */
+    /** Ma trận chặn lệnh spec 3.3, quy tắc chỉ dành cho khách hàng và yêu cầu PIN. */
     private void checkAllowed(byte ins) {
         boolean allowed;
         switch (status[S_STATE]) {

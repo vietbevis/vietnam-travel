@@ -1,69 +1,69 @@
 # Travel smartcard applet
 
-Java Card applet `vn.travel.card.TravelCardApplet` (AID `F054524156454C01`, package AID `F054524156454C00`).
-Spec: `docs/superpowers/specs/2026-11-04-travel-smartcard-design.md` section 3.
+Applet Java Card `vn.travel.card.TravelCardApplet` (AID `F054524156454C01`, package AID `F054524156454C00`).
+Spec: `docs/superpowers/specs/2026-11-04-travel-smartcard-design.md` mục 3.
 
-## Run the tests
+## Chạy kiểm thử
 
     cd smartcard
     ./gradlew :applet:test
 
-Runs on the default JDK (17+; tested with 25) against jCardSim. `TestVectorsExport` generates and
-self-verifies a vectors file in a temp location; the committed `test-vectors/vectors.json` (consumed by the web
-side, plan 03 Task 1) is only rewritten when you pass the flag (the card key pair is random, so the file changes):
+Chạy trên JDK mặc định (17+; đã thử với 25) với jCardSim. `TestVectorsExport` sinh và tự xác minh một file vectors
+ở vị trí tạm; file `test-vectors/vectors.json` đã commit (phía web dùng, plan 03 Task 1) chỉ bị ghi đè khi bạn truyền cờ
+(cặp khóa của thẻ là ngẫu nhiên nên file sẽ thay đổi):
 
     ./gradlew :applet:test -PwriteVectors
 
-## APDU buffer requirement
+## Yêu cầu về buffer APDU
 
-All command data is received with a `receiveBytes` loop (first reads may be partial on chained T=1/contactless)
-into a 260-byte transient staging buffer (5 + max Lc 255, `CLEAR_ON_DESELECT`), and the APDU buffer copy is
-wiped immediately. The card must provide the Java Card minimum APDU buffer of 133 bytes (header 5 + 128 per
-read); a transfer that does not deliver exactly Lc bytes fails with `6700`. The staging buffer is zeroed after
-every command.
+Toàn bộ dữ liệu lệnh được nhận bằng vòng lặp `receiveBytes` (lần đọc đầu có thể chỉ nhận một phần với T=1 chained/contactless)
+vào buffer staging transient 260 byte (5 + Lc tối đa 255, `CLEAR_ON_DESELECT`), và bản sao trong buffer APDU bị xóa
+ngay lập tức. Thẻ phải cung cấp buffer APDU tối thiểu theo Java Card là 133 byte (header 5 + 128 mỗi lần
+đọc); truyền không đủ đúng Lc byte sẽ lỗi `6700`. Buffer staging được xóa về 0 sau
+mỗi lệnh.
 
-## TERMINATE is tear-safe
+## TERMINATE an toàn khi mất điện
 
-SET_STATE 7F commits `state = TERMINATED` plus a `wipePending` flag in one small transaction, then runs the
-idempotent wipes (PIN/DEK/escrow, keys, wallet, tickets, 10 KB store) outside it and clears the flag. If power
-is lost in between, the wipe is re-run at the start of the next `process()` (including SELECT).
+SET_STATE 7F commit `state = TERMINATED` cùng cờ `wipePending` trong một transaction nhỏ, sau đó chạy các thao tác
+xóa idempotent (PIN/DEK/escrow, khóa, ví, vé, kho 10 KB) bên ngoài transaction rồi gỡ cờ. Nếu mất điện giữa chừng,
+đợt xóa được chạy lại ở đầu `process()` kế tiếp (kể cả SELECT).
 
-## Build the CAP
+## Dựng CAP
 
-One-time tool setup (both are git-ignored under `smartcard/tools/`):
+Cài công cụ một lần (cả hai đều bị git bỏ qua trong `smartcard/tools/`):
 
     mkdir -p smartcard/tools
     curl -fsSL -o smartcard/tools/ant-javacard.jar https://github.com/martinpaljak/ant-javacard/releases/latest/download/ant-javacard.jar
     git clone --depth 1 https://github.com/martinpaljak/oracle_javacard_sdks smartcard/tools/sdks
 
-Then build with **JDK 17** (the converter refuses JDK 25 with the v24.0 kit):
+Sau đó dựng bằng **JDK 17** (bộ chuyển đổi từ chối JDK 25 với kit v24.0):
 
     cd smartcard
     JAVA_HOME=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home ./gradlew :applet:cap
 
-Output: `smartcard/applet/build/travelcard.cap` (kit `jc320v24.0_kit`, target `jc304_kit`, i.e. Java Card 3.0.4+).
+Đầu ra: `smartcard/applet/build/travelcard.cap` (kit `jc320v24.0_kit`, target `jc304_kit`, tức Java Card 3.0.4+).
 
-Notes:
-- The off-card verifier in the kit cannot read the 3.0.4 export files ("unsupported export file format"),
-  so verification is off by default for the 3.0.4 target. To run the verifier, target 3.1 instead:
-  `./gradlew :applet:cap -PcapTarget=jc310r20210706_kit -PcapVerify=true` (passes; output is a 3.1-targeted CAP,
-  overwrite it by re-running the default build before installing on a 3.0.x card).
-- Override kits with `-PcapJckit=<dir>` / `-PcapTarget=<dir>` (dirs under `tools/sdks`).
-- Size: about 48 KB zipped CAP, about 9.5 KB of CAP components (Method ~5.7 KB); persistent data is dominated by
-  the 10 080 B photo store. Fits typical 32 KB+ cards.
+Ghi chú:
+- Bộ xác minh off-card trong kit không đọc được các file export 3.0.4 ("unsupported export file format"),
+  nên mặc định tắt xác minh với target 3.0.4. Để chạy bộ xác minh, hãy nhắm target 3.1:
+  `./gradlew :applet:cap -PcapTarget=jc310r20210706_kit -PcapVerify=true` (pass; đầu ra là CAP nhắm 3.1,
+  hãy ghi đè bằng cách chạy lại bản dựng mặc định trước khi cài lên thẻ 3.0.x).
+- Đổi kit bằng `-PcapJckit=<dir>` / `-PcapTarget=<dir>` (thư mục nằm trong `tools/sdks`).
+- Kích thước: khoảng 48 KB CAP nén zip, khoảng 9,5 KB thành phần CAP (Method ~5,7 KB); dữ liệu persistent chủ yếu là
+  kho ảnh 10 080 B. Vừa với các thẻ 32 KB trở lên thông thường.
 
-## Install on a real card (GlobalPlatformPro)
+## Cài lên thẻ thật (GlobalPlatformPro)
 
     java -jar gp.jar --install applet/build/travelcard.cap
 
-Remove the applet (also resets a half-installed or broken card):
+Gỡ applet (đồng thời khôi phục thẻ cài dở hoặc bị lỗi):
 
     java -jar gp.jar --delete F054524156454C00
 
-## Warning
+## Cảnh báo
 
-`test-vectors/server-test-key.pem` is a **test-only** server key committed to the repo. Never use it to
-personalise real cards; production cards need a server key kept outside git (`keys/`).
+`test-vectors/server-test-key.pem` là khóa server **chỉ dùng để thử nghiệm** được commit vào repo. Tuyệt đối không dùng nó để
+cá nhân hóa thẻ thật; thẻ production cần khóa server được giữ ngoài git (`keys/`).
 
 ## Agent (cầu HTTP giữa trình duyệt và thẻ)
 

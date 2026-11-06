@@ -23,13 +23,13 @@ tasks.compileTestJava {
 
 tasks.test {
     useJUnitPlatform()
-    // -PwriteVectors rewrites test-vectors/vectors.json (otherwise TestVectorsExport uses a temp file).
+    // -PwriteVectors ghi đè test-vectors/vectors.json (mặc định TestVectorsExport dùng file tạm).
     if (project.hasProperty("writeVectors")) {
         systemProperty("writeVectors", "true")
     }
 }
 
-// Builds build/travelcard.cap with ant-javacard (Java Card converter + verifier).
+// Dựng build/travelcard.cap bằng ant-javacard (bộ chuyển đổi + bộ xác minh Java Card).
 tasks.register("cap") {
     group = "build"
     description = "Converts the applet to a Java Card CAP file (build/travelcard.cap)"

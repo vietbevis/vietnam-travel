@@ -59,14 +59,14 @@ class ServerAuthTest {
         assertEquals(0x02, state(c));
     }
 
-    // Review Focus #1
+    // Trọng tâm review #1
     @Test
     void replayRejected() {
         CardHarness c = active();
         byte[] d = c.signedData(CardHarness.CARD_ID, 0x70, 0x03, 0, NONE);
         assertEquals(0x9000, c.send(0x70, 0x03, 0, d).getSW());
         assertEquals(0x03, state(c));
-        // unlock via a fresh signed command, then replay the old LOCK verbatim
+        // mở khóa bằng lệnh ký mới, rồi phát lại nguyên văn lệnh LOCK cũ
         assertEquals(0x9000, c.signed(0x70, 0x02, 0, NONE).getSW());
         assertEquals(0x6F21, c.send(0x70, 0x03, 0, d).getSW());
         assertEquals(0x02, state(c), "replayed command must not execute");
@@ -78,12 +78,12 @@ class ServerAuthTest {
         byte[] d = c.signedData(CardHarness.CARD_ID, 0x70, 0x03, 0, NONE);
         assertEquals(0x9000, c.send(0x70, 0x03, 0, d).getSW());
         assertEquals(0x9000, c.signed(0x70, 0x02, 0, NONE).getSW());
-        c.getChallenge(); // a new challenge exists, but the old signature binds the old one
+        c.getChallenge(); // đã có challenge mới, nhưng chữ ký cũ gắn với challenge cũ
         assertEquals(0x6F20, c.send(0x70, 0x03, 0, d).getSW());
         assertEquals(0x02, state(c));
     }
 
-    // Review Focus #2
+    // Trọng tâm review #2
     @Test
     void otherCardIdRejected() {
         CardHarness c = active();
@@ -281,7 +281,7 @@ class ServerAuthTest {
         c.reselect();
         assertEquals(0x9000, c.signed(0x22, 0, 0, encPin("903172")).getSW());
         c.ok(0x20, 0, 0, CardHarness.ascii("903172"));
-        // mustChangePin = 1 blocks READ_DATA (6985) until the customer changes the PIN
+        // mustChangePin = 1 chặn READ_DATA (6985) cho đến khi khách hàng đổi PIN
         c.assertSw(0x6985, 0x40, 0x01, 0xFF, null);
         c.changePin("903172", "260814");
         c.reselect();

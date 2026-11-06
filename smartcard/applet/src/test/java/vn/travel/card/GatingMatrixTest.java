@@ -11,8 +11,8 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
 /**
- * Spec 3.3 command-blocking matrix, written from the spec table (not from checkAllowed):
- * every INS x every card condition.
+ * Ma trận chặn lệnh spec 3.3, viết theo bảng trong spec (không theo checkAllowed):
+ * mọi INS x mọi điều kiện của thẻ.
  */
 class GatingMatrixTest {
     static final int[] ALL_INS = {
@@ -25,7 +25,7 @@ class GatingMatrixTest {
     static final Set<Integer> IN_CREATED = Set.of(0x10, 0x01);
     static final Set<Integer> IN_LOCKED = Set.of(0x10, 0x30, 0x70);
     static final Set<Integer> IN_ACTIVE_MUST = Set.of(0x10, 0x20, 0x21, 0x22, 0x30, 0x32, 0x41, 0x42, 0x43, 0x70);
-    // ACTIVE with mustChangePin = 0: every INS except 01.
+    // ACTIVE với mustChangePin = 0: mọi INS ngoại trừ 01.
 
     enum Cond {
         CREATED, ACTIVE_MUST, ACTIVE, LOCKED, TERMINATED;

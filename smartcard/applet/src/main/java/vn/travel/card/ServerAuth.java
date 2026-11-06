@@ -8,7 +8,7 @@ import javacard.security.RSAPublicKey;
 import javacard.security.RandomData;
 import javacard.security.Signature;
 
-/** Server challenge and verification of server-signed commands (spec 3.2, M_cmd). */
+/** Challenge của server và xác minh các lệnh do server ký (spec 3.2, M_cmd). */
 final class ServerAuth {
     static final short SIG_LEN = 128;
     private static final byte TAG_CMD = 0x43;
@@ -16,7 +16,7 @@ final class ServerAuth {
     private final RSAPublicKey serverKey;
     private final Signature verifier;
     private final RandomData rnd;
-    /** Both cleared on deselect. */
+    /** Cả hai đều bị xóa khi deselect. */
     private final byte[] challenge;
     private final byte[] outstanding;
     private final byte[] head;
@@ -30,7 +30,7 @@ final class ServerAuth {
         head = JCSystem.makeTransientByteArray((short) 36, JCSystem.CLEAR_ON_DESELECT);
     }
 
-    /** Replaces any previous challenge with a fresh 16-byte one and copies it to out[off..]. */
+    /** Thay challenge cũ bằng challenge mới 16 byte và sao chép vào out[off..]. */
     void issueChallenge(byte[] out, short off) {
         rnd.generateData(challenge, (short) 0, (short) 16);
         outstanding[0] = 1;
@@ -47,9 +47,9 @@ final class ServerAuth {
     }
 
     /**
-     * buf[cdataOff..+lc] = payload || sig128. The challenge is destroyed on every call,
-     * whatever the outcome. Returns the payload length (lc - 128).
-     * Throws 6F21 (no challenge), 6700 (lc &lt; 128), 6F20 (bad signature).
+     * buf[cdataOff..+lc] = payload || sig128. Challenge bị hủy ở mọi lần gọi,
+     * bất kể kết quả. Trả về độ dài payload (lc - 128).
+     * Ném 6F21 (không có challenge), 6700 (lc &lt; 128), 6F20 (chữ ký sai).
      */
     short verifySigned(byte[] buf, short cdataOff, short lc, byte ins, byte p1, byte p2, byte[] cardId) {
         boolean had = outstanding[0] != 0;

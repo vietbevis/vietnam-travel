@@ -93,7 +93,7 @@ class PinTest {
         CardHarness c = CardHarness.fresh();
         c.activate();
         c.verifyPin();
-        // validated: PIN gate passes (empty profile -> length 0000)
+        // đã xác thực: qua cổng PIN (hồ sơ rỗng -> độ dài 0000)
         assertEquals(0x9000, c.send(0x40, 0x01, 0xFF, null).getSW());
         c.reselect();
         c.assertSw(0x6982, 0x40, 0x01, 0xFF, null);

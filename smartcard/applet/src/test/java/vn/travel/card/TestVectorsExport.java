@@ -18,7 +18,7 @@ import javax.crypto.Cipher;
 import javax.crypto.spec.SecretKeySpec;
 import org.junit.jupiter.api.Test;
 
-/** Generates smartcard/test-vectors/vectors.json for the web side (plan 03 Task 1) and re-verifies it. */
+/** Sinh smartcard/test-vectors/vectors.json cho phía web (plan 03 Task 1) và tự kiểm tra lại. */
 class TestVectorsExport {
     static final String NEW_PIN = "903172";
 
@@ -57,23 +57,23 @@ class TestVectorsExport {
         CardHarness h = CardHarness.fresh();
         byte[] cardModulus = h.activate();
 
-        // AUTHENTICATE (needs PIN session)
+        // AUTHENTICATE (cần phiên PIN)
         h.verifyPin();
         byte[] nonce = CardHarness.filled(16, (byte) 0xA7);
         byte[] auth = h.ok(0x31, 0, 0, nonce);
         byte[] counter = Arrays.copyOfRange(auth, 0, 4);
         byte[] authSig = Arrays.copyOfRange(auth, 4, 132);
 
-        // CREDIT receipt (166 B)
+        // Biên nhận CREDIT (166 B)
         byte[] receipt = h.signedOk(0x51, CardHarness.txPayload(0x33, 250000));
         assertEquals(166, receipt.length);
 
-        // Server-signed SET_STATE(LOCKED) command; the challenge is real (from the card)
+        // Lệnh SET_STATE(LOCKED) do server ký; challenge là thật (lấy từ thẻ)
         byte[] challenge = h.getChallenge();
         byte[] message = CardHarness.mCmd(challenge, CardHarness.CARD_ID, 0x70, 0x03, 0x00, new byte[0]);
         byte[] cmdSig = TestServer.sign(message);
 
-        // RESET_PIN payload, verified by the card
+        // Payload RESET_PIN, được thẻ xác minh
         byte[] kEscrow = TestServer.escrowKey(CardHarness.CARD_ID);
         byte[] plain = new byte[16];
         System.arraycopy(CardHarness.ascii(NEW_PIN), 0, plain, 0, 6);
@@ -99,7 +99,7 @@ class TestVectorsExport {
                 + "}\n";
         Path out;
         if (System.getProperty("writeVectors") != null) {
-            // ./gradlew :applet:test -PwriteVectors regenerates the committed file (random card key).
+            // ./gradlew :applet:test -PwriteVectors sinh lại file đã commit (khóa thẻ ngẫu nhiên).
             out = Paths.get("..", "test-vectors", "vectors.json");
             if (!Files.isDirectory(out.getParent())) {
                 out = Paths.get("smartcard", "test-vectors", "vectors.json");
@@ -110,7 +110,7 @@ class TestVectorsExport {
         }
         Files.write(out, json.getBytes(StandardCharsets.US_ASCII));
 
-        // Read back and verify with java.security only
+        // Đọc lại và chỉ xác minh bằng java.security
         String back = new String(Files.readAllBytes(out), StandardCharsets.US_ASCII);
         byte[] cm = unhex(get(back, "cardModulus"));
         byte[] sm = unhex(get(back, "serverModulus"));

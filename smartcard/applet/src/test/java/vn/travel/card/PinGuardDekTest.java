@@ -7,7 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import javacard.framework.ISOException;
 import org.junit.jupiter.api.Test;
 
-/** White-box: the session DEK must not stay live after a failed PIN check. */
+/** White-box: DEK của phiên không được còn hiệu lực sau khi kiểm tra PIN thất bại. */
 class PinGuardDekTest {
     private static byte[] b(String s) {
         return CardHarness.ascii(s);

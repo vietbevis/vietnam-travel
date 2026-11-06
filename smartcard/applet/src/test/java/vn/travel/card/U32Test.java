@@ -58,7 +58,7 @@ class U32Test {
         assertEquals(-1, U32.compare(b(0x02FAF080L), (short) 0, b(0x02FAF081L), (short) 0));
         assertEquals(1, U32.compare(b(0x02FAF081L), (short) 0, b(0x02FAF080L), (short) 0));
         assertEquals(0, U32.compare(b(0x02FAF080L), (short) 0, b(0x02FAF080L), (short) 0));
-        // unsigned: high bit set is larger
+        // không dấu: bit cao được đặt thì lớn hơn
         assertEquals(1, U32.compare(b(0x80000000L), (short) 0, b(0x7FFFFFFFL), (short) 0));
         assertEquals(-1, U32.compare(b(0x00000000L), (short) 0, b(0xFF000000L), (short) 0));
     }

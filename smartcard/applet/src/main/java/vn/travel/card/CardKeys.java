@@ -4,7 +4,7 @@ import javacard.security.KeyPair;
 import javacard.security.RSAPublicKey;
 import javacard.security.Signature;
 
-/** Card RSA-1024 CRT key pair and PKCS#1 v1.5 SHA-256 signer. */
+/** Cặp khóa RSA-1024 CRT của thẻ và bộ ký PKCS#1 v1.5 SHA-256. */
 final class CardKeys {
     private final KeyPair pair;
     private final Signature signer;
@@ -18,12 +18,12 @@ final class CardKeys {
         pair.genKeyPair();
     }
 
-    /** Writes the 128-byte modulus; returns 128. */
+    /** Ghi modulus 128 byte; trả về 128. */
     short getModulus(byte[] out, short off) {
         return ((RSAPublicKey) pair.getPublic()).getModulus(out, off);
     }
 
-    /** Signs msg; returns the signature length (128). */
+    /** Ký msg; trả về độ dài chữ ký (128). */
     short sign(byte[] msg, short off, short len, byte[] out, short outOff) {
         signer.init(pair.getPrivate(), Signature.MODE_SIGN);
         return signer.sign(msg, off, len, out, outOff);

@@ -101,9 +101,9 @@ class SecureStoreTest {
         c.ok(0x42, 2, 0, Arrays.copyOfRange(d, 0, 224));
         assertEquals(0x6A80, c.commit(2, CardHarness.sha256(d), 500).getSW());
         assertEquals(0, len(c, 2));
-        // session is over: further chunks are refused
+        // phiên đã kết thúc: các chunk tiếp theo bị từ chối
         assertEquals(0x6985, c.writeChunk(2, 1, Arrays.copyOfRange(d, 224, 448)).getSW());
-        // card is usable afterwards
+        // sau đó thẻ vẫn dùng được
         byte[] ok = rnd(260, 8);
         c.writeTarget(2, ok);
         assertArrayEquals(ok, c.readTarget(2));
@@ -199,7 +199,7 @@ class SecureStoreTest {
         byte[] data = c.signedData(CardHarness.CARD_ID, 0x43, 1, 0, p);
         data[data.length - 1] ^= 1;
         assertEquals(0x6F20, c.send(0x43, 1, 0, data).getSW());
-        // no challenge outstanding now
+        // hiện không còn challenge nào chưa dùng
         assertEquals(0x6F21, c.send(0x43, 1, 0, data).getSW());
     }
 
@@ -318,11 +318,11 @@ class SecureStoreTest {
         byte[] d = new byte[448];
         Arrays.fill(d, (byte) 0x41);
         c.writeTarget(1, d);
-        // jCardSim runs the applet in-process: inspect the persistent profile array by reflection.
+        // jCardSim chạy applet trong cùng tiến trình: kiểm tra mảng hồ sơ persistent bằng reflection.
         byte[] raw = persistentArray(c, "profile");
         assertEquals(448, raw.length);
         assertFalse(Arrays.equals(d, raw));
-        // identical plaintext blocks must not give identical ciphertext blocks (CBC chaining)
+        // các khối bản rõ giống nhau không được cho ra các khối bản mã giống nhau (chuỗi CBC)
         assertFalse(Arrays.equals(Arrays.copyOfRange(raw, 0, 16), Arrays.copyOfRange(raw, 16, 32)));
         int same = 0;
         for (int i = 0; i < raw.length; i++) {

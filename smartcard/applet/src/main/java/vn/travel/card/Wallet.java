@@ -5,24 +5,24 @@ import javacard.framework.JCSystem;
 import javacard.framework.Util;
 
 /**
- * Stored-value wallet (spec 3.2 M_rcpt, 3.3 INS 50-54): balance, txCounter and a 10-entry ring log.
- * Balance, counter and log change only inside one transaction.
+ * Ví tiền trả trước (spec 3.2 M_rcpt, 3.3 INS 50-54): số dư, txCounter và nhật ký vòng 10 mục.
+ * Số dư, bộ đếm và nhật ký chỉ thay đổi trong cùng một transaction.
  */
 final class Wallet {
-    /** Receipt tag: distinct from M_auth 0x41 (37 bytes) and M_cmd 0x43. */
+    /** Tag biên nhận: khác với M_auth 0x41 (37 byte) và M_cmd 0x43. */
     static final byte TAG_RCPT = 0x52;
     static final short RCPT_MSG_LEN = 38;
     static final short RCPT_LEN = 166;
     static final byte TYPE_CREDIT = 0x01;
     static final byte TYPE_DEBIT = 0x02;
 
-    /** Log entry: type1 | amount4 | balanceAfter4 | counter4 | txRef8. */
+    /** Mục nhật ký: type1 | amount4 | balanceAfter4 | counter4 | txRef8. */
     private static final short ENTRY = 21;
     private static final short O_AMOUNT = 1;
     private static final short O_BAL = 5;
     private static final short O_CTR = 9;
     private static final short O_REF = 13;
-    /** calc layout. */
+    /** Bố cục vùng calc. */
     private static final short C_NBAL = 0;
     private static final short C_NCTR = 4;
     private static final short C_MAX = 8;
@@ -33,7 +33,7 @@ final class Wallet {
     /** balance4 | counter4 (persistent). */
     private final byte[] state;
     private final byte[] ring;
-    /** [0] next write slot, [1] entries held. */
+    /** [0] slot ghi kế tiếp, [1] số mục đang có. */
     private final byte[] meta;
     private final byte[] calc;
     private final byte[] msg;
@@ -48,7 +48,7 @@ final class Wallet {
         msg = JCSystem.makeTransientByteArray(RCPT_MSG_LEN, JCSystem.CLEAR_ON_DESELECT);
     }
 
-    /** payload = txRef8 | amount4 at buf[p]. Writes the 166-byte receipt to out[o]. */
+    /** payload = txRef8 | amount4 tại buf[p]. Ghi biên nhận 166 byte vào out[o]. */
     short credit(byte[] buf, short p, byte[] out, short o) {
         checkAmount(buf, p);
         Util.setShort(calc, C_MAX, CardConst.BALANCE_MAX_HI);
@@ -68,7 +68,7 @@ final class Wallet {
         return commit(TYPE_DEBIT, buf, p, out, o);
     }
 
-    /** Re-signs the receipt of the newest log entry with this txRef8 (at txRef[off]); else 6A88. */
+    /** Ký lại biên nhận của mục nhật ký mới nhất có txRef8 này (tại txRef[off]); nếu không có thì 6A88. */
     short receipt(byte[] txRef, short off, byte[] out, short outOff) {
         short slot = meta[0];
         for (short i = 0; i < meta[1]; i++) {
@@ -81,13 +81,13 @@ final class Wallet {
         return 0;
     }
 
-    /** balance4 | counter4; returns 8. */
+    /** balance4 | counter4; trả về 8. */
     short balance(byte[] out, short off) {
         Util.arrayCopyNonAtomic(state, (short) 0, out, off, (short) 8);
         return 8;
     }
 
-    /** count1 | entries, newest first. */
+    /** count1 | các mục, mới nhất trước. */
     short log(byte[] out, short off) {
         byte count = meta[1];
         out[off] = count;
@@ -121,7 +121,7 @@ final class Wallet {
         return slot == 0 ? (short) (CardConst.LOG_SIZE - 1) : (short) (slot - 1);
     }
 
-    /** calc[C_NBAL] holds the new balance. Bumps the counter, logs, and returns the signed receipt. */
+    /** calc[C_NBAL] chứa số dư mới. Tăng bộ đếm, ghi nhật ký và trả về biên nhận đã ký. */
     private short commit(byte type, byte[] in, short p, byte[] out, short o) {
         Util.setShort(calc, C_ONE, (short) 0);
         Util.setShort(calc, (short) (C_ONE + 2), (short) 1);
@@ -146,7 +146,7 @@ final class Wallet {
         return emit(slot, out, o);
     }
 
-    /** Builds M_rcpt from log slot and writes M_rcpt | sig128 to out[o]. */
+    /** Dựng M_rcpt từ slot nhật ký và ghi M_rcpt | sig128 vào out[o]. */
     private short emit(short slot, byte[] out, short o) {
         short eo = (short) (slot * ENTRY);
         msg[0] = TAG_RCPT;

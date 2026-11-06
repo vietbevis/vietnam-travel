@@ -27,7 +27,7 @@ class ReselectTest {
         CardHarness h = CardHarness.fresh(Probe.class);
         h.reselect();
         assertEquals(1, Probe.deselects);
-        assertEquals(1, Probe.installs); // never deleted/reinstalled: persistent state kept
+        assertEquals(1, Probe.installs); // không bao giờ xóa/cài lại: trạng thái persistent được giữ
         assertEquals(21, h.ok(0x10, 0, 0, null).length);
     }
 }

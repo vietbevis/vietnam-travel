@@ -5,8 +5,8 @@ import javacard.framework.JCSystem;
 import javacard.framework.Util;
 
 /**
- * E-ticket slots (spec 3.3 INS 60-63). Each slot = status1 | ticket33, where
- * ticket33 = orderCode12 | tourId12 | departure8 | pax1 and the lookup key is its first 24 bytes.
+ * Các slot vé điện tử (spec 3.3 INS 60-63). Mỗi slot = status1 | ticket33, trong đó
+ * ticket33 = orderCode12 | tourId12 | departure8 | pax1 và khóa tra cứu là 24 byte đầu.
  */
 final class TicketStore {
     static final short TICKET_LEN = 33;
@@ -22,7 +22,7 @@ final class TicketStore {
         slots = new byte[(short) (CardConst.TICKET_SLOTS * SLOT)];
     }
 
-    /** Stores ticket33 at buf[off]. An identical VALID key is a no-op success. */
+    /** Lưu ticket33 tại buf[off]. Khóa VALID trùng khớp là thành công và không làm gì thêm. */
     void write(byte[] buf, short off) {
         short target = -1;
         short empty = -1;
@@ -52,7 +52,7 @@ final class TicketStore {
         JCSystem.commitTransaction();
     }
 
-    /** VALID to USED. 6A88 if no such key, 6985 if it is only present as USED. */
+    /** Chuyển VALID sang USED. 6A88 nếu không có khóa, 6985 nếu khóa chỉ tồn tại ở trạng thái USED. */
     void use(byte[] buf, short keyOff) {
         short s = find(buf, keyOff, ST_VALID);
         if (s < 0) {
@@ -66,7 +66,7 @@ final class TicketStore {
         JCSystem.commitTransaction();
     }
 
-    /** Frees every slot (VALID or USED) holding the key. 6A88 if none. */
+    /** Giải phóng mọi slot (VALID hoặc USED) chứa khóa. 6A88 nếu không có. */
     void delete(byte[] buf, short keyOff) {
         if (find(buf, keyOff, ST_VALID) < 0 && find(buf, keyOff, ST_USED) < 0) {
             ISOException.throwIt(CardConst.SW_NOT_FOUND);
@@ -84,7 +84,7 @@ final class TicketStore {
         JCSystem.commitTransaction();
     }
 
-    /** count1 | n x (status1 | ticket33); returns the length written. */
+    /** count1 | n x (status1 | ticket33); trả về độ dài đã ghi. */
     short read(byte[] out, short off) {
         short p = (short) (off + 1);
         byte n = 0;

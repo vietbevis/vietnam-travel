@@ -1,13 +1,13 @@
 package vn.travel.card;
 
 /**
- * Unsigned 32-bit big-endian arithmetic on byte arrays (spec 3.1). byte/short only: no int/long.
- * out may alias an operand at the same offset. On a false return the contents of out are undefined.
+ * Số học 32 bit không dấu big-endian trên mảng byte (spec 3.1). Chỉ dùng byte/short: không có int/long.
+ * out có thể trùng với một toán hạng tại cùng offset. Khi trả về false, nội dung out là không xác định.
  */
 final class U32 {
     private U32() {}
 
-    /** out = a + b; false on overflow past 2^32 - 1. */
+    /** out = a + b; false nếu tràn quá 2^32 - 1. */
     static boolean add(byte[] a, short aOff, byte[] b, short bOff, byte[] out, short outOff) {
         short carry = 0;
         for (short i = 3; i >= 0; i--) {
@@ -19,7 +19,7 @@ final class U32 {
         return carry == 0;
     }
 
-    /** out = a - b; false if b > a (would be negative). */
+    /** out = a - b; false nếu b > a (kết quả sẽ âm). */
     static boolean sub(byte[] a, short aOff, byte[] b, short bOff, byte[] out, short outOff) {
         short borrow = 0;
         for (short i = 3; i >= 0; i--) {
@@ -31,7 +31,7 @@ final class U32 {
         return borrow == 0;
     }
 
-    /** -1 if a &lt; b, 0 if equal, 1 if a &gt; b (unsigned). */
+    /** -1 nếu a &lt; b, 0 nếu bằng, 1 nếu a &gt; b (không dấu). */
     static short compare(byte[] a, short aOff, byte[] b, short bOff) {
         for (short i = 0; i < 4; i++) {
             short x = (short) (a[(short) (aOff + i)] & 0xFF);
