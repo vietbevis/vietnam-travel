@@ -36,7 +36,7 @@ public final class SimCardPort implements CardPort {
 
     public SimCardPort(int slots) {
         if (slots < 1) {
-            throw new IllegalArgumentException("slots");
+            throw new IllegalArgumentException("Số slot phải dương");
         }
         sims = new CardSimulator[slots];
         for (int i = 0; i < slots; i++) {
@@ -60,7 +60,7 @@ public final class SimCardPort implements CardPort {
     public void selectSlot(int newSlot) {
         synchronized (lock) {
             if (newSlot < 0 || newSlot >= sims.length) {
-                throw new IllegalArgumentException("slot must be in 0.." + (sims.length - 1));
+                throw new IllegalArgumentException("Slot phải nằm trong khoảng 0.." + (sims.length - 1));
             }
             cycle(sims[slot]);
             slot = newSlot;
@@ -71,7 +71,7 @@ public final class SimCardPort implements CardPort {
     public void resetSlot(int s) {
         synchronized (lock) {
             if (s < 0 || s >= sims.length) {
-                throw new IllegalArgumentException("slot must be in 0.." + (sims.length - 1));
+                throw new IllegalArgumentException("Slot phải nằm trong khoảng 0.." + (sims.length - 1));
             }
             sims[s] = newCard();
             cycle(sims[s]);

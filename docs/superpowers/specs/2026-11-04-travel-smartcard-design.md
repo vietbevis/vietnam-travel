@@ -215,7 +215,10 @@ test/                      node:test
 **Lỗi:**
 - `400 {"error":"bad-request"}`
 - `403 {"error":"origin"}`
-- `404` khi gọi endpoint sim ở chế độ pcsc
+- `403 {"error":"host"}`: header `Host` không phải `127.0.0.1:<cổng>` hoặc `localhost:<cổng>` (chống DNS-rebinding)
+- `404 {"error":"not-found"}`: đường dẫn lạ, hoặc endpoint sim ở chế độ pcsc
+- `405 {"error":"method"}`: sai phương thức HTTP (kèm header `Allow`)
+- `500 {"error":"internal"}`: lỗi nội bộ của agent
 - `503 {"error":"no-card"}`
 
 Chế độ sim có 4 thẻ ảo (jCardSim), applet cài sẵn, mặc định slot 0. Thẻ ảo chỉ tồn tại trong vòng đời của tiến trình agent.

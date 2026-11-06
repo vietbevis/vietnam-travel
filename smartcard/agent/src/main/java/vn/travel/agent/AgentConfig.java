@@ -26,7 +26,13 @@ public record AgentConfig(int port, Set<String> allowedOrigins, String mode, Str
      */
     public static AgentConfig load(Path propertiesFile, String[] args) {
         Properties p = new Properties();
-        if (propertiesFile != null && Files.isRegularFile(propertiesFile)) {
+        boolean coFile = propertiesFile != null && Files.isRegularFile(propertiesFile);
+        if (!coFile) {
+            System.err.println("Cảnh báo: không tìm thấy agent.properties (" + propertiesFile
+                    + "); allowedOrigins rỗng nên mọi yêu cầu từ trình duyệt sẽ bị 403."
+                    + " Hãy chạy agent từ thư mục smartcard/agent.");
+        }
+        if (coFile) {
             try (InputStream in = Files.newInputStream(propertiesFile)) {
                 p.load(in);
             } catch (IOException e) {
@@ -48,8 +54,14 @@ public record AgentConfig(int port, Set<String> allowedOrigins, String mode, Str
                     mode = "sim";
                 } else if (a.startsWith("--port=")) {
                     port = parsePort(a.substring("--port=".length()), "--port");
+                } else {
+                    System.err.println("Cảnh báo: bỏ qua tham số không nhận ra: '" + a
+                            + "' (chỉ nhận --sim và --port=N)");
                 }
             }
+        }
+        if (coFile && origins.isEmpty()) {
+            System.err.println("Cảnh báo: allowedOrigins rỗng nên mọi yêu cầu từ trình duyệt sẽ bị 403.");
         }
         return new AgentConfig(port, Set.copyOf(origins), mode, reader.isEmpty() ? null : reader);
     }

@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.locks.ReentrantLock;
+import javax.smartcardio.CommandAPDU;
 
 /** Cầu HTTP trên localhost giữa trình duyệt và thẻ (xem spec mục 4). */
 public final class AgentHttpServer {
@@ -60,7 +61,7 @@ public final class AgentHttpServer {
         return server.getAddress().getPort();
     }
 
-    /** Thứ tự xử lý: kiểm Origin, xử lý OPTIONS, rồi định tuyến. */
+    /** Thứ tự xử lý: kiểm Host, kiểm Origin, xử lý OPTIONS, rồi định tuyến. */
     private void handle(HttpExchange ex) throws IOException {
         try {
             // Chống DNS-rebinding: chỉ chấp nhận Host là địa chỉ loopback kèm đúng cổng đang lắng nghe.
@@ -71,9 +72,9 @@ public final class AgentHttpServer {
                 return;
             }
             String origin = ex.getRequestHeaders().getFirst("Origin");
-            // Không có Origin nghĩa là không phải yêu cầu từ trang web trong trình duyệt
-            // (ví dụ curl hoặc công cụ nội bộ chạy cục bộ) nên cho qua; trình duyệt luôn gửi Origin
-            // với yêu cầu chéo nguồn nên không thể lợi dụng nhánh này.
+            // Không có Origin thường là công cụ cục bộ (curl, Node fetch) nên cho qua. Yêu cầu chéo nguồn
+            // dạng fetch có CORS luôn gửi Origin; riêng GET no-cors hoặc cùng nguồn có thể không gửi.
+            // Nhánh này chỉ làm lộ GET status (đã có kiểm Host chống DNS-rebinding), POST luôn mang Origin.
             if (origin != null) {
                 if (!cfg.allowedOrigins().contains(origin)) {
                     send(ex, 403, error("origin"));
@@ -100,7 +101,7 @@ public final class AgentHttpServer {
             send(ex, 503, error("no-card"));
         } catch (Exception e) {
             // Không ghi nội dung APDU; chỉ ghi loại lỗi.
-            System.err.println("internal error: " + e.getClass().getSimpleName());
+            System.err.println("Lỗi nội bộ: " + e.getClass().getSimpleName());
             send(ex, 500, error("internal"));
         } finally {
             ex.close();
@@ -196,6 +197,11 @@ public final class AgentHttpServer {
             if (b.length < MIN_APDU_LEN || b.length > MAX_APDU_LEN) {
                 throw new BadRequest();
             }
+            try {
+                new CommandAPDU(b); // Lc không khớp độ dài thì 400, trước khi chạm cổng thẻ
+            } catch (IllegalArgumentException e) {
+                throw new BadRequest();
+            }
             apdus.add(b);
         }
         List<byte[]> resps;
@@ -213,7 +219,7 @@ public final class AgentHttpServer {
             String data;
             if (r.length < 2) {
                 // Phản hồi ngắn hơn 2 byte là lỗi của cổng thẻ, không bịa ra SW.
-                throw new IllegalStateException("short response");
+                throw new IllegalStateException("Phản hồi ngắn hơn 2 byte");
             }
             data = Hex.encode(Arrays.copyOfRange(r, 0, r.length - 2));
             sw = Hex.encode(Arrays.copyOfRange(r, r.length - 2, r.length));

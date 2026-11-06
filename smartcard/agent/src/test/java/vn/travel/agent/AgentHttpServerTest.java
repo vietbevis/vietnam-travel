@@ -121,6 +121,7 @@ class AgentHttpServerTest {
         bodies.add(apdus("801000"));
         bodies.add(apdus("80" + "10" + "00".repeat(260))); // 262 byte
         bodies.add("{\"apdus\":[123]}");
+        bodies.add(apdus("00A4040008F054")); // Lc=8 nhưng chỉ có 1 byte dữ liệu
         for (String b : bodies) {
             HttpResponse<String> r = post("/v1/transmit", b);
             assertEquals(400, r.statusCode(), b);
@@ -132,7 +133,7 @@ class AgentHttpServerTest {
     void boundarySizesAccepted() throws Exception {
         // Cổng giả, vì jCardSim không phân tích được APDU 261 byte tùy ý.
         start(new FakePort("pcsc", batch -> List.of(new byte[] {(byte) 0x90, 0})));
-        assertEquals(200, post("/v1/transmit", apdus("8010" + "00".repeat(259))).statusCode());
+        assertEquals(200, post("/v1/transmit", apdus("80100000FF" + "00".repeat(255) + "00")).statusCode());
         assertEquals(200, post("/v1/transmit", apdus(Collections.nCopies(64, "80100000").toArray(new String[0]))).statusCode());
     }
 

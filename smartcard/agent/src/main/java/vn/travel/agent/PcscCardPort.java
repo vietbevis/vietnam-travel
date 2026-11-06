@@ -55,60 +55,105 @@ public final class PcscCardPort implements CardPort {
         } catch (CardException | IllegalStateException | SecurityException | UnsatisfiedLinkError | NoClassDefFoundError e) {
             // hai lỗi cuối xảy ra khi thiếu thư viện PC/SC gốc
             drop();
-            throw new NoCardException("no reader or card available", e);
+            throw new NoCardException("Không có đầu đọc hoặc thẻ", e);
         }
-        throw new NoCardException("no reader or card available");
+        throw new NoCardException("Không có đầu đọc hoặc thẻ");
     }
 
     /** Số lần GET RESPONSE tối đa cho một APDU, tránh vòng lặp vô hạn khi thẻ lỗi. */
     private static final int MAX_GET_RESPONSE = 32;
 
+    /** Nguồn kênh thẻ cho {@link #transmitWithRetry}; tách ra để test bằng kênh giả. */
+    interface ChannelSource {
+        CardChannel open() throws NoCardException;
+
+        void drop();
+    }
+
+    /** Lỗi truyền kèm thông tin đã có lần transmit nào thành công trong batch hay chưa. */
+    private static final class RunFailure extends Exception {
+        final boolean anySent;
+
+        RunFailure(boolean anySent, Throwable cause) {
+            super(cause);
+            this.anySent = anySent;
+        }
+    }
+
     /**
      * {@inheritDoc}
      *
-     * <p>Nếu lần transmit đầu tiên lỗi, kết nối bị bỏ và thử kết nối lại đúng một lần.
-     * Lỗi giữa chừng thì mất các phản hồi đã nhận.
+     * <p>Chỉ thử kết nối lại (đúng một lần) khi lần transmit đầu tiên của APDU đầu tiên lỗi,
+     * tức là chưa có lệnh nào đến được thẻ. Lỗi muộn hơn thì bỏ kết nối và ném ngay, không gửi lại,
+     * để một APDU (ví dụ VERIFY PIN) không bao giờ chạy hai lần. Các phản hồi đã nhận bị mất.
      */
     @Override
     public List<byte[]> transmitBatch(List<byte[]> apdus) throws NoCardException {
         synchronized (lock) {
-            for (int attempt = 0; ; attempt++) {
-                Card c = ensureCard();
-                try {
-                    return run(c.getBasicChannel(), apdus);
-                } catch (CardException | IllegalStateException | IOException e) {
-                    drop();
-                    if (attempt >= 1) {
-                        throw new NoCardException("card communication failed", e);
-                    }
+            return transmitWithRetry(new ChannelSource() {
+                @Override
+                public CardChannel open() throws NoCardException {
+                    return ensureCard().getBasicChannel();
+                }
+
+                @Override
+                public void drop() {
+                    PcscCardPort.this.drop();
+                }
+            }, apdus);
+        }
+    }
+
+    static List<byte[]> transmitWithRetry(ChannelSource src, List<byte[]> apdus) throws NoCardException {
+        for (int attempt = 0; ; attempt++) {
+            CardChannel ch = src.open();
+            try {
+                return run(ch, apdus);
+            } catch (RunFailure e) {
+                src.drop();
+                if (e.anySent || attempt >= 1) {
+                    throw new NoCardException("Giao tiếp với thẻ thất bại", e.getCause());
                 }
             }
         }
     }
 
-    private static List<byte[]> run(CardChannel ch, List<byte[]> apdus) throws CardException, IOException {
-        List<byte[]> out = new ArrayList<>();
-        for (byte[] apdu : apdus) {
-            ByteArrayOutputStream data = new ByteArrayOutputStream();
-            ResponseAPDU r = ch.transmit(new CommandAPDU(apdu));
-            int rounds = 0;
-            while (r.getSW1() == 0x61) {
-                if (++rounds > MAX_GET_RESPONSE) {
-                    throw new IOException("too many GET RESPONSE rounds");
+    private static List<byte[]> run(CardChannel ch, List<byte[]> apdus) throws RunFailure {
+        boolean anySent = false;
+        try {
+            List<byte[]> out = new ArrayList<>();
+            for (byte[] apdu : apdus) {
+                ByteArrayOutputStream data = new ByteArrayOutputStream();
+                ResponseAPDU r = ch.transmit(new CommandAPDU(apdu));
+                anySent = true;
+                int rounds = 0;
+                while (r.getSW1() == 0x61) {
+                    if (++rounds > MAX_GET_RESPONSE) {
+                        throw new IOException("Quá nhiều vòng GET RESPONSE");
+                    }
+                    data.write(r.getData(), 0, r.getData().length);
+                    int le = r.getSW2() == 0x00 ? 256 : r.getSW2();
+                    r = ch.transmit(new CommandAPDU(0x00, 0xC0, 0x00, 0x00, le));
                 }
                 data.write(r.getData(), 0, r.getData().length);
-                int le = r.getSW2() == 0x00 ? 256 : r.getSW2();
-                r = ch.transmit(new CommandAPDU(0x00, 0xC0, 0x00, 0x00, le));
+                data.write(r.getSW1());
+                data.write(r.getSW2());
+                out.add(data.toByteArray());
+                if (r.getSW() != 0x9000) {
+                    break;
+                }
             }
-            data.write(r.getData(), 0, r.getData().length);
-            data.write(r.getSW1());
-            data.write(r.getSW2());
-            out.add(data.toByteArray());
-            if (r.getSW() != 0x9000) {
-                break;
-            }
+            return out;
+        } catch (CardException | IllegalStateException | IOException e) {
+            throw new RunFailure(anySent, e);
         }
-        return out;
+    }
+
+    /** Ngắt kết nối thẻ (dùng khi tắt agent). An toàn khi gọi nhiều lần. */
+    public void close() {
+        synchronized (lock) {
+            drop();
+        }
     }
 
     @Override

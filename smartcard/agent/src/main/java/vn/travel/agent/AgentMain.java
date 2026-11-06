@@ -25,8 +25,20 @@ public final class AgentMain {
             }
         };
         AgentHttpServer server = new AgentHttpServer(cfg, port);
-        server.start();
-        Runtime.getRuntime().addShutdownHook(new Thread(server::stop));
+        try {
+            server.start();
+        } catch (java.net.BindException e) {
+            System.err.println("Không mở được cổng " + cfg.port() + " (đang bị chiếm). Đổi cổng bằng --port=N"
+                    + " hoặc tắt tiến trình đang dùng cổng này.");
+            System.exit(1);
+            return;
+        }
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            server.stop();
+            if (port instanceof PcscCardPort pcsc) {
+                pcsc.close();
+            }
+        }));
         System.out.println("Card Agent listening on http://127.0.0.1:" + server.boundPort() + " (mode=" + cfg.mode() + ")");
     }
 }

@@ -87,3 +87,6 @@ Kết quả chạy thử chế độ sim: `/v1/status` trả `cardPresent:true, 
 - [ ] Cắm thẻ đã cài CAP: SELECT + INFO trả `9000`.
 - [ ] Rút thẻ: transmit trả 503.
 - [ ] Cắm lại: trả `9000` mà không cần khởi động lại agent.
+
+Lưu ý: rút/cắm đầu đọc (nhất là đầu đọc cuối cùng) có thể làm dịch vụ PC/SC dừng, khi đó cần khởi động lại agent.
+Agent chưa có timeout cho thẻ: thẻ treo sẽ chặn các yêu cầu khác cho đến khi thẻ phản hồi.
