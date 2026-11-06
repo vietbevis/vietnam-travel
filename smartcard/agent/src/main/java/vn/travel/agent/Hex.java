@@ -1,0 +1,32 @@
+package vn.travel.agent;
+
+public final class Hex {
+    private static final char[] DIGITS = "0123456789ABCDEF".toCharArray();
+
+    private Hex() {}
+
+    public static byte[] decode(String s) {
+        if (s == null || (s.length() & 1) != 0) {
+            throw new IllegalArgumentException("hex length must be even");
+        }
+        byte[] out = new byte[s.length() / 2];
+        for (int i = 0; i < out.length; i++) {
+            int hi = Character.digit(s.charAt(2 * i), 16);
+            int lo = Character.digit(s.charAt(2 * i + 1), 16);
+            if (hi < 0 || lo < 0 || s.charAt(2 * i) > 'f' || s.charAt(2 * i + 1) > 'f') {
+                throw new IllegalArgumentException("invalid hex character");
+            }
+            out[i] = (byte) (hi << 4 | lo);
+        }
+        return out;
+    }
+
+    public static String encode(byte[] b) {
+        char[] c = new char[b.length * 2];
+        for (int i = 0; i < b.length; i++) {
+            c[2 * i] = DIGITS[(b[i] >> 4) & 0xF];
+            c[2 * i + 1] = DIGITS[b[i] & 0xF];
+        }
+        return new String(c);
+    }
+}

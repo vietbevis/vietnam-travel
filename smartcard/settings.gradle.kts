@@ -1,2 +1,2 @@
 rootProject.name = "smartcard"
-include("applet")
+include("applet", "agent")
