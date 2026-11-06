@@ -76,7 +76,9 @@ final class TicketStore {
             short b = (short) (i * SLOT);
             if (slots[b] != ST_EMPTY
                     && Util.arrayCompare(slots, (short) (b + 1), buf, keyOff, KEY_LEN) == 0) {
-                Util.arrayFill(slots, b, SLOT, (byte) 0);
+                for (short j = 0; j < SLOT; j++) {
+                    slots[(short) (b + j)] = 0;
+                }
             }
         }
         JCSystem.commitTransaction();
