@@ -97,9 +97,16 @@ class TestVectorsExport {
                 + "  \"resetPin\": { \"newPin\": \"" + NEW_PIN + "\", \"encPin\": \"" + hex(encPin) + "\" },\n"
                 + "  \"escrowKey\": \"" + hex(kEscrow) + "\"\n"
                 + "}\n";
-        Path out = Paths.get("..", "test-vectors", "vectors.json");
-        if (!Files.isDirectory(out.getParent())) {
-            out = Paths.get("smartcard", "test-vectors", "vectors.json");
+        Path out;
+        if (System.getProperty("writeVectors") != null) {
+            // ./gradlew :applet:test -PwriteVectors regenerates the committed file (random card key).
+            out = Paths.get("..", "test-vectors", "vectors.json");
+            if (!Files.isDirectory(out.getParent())) {
+                out = Paths.get("smartcard", "test-vectors", "vectors.json");
+            }
+        } else {
+            out = Files.createTempFile("vectors", ".json");
+            out.toFile().deleteOnExit();
         }
         Files.write(out, json.getBytes(StandardCharsets.US_ASCII));
 

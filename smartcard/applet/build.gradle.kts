@@ -23,6 +23,10 @@ tasks.compileTestJava {
 
 tasks.test {
     useJUnitPlatform()
+    // -PwriteVectors rewrites test-vectors/vectors.json (otherwise TestVectorsExport uses a temp file).
+    if (project.hasProperty("writeVectors")) {
+        systemProperty("writeVectors", "true")
+    }
 }
 
 // Builds build/travelcard.cap with ant-javacard (Java Card converter + verifier).
