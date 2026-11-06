@@ -157,4 +157,19 @@ public final class CardHarness {
         Arrays.fill(b, v);
         return b;
     }
+
+    /** Verifies a card signature (SHA256withRSA, e = 65537) against cardModulus using java.security. */
+    public boolean verifyCardSig(byte[] msg, byte[] sig) {
+        try {
+            java.security.PublicKey pk = java.security.KeyFactory.getInstance("RSA").generatePublic(
+                    new java.security.spec.RSAPublicKeySpec(
+                            new java.math.BigInteger(1, cardModulus), java.math.BigInteger.valueOf(65537)));
+            java.security.Signature v = java.security.Signature.getInstance("SHA256withRSA");
+            v.initVerify(pk);
+            v.update(msg);
+            return v.verify(sig);
+        } catch (java.security.GeneralSecurityException e) {
+            throw new IllegalStateException(e);
+        }
+    }
 }

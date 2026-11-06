@@ -55,7 +55,10 @@ class InitTest {
         assertEquals(0x00, c.ok(0x10, 0, 0, null)[17]);
     }
 
-    @Disabled("enabled in Task 3 (needs CHANGE_PIN)")
     @Test
-    void pubkeyMatchesInit() {}
+    void pubkeyMatchesInit() {
+        CardHarness c = CardHarness.fresh();
+        byte[] mod = c.activate();
+        org.junit.jupiter.api.Assertions.assertArrayEquals(mod, c.ok(0x32, 0, 0, null));
+    }
 }

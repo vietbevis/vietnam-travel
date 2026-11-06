@@ -18,6 +18,8 @@ public class TravelCardApplet extends Applet {
     private final byte[] cardId;
     // [0] cardType, [1] state
     private final byte[] status;
+    /** M_auth scratch (spec 3.2): 0x41 || nonce16 || cardId16 || txCounter4. */
+    private final byte[] authMsg;
 
     private static final short S_TYPE = 0;
     private static final short S_STATE = 1;
@@ -30,6 +32,7 @@ public class TravelCardApplet extends Applet {
         auth = new ServerAuth(serverKey);
         cardId = new byte[16];
         status = new byte[2];
+        authMsg = JCSystem.makeTransientByteArray((short) 37, JCSystem.CLEAR_ON_DESELECT);
         status[S_TYPE] = CardConst.TYPE_BLANK;
         status[S_STATE] = CardConst.STATE_CREATED;
     }
@@ -67,6 +70,12 @@ public class TravelCardApplet extends Applet {
             case CardConst.INS_GET_CHALLENGE:
                 auth.issueChallenge(buf, (short) 0);
                 apdu.setOutgoingAndSend((short) 0, (short) 16);
+                break;
+            case CardConst.INS_AUTHENTICATE:
+                authenticate(apdu);
+                break;
+            case CardConst.INS_GET_CARD_PUBKEY:
+                apdu.setOutgoingAndSend((short) 0, keys.getModulus(buf, (short) 0));
                 break;
             case CardConst.INS_SET_STATE:
                 setState(apdu);
@@ -133,6 +142,22 @@ public class TravelCardApplet extends Applet {
         }
         return auth.verifySigned(buf, ISO7816.OFFSET_CDATA, lc, buf[ISO7816.OFFSET_INS],
                 buf[ISO7816.OFFSET_P1], buf[ISO7816.OFFSET_P2], cardId);
+    }
+
+    private void authenticate(APDU apdu) {
+        byte[] buf = apdu.getBuffer();
+        short lc = (short) (buf[ISO7816.OFFSET_LC] & 0xFF);
+        if (lc != 16 || apdu.setIncomingAndReceive() != lc) {
+            ISOException.throwIt(CardConst.SW_WRONG_LENGTH);
+        }
+        authMsg[0] = 0x41;
+        Util.arrayCopyNonAtomic(buf, ISO7816.OFFSET_CDATA, authMsg, (short) 1, (short) 16);
+        Util.arrayCopyNonAtomic(cardId, (short) 0, authMsg, (short) 17, (short) 16);
+        // txCounter4: constant 0 until Task 7 wires the wallet counter.
+        Util.arrayFillNonAtomic(authMsg, (short) 33, (short) 4, (byte) 0);
+        Util.arrayCopyNonAtomic(authMsg, (short) 33, buf, (short) 0, (short) 4);
+        keys.sign(authMsg, (short) 0, (short) 37, buf, (short) 4);
+        apdu.setOutgoingAndSend((short) 0, (short) 132);
     }
 
     private void setState(APDU apdu) {
