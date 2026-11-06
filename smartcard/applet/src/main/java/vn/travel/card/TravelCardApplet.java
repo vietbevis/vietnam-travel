@@ -15,6 +15,7 @@ public class TravelCardApplet extends Applet {
     private final ServerAuth auth;
     private final SecureStore store;
     private final Wallet wallet;
+    private final TicketStore tickets;
     private final RSAPublicKey serverKey;
     private final byte[] exponent;
     private final byte[] cardId;
@@ -35,6 +36,7 @@ public class TravelCardApplet extends Applet {
         store = new SecureStore();
         cardId = new byte[16];
         wallet = new Wallet(keys, cardId);
+        tickets = new TicketStore();
         status = new byte[2];
         authMsg = JCSystem.makeTransientByteArray((short) 37, JCSystem.CLEAR_ON_DESELECT);
         status[S_TYPE] = CardConst.TYPE_BLANK;
@@ -125,8 +127,32 @@ public class TravelCardApplet extends Applet {
             case CardConst.INS_GET_RECEIPT:
                 getReceipt(apdu);
                 break;
+            case CardConst.INS_WRITE_TICKET:
+            case CardConst.INS_USE_TICKET:
+            case CardConst.INS_DELETE_TICKET:
+                ticketCmd(apdu, ins);
+                break;
+            case CardConst.INS_READ_TICKETS:
+                apdu.setOutgoingAndSend((short) 0, tickets.read(buf, (short) 0));
+                break;
             default:
                 ISOException.throwIt(CardConst.SW_INS_NOT_SUPPORTED);
+        }
+    }
+
+    private void ticketCmd(APDU apdu, byte ins) {
+        byte[] buf = apdu.getBuffer();
+        short payloadLen = receiveSigned(apdu);
+        short want = ins == CardConst.INS_WRITE_TICKET ? TicketStore.TICKET_LEN : TicketStore.KEY_LEN;
+        if (payloadLen != want) {
+            ISOException.throwIt(CardConst.SW_WRONG_LENGTH);
+        }
+        if (ins == CardConst.INS_WRITE_TICKET) {
+            tickets.write(buf, ISO7816.OFFSET_CDATA);
+        } else if (ins == CardConst.INS_USE_TICKET) {
+            tickets.use(buf, ISO7816.OFFSET_CDATA);
+        } else {
+            tickets.delete(buf, ISO7816.OFFSET_CDATA);
         }
     }
 
@@ -240,6 +266,7 @@ public class TravelCardApplet extends Applet {
             keys.clear();
             serverKey.clearKey();
             wallet.wipe();
+            tickets.wipe();
         } else if (target == CardConst.STATE_LOCKED) {
             pin.clearSession();
         }

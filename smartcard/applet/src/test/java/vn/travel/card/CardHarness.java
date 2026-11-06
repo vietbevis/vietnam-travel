@@ -149,6 +149,16 @@ public final class CardHarness {
         return r.getData();
     }
 
+    /** ticket33 = orderCode12 | tourId12 | departure8 | pax1. */
+    static byte[] ticket(String orderCode12, byte[] tourId12, String yyyymmdd, int pax) {
+        byte[] t = new byte[33];
+        System.arraycopy(ascii(orderCode12), 0, t, 0, 12);
+        System.arraycopy(tourId12, 0, t, 12, 12);
+        System.arraycopy(ascii(yyyymmdd), 0, t, 24, 8);
+        t[32] = (byte) pax;
+        return t;
+    }
+
     static byte[] ascii(String s) {
         return s.getBytes(java.nio.charset.StandardCharsets.US_ASCII);
     }
