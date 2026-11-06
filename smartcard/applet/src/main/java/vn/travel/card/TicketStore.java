@@ -68,17 +68,16 @@ final class TicketStore {
 
     /** Frees every slot (VALID or USED) holding the key. 6A88 if none. */
     void delete(byte[] buf, short keyOff) {
-        short s = find(buf, keyOff, ST_VALID);
-        short u = find(buf, keyOff, ST_USED);
-        if (s < 0 && u < 0) {
+        if (find(buf, keyOff, ST_VALID) < 0 && find(buf, keyOff, ST_USED) < 0) {
             ISOException.throwIt(CardConst.SW_NOT_FOUND);
         }
         JCSystem.beginTransaction();
-        if (s >= 0) {
-            clearSlot(s);
-        }
-        if (u >= 0) {
-            clearSlot(u);
+        for (short i = 0; i < CardConst.TICKET_SLOTS; i++) {
+            short b = (short) (i * SLOT);
+            if (slots[b] != ST_EMPTY
+                    && Util.arrayCompare(slots, (short) (b + 1), buf, keyOff, KEY_LEN) == 0) {
+                Util.arrayFill(slots, b, SLOT, (byte) 0);
+            }
         }
         JCSystem.commitTransaction();
     }
@@ -101,10 +100,6 @@ final class TicketStore {
 
     void wipe() {
         Util.arrayFillNonAtomic(slots, (short) 0, (short) slots.length, (byte) 0);
-    }
-
-    private void clearSlot(short b) {
-        Util.arrayFillNonAtomic(slots, b, SLOT, (byte) 0);
     }
 
     private short find(byte[] buf, short keyOff, byte status) {

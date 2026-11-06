@@ -95,6 +95,19 @@ class TicketTest {
     }
 
     @Test
+    void deleteClearsAllSlotsWithSameKey() {
+        CardHarness c = active();
+        c.signedOk(0x60, t(1));
+        c.signedOk(0x62, key(t(1)));
+        c.signedOk(0x60, t(1));
+        c.signedOk(0x62, key(t(1)));
+        assertEquals(2, read(c)[0]);
+        c.signedOk(0x63, key(t(1)));
+        assertEquals(0, read(c)[0]);
+        assertEquals(0x6A88, c.signed(0x63, 0, 0, key(t(1))).getSW());
+    }
+
+    @Test
     void deleteFreesFullCard() {
         CardHarness c = active();
         for (int i = 1; i <= 5; i++) {
