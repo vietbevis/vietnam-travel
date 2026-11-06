@@ -25,10 +25,29 @@ public final class CardHarness {
     private final AID aid;
 
     private CardHarness() {
+        this(TravelCardApplet.class);
+    }
+
+    CardHarness(Class<? extends javacard.framework.Applet> appletClass) {
         sim = new CardSimulator();
         aid = AIDUtil.create(APPLET_AID);
-        sim.installApplet(aid, TravelCardApplet.class);
+        sim.installApplet(aid, appletClass);
+        sim.installApplet(AIDUtil.create(OTHER_AID), OtherApplet.class);
         sim.selectApplet(aid);
+    }
+
+    static CardHarness fresh(Class<? extends javacard.framework.Applet> appletClass) {
+        return new CardHarness(appletClass);
+    }
+
+
+    /** Minimal applet used only to deselect ours. */
+    public static final class OtherApplet extends javacard.framework.Applet {
+        public static void install(byte[] b, short o, byte l) {
+            new OtherApplet().register();
+        }
+
+        public void process(javacard.framework.APDU apdu) {}
     }
 
     /** Fresh card with the applet installed and selected, in CREATED state. */
@@ -59,7 +78,7 @@ public final class CardHarness {
 
     /** Deselect by selecting another applet (or none), then select ours again. */
     public void reselect() {
-        sim.resetRuntime();
+        sim.selectApplet(AIDUtil.create(OTHER_AID));
         sim.selectApplet(aid);
     }
 

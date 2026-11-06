@@ -17,7 +17,7 @@ public class TravelCardApplet extends Applet {
     private static final short S_STATE = 1;
     private static final short S_MUST_CHANGE = 2;
 
-    private TravelCardApplet() {
+    TravelCardApplet() {
         pin = new OwnerPIN(CardConst.PIN_TRIES, CardConst.PIN_LEN);
         cardId = new byte[16];
         status = new byte[3];
