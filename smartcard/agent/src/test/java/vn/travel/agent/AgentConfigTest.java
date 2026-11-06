@@ -2,6 +2,8 @@ package vn.travel.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -30,5 +32,15 @@ class AgentConfigTest {
         assertEquals(31999, c.port());
         assertEquals("pcsc", c.mode());
         assertNull(c.reader());
+    }
+
+    @Test
+    void invalidPortThrowsVietnameseMessage() throws Exception {
+        Path f = dir.resolve("agent.properties");
+        Files.writeString(f, "port=abc\n");
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> AgentConfig.load(f, new String[0]));
+        assertTrue(e.getMessage().contains("Cổng không hợp lệ"));
+        assertThrows(IllegalArgumentException.class, () -> AgentConfig.load(dir.resolve("none"), new String[] {"--port=70000"}));
+        assertThrows(IllegalArgumentException.class, () -> AgentConfig.load(dir.resolve("none"), new String[] {"--port=x"}));
     }
 }

@@ -33,7 +33,7 @@ public record AgentConfig(int port, Set<String> allowedOrigins, String mode, Str
                 throw new UncheckedIOException(e);
             }
         }
-        int port = Integer.parseInt(p.getProperty("port", String.valueOf(DEFAULT_PORT)).trim());
+        int port = parsePort(p.getProperty("port", String.valueOf(DEFAULT_PORT)), "agent.properties");
         String mode = p.getProperty("mode", "pcsc").trim();
         String reader = p.getProperty("reader", "").trim();
         Set<String> origins = new LinkedHashSet<>();
@@ -47,10 +47,23 @@ public record AgentConfig(int port, Set<String> allowedOrigins, String mode, Str
                 if (a.equals("--sim")) {
                     mode = "sim";
                 } else if (a.startsWith("--port=")) {
-                    port = Integer.parseInt(a.substring("--port=".length()).trim());
+                    port = parsePort(a.substring("--port=".length()), "--port");
                 }
             }
         }
         return new AgentConfig(port, Set.copyOf(origins), mode, reader.isEmpty() ? null : reader);
+    }
+
+    private static int parsePort(String raw, String nguon) {
+        try {
+            int v = Integer.parseInt(raw.trim());
+            if (v < 0 || v > 65535) {
+                throw new NumberFormatException();
+            }
+            return v;
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(
+                    "Cổng không hợp lệ trong " + nguon + ": '" + raw.trim() + "' (cần số nguyên từ 0 đến 65535)");
+        }
     }
 }

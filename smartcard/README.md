@@ -64,3 +64,26 @@ Remove the applet (also resets a half-installed or broken card):
 
 `test-vectors/server-test-key.pem` is a **test-only** server key committed to the repo. Never use it to
 personalise real cards; production cards need a server key kept outside git (`keys/`).
+
+## Agent (cầu HTTP giữa trình duyệt và thẻ)
+
+Chạy ở chế độ giả lập (jCardSim, 4 slot), lắng nghe `http://127.0.0.1:31999`:
+
+```bash
+cd smartcard && ./gradlew :agent:run --args="--sim"
+```
+
+Chế độ đầu đọc thật: `./gradlew :agent:run` (đọc `smartcard/agent/agent.properties`, mặc định `mode=pcsc`).
+Tham số dòng lệnh: `--sim` ghi đè chế độ, `--port=N` ghi đè cổng.
+
+Điểm cuối: `GET /v1/status`, `POST /v1/transmit`, và (chỉ chế độ sim) `POST /v1/sim/slot`, `POST /v1/sim/reset`.
+Agent kiểm header `Host` (chỉ nhận `127.0.0.1:<cổng>` hoặc `localhost:<cổng>`) và `Origin` (danh sách `allowedOrigins`); sai thì trả 403.
+
+Kết quả chạy thử chế độ sim: `/v1/status` trả `cardPresent:true, slot:0`; SELECT + INFO đều `9000`; Origin lạ và Host lạ đều 403.
+
+### Checklist PC/SC (cần đầu đọc thật, chưa kiểm tra)
+
+- [ ] Chạy khi chưa cắm thẻ: `cardPresent` phải là `false`.
+- [ ] Cắm thẻ đã cài CAP: SELECT + INFO trả `9000`.
+- [ ] Rút thẻ: transmit trả 503.
+- [ ] Cắm lại: trả `9000` mà không cần khởi động lại agent.

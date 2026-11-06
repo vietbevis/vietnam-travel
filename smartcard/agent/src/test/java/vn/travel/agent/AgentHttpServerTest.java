@@ -56,7 +56,7 @@ class AgentHttpServerTest {
     }
 
     static {
-        System.setProperty("jdk.httpclient.allowRestrictedHeaders", "origin");
+        System.setProperty("jdk.httpclient.allowRestrictedHeaders", "origin,host");
     }
 
     HttpResponse<String> post(String path, String body) throws Exception {
@@ -247,5 +247,43 @@ class AgentHttpServerTest {
         public Integer slot() {
             return null;
         }
+    }
+
+    /** Cổng giả trả về phản hồi ngắn và tên đầu đọc null. */
+    static final class StubPort implements CardPort {
+        public List<byte[]> transmitBatch(List<byte[]> a) {
+            return List.of(new byte[] {0x61});
+        }
+        public String readerName() { return null; }
+        public boolean cardPresent() { return true; }
+        public Integer slot() { return null; }
+        public String mode() { return "pcsc"; }
+    }
+
+    @Test
+    void wrongHostRejected() throws Exception {
+        startSim();
+        for (String h : new String[] {"evil.example", "evil.example:" + server.boundPort(), "127.0.0.1:1"}) {
+            HttpRequest r = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + server.boundPort() + "/v1/status"))
+                    .header("Host", h).build();
+            assertEquals(403, http.send(r, HttpResponse.BodyHandlers.ofString()).statusCode(), h);
+        }
+        HttpRequest ok = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + server.boundPort() + "/v1/status"))
+                .header("Host", "localhost:" + server.boundPort()).build();
+        assertEquals(200, http.send(ok, HttpResponse.BodyHandlers.ofString()).statusCode());
+    }
+
+    @Test
+    void oversizedBodyIs400() throws Exception {
+        startSim();
+        String big = "{\"apdus\":[\"" + "A".repeat(AgentHttpServer.MAX_BODY + 10) + "\"]}";
+        assertEquals(400, post("/v1/transmit", big).statusCode());
+    }
+
+    @Test
+    void shortResponseIs500AndNullReaderIsEmpty() throws Exception {
+        start(new StubPort());
+        assertEquals("", json(call("GET", "/v1/status", null, null)).get("reader").getAsString());
+        assertEquals(500, post("/v1/transmit", apdus(SELECT)).statusCode());
     }
 }

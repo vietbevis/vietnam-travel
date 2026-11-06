@@ -63,7 +63,17 @@ public final class AgentHttpServer {
     /** Thứ tự xử lý: kiểm Origin, xử lý OPTIONS, rồi định tuyến. */
     private void handle(HttpExchange ex) throws IOException {
         try {
+            // Chống DNS-rebinding: chỉ chấp nhận Host là địa chỉ loopback kèm đúng cổng đang lắng nghe.
+            String host = ex.getRequestHeaders().getFirst("Host");
+            int bound = server.getAddress().getPort();
+            if (host == null || !(host.equals("127.0.0.1:" + bound) || host.equals("localhost:" + bound))) {
+                send(ex, 403, error("host"));
+                return;
+            }
             String origin = ex.getRequestHeaders().getFirst("Origin");
+            // Không có Origin nghĩa là không phải yêu cầu từ trang web trong trình duyệt
+            // (ví dụ curl hoặc công cụ nội bộ chạy cục bộ) nên cho qua; trình duyệt luôn gửi Origin
+            // với yêu cầu chéo nguồn nên không thể lợi dụng nhánh này.
             if (origin != null) {
                 if (!cfg.allowedOrigins().contains(origin)) {
                     send(ex, 403, error("origin"));
@@ -103,7 +113,8 @@ public final class AgentHttpServer {
                 requireMethod(ex, method, "GET");
                 JsonObject o = new JsonObject();
                 o.addProperty("mode", port.mode());
-                o.addProperty("reader", port.readerName());
+                String reader = port.readerName();
+                o.addProperty("reader", reader == null ? "" : reader);
                 o.addProperty("cardPresent", port.cardPresent());
                 Integer slot = port.slot();
                 o.add("slot", slot == null ? JsonNull.INSTANCE : new com.google.gson.JsonPrimitive(slot));
@@ -200,13 +211,12 @@ public final class AgentHttpServer {
             JsonObject item = new JsonObject();
             String sw;
             String data;
-            if (r.length >= 2) {
-                data = Hex.encode(Arrays.copyOfRange(r, 0, r.length - 2));
-                sw = Hex.encode(Arrays.copyOfRange(r, r.length - 2, r.length));
-            } else {
-                data = "";
-                sw = "6F00";
+            if (r.length < 2) {
+                // Phản hồi ngắn hơn 2 byte là lỗi của cổng thẻ, không bịa ra SW.
+                throw new IllegalStateException("short response");
             }
+            data = Hex.encode(Arrays.copyOfRange(r, 0, r.length - 2));
+            sw = Hex.encode(Arrays.copyOfRange(r, r.length - 2, r.length));
             item.addProperty("data", data);
             item.addProperty("sw", sw);
             out.add(item);
