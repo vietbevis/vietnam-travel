@@ -74,9 +74,11 @@ final class PinGuard {
     /** Throws 63Cx / 6983 unless the PIN at buf[off..+6] is correct. */
     private void checkPin(byte[] buf, short off) {
         if (pin.getTriesRemaining() == 0) {
+            clearSession();
             ISOException.throwIt(CardConst.SW_PIN_BLOCKED);
         }
         if (!pin.check(buf, off, CardConst.PIN_LEN)) {
+            clearSession();
             ISOException.throwIt((short) (CardConst.SW_PIN_FAILED_BASE | pin.getTriesRemaining()));
         }
     }
