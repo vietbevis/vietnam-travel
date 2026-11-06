@@ -21,6 +21,7 @@ public final class CardHarness {
         (byte) 0xF0, 0x54, 0x52, 0x41, 0x56, 0x45, 0x4C, 0x7F
     };
 
+    public byte[] cardModulus;
     private final CardSimulator sim;
     private final AID aid;
 
@@ -74,6 +75,18 @@ public final class CardHarness {
 
     public void assertSw(int expectedSw, int ins, int p1, int p2, byte[] data) {
         assertEquals(expectedSw, send(ins, p1, p2, data).getSW());
+    }
+
+    /** INIT with test server data; returns and stores the card modulus. */
+    public byte[] personalize(byte cardType) {
+        byte[] d = new byte[167];
+        System.arraycopy(CARD_ID, 0, d, 0, 16);
+        d[16] = cardType;
+        System.arraycopy(TestServer.modulus(), 0, d, 17, 128);
+        System.arraycopy(PIN.getBytes(java.nio.charset.StandardCharsets.US_ASCII), 0, d, 145, 6);
+        System.arraycopy(TestServer.escrowKey(CARD_ID), 0, d, 151, 16);
+        cardModulus = ok(0x01, 0, 0, d);
+        return cardModulus;
     }
 
     /** Deselect by selecting another applet (or none), then select ours again. */

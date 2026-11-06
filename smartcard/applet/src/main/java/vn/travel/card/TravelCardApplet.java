@@ -4,26 +4,32 @@ import javacard.framework.APDU;
 import javacard.framework.Applet;
 import javacard.framework.ISO7816;
 import javacard.framework.ISOException;
-import javacard.framework.OwnerPIN;
+import javacard.framework.JCSystem;
+import javacard.security.KeyBuilder;
+import javacard.security.RSAPublicKey;
 import javacard.framework.Util;
 
 public class TravelCardApplet extends Applet {
-    private final OwnerPIN pin;
+    private final PinGuard pin;
+    private final CardKeys keys;
+    private final RSAPublicKey serverKey;
+    private final byte[] exponent;
     private final byte[] cardId;
-    // [0] cardType, [1] state, [2] mustChangePin
+    // [0] cardType, [1] state
     private final byte[] status;
 
     private static final short S_TYPE = 0;
     private static final short S_STATE = 1;
-    private static final short S_MUST_CHANGE = 2;
 
     TravelCardApplet() {
-        pin = new OwnerPIN(CardConst.PIN_TRIES, CardConst.PIN_LEN);
+        pin = new PinGuard();
+        keys = new CardKeys();
+        serverKey = (RSAPublicKey) KeyBuilder.buildKey(KeyBuilder.TYPE_RSA_PUBLIC, KeyBuilder.LENGTH_RSA_1024, false);
+        exponent = new byte[] {0x01, 0x00, 0x01};
         cardId = new byte[16];
-        status = new byte[3];
+        status = new byte[2];
         status[S_TYPE] = CardConst.TYPE_BLANK;
         status[S_STATE] = CardConst.STATE_CREATED;
-        status[S_MUST_CHANGE] = 0;
     }
 
     public static void install(byte[] bArray, short bOffset, byte bLength) {
@@ -47,9 +53,48 @@ public class TravelCardApplet extends Applet {
             case CardConst.INS_GET_PUBLIC_INFO:
                 getPublicInfo(apdu);
                 break;
+            case CardConst.INS_INIT:
+                init(apdu);
+                break;
             default:
                 ISOException.throwIt(CardConst.SW_INS_NOT_SUPPORTED);
         }
+    }
+
+    private void init(APDU apdu) {
+        byte[] buf = apdu.getBuffer();
+        short lc = (short) (buf[ISO7816.OFFSET_LC] & 0xFF);
+        if (lc != 167) {
+            ISOException.throwIt(CardConst.SW_WRONG_LENGTH);
+        }
+        short got = apdu.setIncomingAndReceive();
+        if (got != lc) {
+            ISOException.throwIt(CardConst.SW_WRONG_LENGTH);
+        }
+        final short base = ISO7816.OFFSET_CDATA;
+        final short pinOff = (short) (base + 16 + 1 + 128);
+        final short escrowOff = (short) (pinOff + 6);
+        for (short i = 0; i < CardConst.PIN_LEN; i++) {
+            byte d = buf[(short) (pinOff + i)];
+            if (d < 0x30 || d > 0x39) {
+                ISOException.throwIt(CardConst.SW_BAD_DATA);
+            }
+        }
+        byte type = buf[(short) (base + 16)];
+        if (type != CardConst.TYPE_CUSTOMER && type != CardConst.TYPE_STAFF) {
+            ISOException.throwIt(CardConst.SW_BAD_DATA);
+        }
+        keys.generate();
+        JCSystem.beginTransaction();
+        Util.arrayCopy(buf, base, cardId, (short) 0, (short) 16);
+        status[S_TYPE] = type;
+        serverKey.setModulus(buf, (short) (base + 17), (short) 128);
+        serverKey.setExponent(exponent, (short) 0, (short) 3);
+        pin.init(buf, pinOff, escrowOff);
+        status[S_STATE] = CardConst.STATE_ACTIVE;
+        JCSystem.commitTransaction();
+        short n = keys.getModulus(buf, (short) 0);
+        apdu.setOutgoingAndSend((short) 0, n);
     }
 
     private static boolean knownIns(byte ins) {
@@ -121,7 +166,7 @@ public class TravelCardApplet extends Applet {
             case CardConst.STATE_ACTIVE:
                 if (ins == CardConst.INS_INIT) {
                     allowed = false;
-                } else if (status[S_MUST_CHANGE] != 0) {
+                } else if (pin.mustChangePin()) {
                     allowed = ins == CardConst.INS_GET_PUBLIC_INFO
                             || ins == CardConst.INS_VERIFY_PIN
                             || ins == CardConst.INS_CHANGE_PIN
@@ -146,7 +191,7 @@ public class TravelCardApplet extends Applet {
             ISOException.throwIt(CardConst.SW_CARD_TYPE);
         }
         if (needsPin(ins)) {
-            if (pin.getTriesRemaining() == 0) {
+            if (pin.triesRemaining() == 0) {
                 ISOException.throwIt(CardConst.SW_PIN_BLOCKED);
             }
             if (!pin.isValidated()) {
@@ -160,8 +205,8 @@ public class TravelCardApplet extends Applet {
         Util.arrayCopyNonAtomic(cardId, (short) 0, buf, (short) 0, (short) 16);
         buf[16] = status[S_TYPE];
         buf[17] = status[S_STATE];
-        buf[18] = status[S_MUST_CHANGE];
-        buf[19] = pin.getTriesRemaining();
+        buf[18] = pin.mustChangePin() ? (byte) 1 : (byte) 0;
+        buf[19] = pin.triesRemaining();
         buf[20] = CardConst.VERSION;
         apdu.setOutgoingAndSend((short) 0, (short) 21);
     }
