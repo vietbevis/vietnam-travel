@@ -8,9 +8,25 @@ Spec: `docs/superpowers/specs/2026-11-04-travel-smartcard-design.md` section 3.
     cd smartcard
     ./gradlew :applet:test
 
-Runs on the default JDK (17+; tested with 25) against jCardSim. `TestVectorsExport` regenerates
-`test-vectors/vectors.json` (consumed by the web side, plan 03 Task 1); the card key pair is random, so the
-file changes on every run.
+Runs on the default JDK (17+; tested with 25) against jCardSim. `TestVectorsExport` generates and
+self-verifies a vectors file in a temp location; the committed `test-vectors/vectors.json` (consumed by the web
+side, plan 03 Task 1) is only rewritten when you pass the flag (the card key pair is random, so the file changes):
+
+    ./gradlew :applet:test -PwriteVectors
+
+## APDU buffer requirement
+
+All command data is received with a `receiveBytes` loop (first reads may be partial on chained T=1/contactless)
+into a 260-byte transient staging buffer (5 + max Lc 255, `CLEAR_ON_DESELECT`), and the APDU buffer copy is
+wiped immediately. The card must provide the Java Card minimum APDU buffer of 133 bytes (header 5 + 128 per
+read); a transfer that does not deliver exactly Lc bytes fails with `6700`. The staging buffer is zeroed after
+every command.
+
+## TERMINATE is tear-safe
+
+SET_STATE 7F commits `state = TERMINATED` plus a `wipePending` flag in one small transaction, then runs the
+idempotent wipes (PIN/DEK/escrow, keys, wallet, tickets, 10 KB store) outside it and clears the flag. If power
+is lost in between, the wipe is re-run at the start of the next `process()` (including SELECT).
 
 ## Build the CAP
 

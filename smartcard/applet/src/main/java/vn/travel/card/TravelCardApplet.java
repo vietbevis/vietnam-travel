@@ -19,13 +19,18 @@ public class TravelCardApplet extends Applet {
     private final RSAPublicKey serverKey;
     private final byte[] exponent;
     private final byte[] cardId;
-    // [0] cardType, [1] state
+    // [0] cardType, [1] state, [2] wipePending (TERMINATE wipe not yet completed)
     private final byte[] status;
+    /** Transient staging buffer for command data (header bytes stay in the APDU buffer); see receiveAll. */
+    private final byte[] in;
     /** M_auth scratch (spec 3.2): 0x41 || nonce16 || cardId16 || txCounter4. */
     private final byte[] authMsg;
 
     private static final short S_TYPE = 0;
     private static final short S_STATE = 1;
+    private static final short S_WIPE = 2;
+    /** Staging size: 5 header offset + maximum Lc 255. */
+    private static final short IN_LEN = 260;
 
     TravelCardApplet() {
         pin = new PinGuard();
@@ -37,7 +42,8 @@ public class TravelCardApplet extends Applet {
         cardId = new byte[16];
         wallet = new Wallet(keys, cardId);
         tickets = new TicketStore();
-        status = new byte[2];
+        status = new byte[3];
+        in = JCSystem.makeTransientByteArray(IN_LEN, JCSystem.CLEAR_ON_DESELECT);
         authMsg = JCSystem.makeTransientByteArray((short) 37, JCSystem.CLEAR_ON_DESELECT);
         status[S_TYPE] = CardConst.TYPE_BLANK;
         status[S_STATE] = CardConst.STATE_CREATED;
@@ -48,6 +54,10 @@ public class TravelCardApplet extends Applet {
     }
 
     public void process(APDU apdu) {
+        if (status[S_WIPE] != 0) {
+            // An interrupted TERMINATE wipe (power loss) is completed before anything else.
+            completeWipe();
+        }
         if (selectingApplet()) {
             return;
         }
@@ -63,6 +73,7 @@ public class TravelCardApplet extends Applet {
             checkAllowed(ins);
             dispatch(apdu, buf, ins);
         } finally {
+            Util.arrayFillNonAtomic(in, (short) 0, IN_LEN, (byte) 0);
             if (ins == CardConst.INS_DEBIT) {
                 // Spec 3.3: DEBIT always drops the PIN session and DEK, whatever the outcome.
                 pin.clearSession();
@@ -148,11 +159,11 @@ public class TravelCardApplet extends Applet {
             ISOException.throwIt(CardConst.SW_WRONG_LENGTH);
         }
         if (ins == CardConst.INS_WRITE_TICKET) {
-            tickets.write(buf, ISO7816.OFFSET_CDATA);
+            tickets.write(in, ISO7816.OFFSET_CDATA);
         } else if (ins == CardConst.INS_USE_TICKET) {
-            tickets.use(buf, ISO7816.OFFSET_CDATA);
+            tickets.use(in, ISO7816.OFFSET_CDATA);
         } else {
-            tickets.delete(buf, ISO7816.OFFSET_CDATA);
+            tickets.delete(in, ISO7816.OFFSET_CDATA);
         }
     }
 
@@ -162,22 +173,51 @@ public class TravelCardApplet extends Applet {
         if (payloadLen != 12) {
             ISOException.throwIt(CardConst.SW_WRONG_LENGTH);
         }
-        return credit ? wallet.credit(buf, ISO7816.OFFSET_CDATA, buf, (short) 0)
-                : wallet.debit(buf, ISO7816.OFFSET_CDATA, buf, (short) 0);
+        return credit ? wallet.credit(in, ISO7816.OFFSET_CDATA, buf, (short) 0)
+                : wallet.debit(in, ISO7816.OFFSET_CDATA, buf, (short) 0);
     }
 
     private void getReceipt(APDU apdu) {
         byte[] buf = apdu.getBuffer();
         short lc = (short) (buf[ISO7816.OFFSET_LC] & 0xFF);
-        if (lc != 8 || apdu.setIncomingAndReceive() != lc) {
+        if (lc != 8) {
             ISOException.throwIt(CardConst.SW_WRONG_LENGTH);
         }
-        apdu.setOutgoingAndSend((short) 0, wallet.receipt(buf, ISO7816.OFFSET_CDATA, buf, (short) 0));
+        receiveAll(apdu, lc);
+        apdu.setOutgoingAndSend((short) 0, wallet.receipt(in, ISO7816.OFFSET_CDATA, buf, (short) 0));
     }
 
     public void deselect() {
         auth.clear();
         pin.clearSession();
+    }
+
+    /**
+     * Receives all Lc data bytes (looping over receiveBytes, since a first read may be partial on
+     * chained T=1 / contactless) into the transient staging buffer at ISO7816.OFFSET_CDATA, and wipes
+     * every received chunk from the APDU buffer. The APDU buffer must hold at least 5 + 128 bytes
+     * (Java Card minimum is 133); a short or stalled transfer fails with 6700. Handlers read the
+     * data from {@code in}; the staging buffer is zeroed in process() on every exit path.
+     */
+    private void receiveAll(APDU apdu, short lc) {
+        byte[] buf = apdu.getBuffer();
+        short got = apdu.setIncomingAndReceive();
+        short total = 0;
+        while (got > 0) {
+            if ((short) (total + got) > lc) {
+                got = (short) (lc - total);
+            }
+            Util.arrayCopyNonAtomic(buf, ISO7816.OFFSET_CDATA, in, (short) (ISO7816.OFFSET_CDATA + total), got);
+            Util.arrayFillNonAtomic(buf, ISO7816.OFFSET_CDATA, got, (byte) 0);
+            total = (short) (total + got);
+            if (total >= lc) {
+                break;
+            }
+            got = apdu.receiveBytes(ISO7816.OFFSET_CDATA);
+        }
+        if (total != lc) {
+            ISOException.throwIt(CardConst.SW_WRONG_LENGTH);
+        }
     }
 
     private short receivePins(APDU apdu, short expected) {
@@ -186,11 +226,9 @@ public class TravelCardApplet extends Applet {
         if (lc != expected) {
             ISOException.throwIt(CardConst.SW_WRONG_LENGTH);
         }
-        if (apdu.setIncomingAndReceive() != lc) {
-            ISOException.throwIt(CardConst.SW_WRONG_LENGTH);
-        }
+        receiveAll(apdu, lc);
         for (short i = 0; i < lc; i++) {
-            byte d = buf[(short) (ISO7816.OFFSET_CDATA + i)];
+            byte d = in[(short) (ISO7816.OFFSET_CDATA + i)];
             if (d < 0x30 || d > 0x39) {
                 ISOException.throwIt(CardConst.SW_BAD_DATA);
             }
@@ -199,46 +237,38 @@ public class TravelCardApplet extends Applet {
     }
 
     private void verifyPin(APDU apdu) {
-        byte[] buf = apdu.getBuffer();
         short off = receivePins(apdu, CardConst.PIN_LEN);
-        try {
-            pin.verify(buf, off);
-        } finally {
-            Util.arrayFillNonAtomic(buf, off, CardConst.PIN_LEN, (byte) 0);
-        }
+        pin.verify(in, off);
     }
 
     private void changePin(APDU apdu) {
-        byte[] buf = apdu.getBuffer();
         short off = receivePins(apdu, (short) (2 * CardConst.PIN_LEN));
-        try {
-            pin.change(buf, off, (short) (off + CardConst.PIN_LEN));
-        } finally {
-            Util.arrayFillNonAtomic(buf, off, (short) (2 * CardConst.PIN_LEN), (byte) 0);
-        }
+        pin.change(in, off, (short) (off + CardConst.PIN_LEN));
     }
 
     /** Receives the whole command data and verifies the server signature; returns the payload length. */
     private short receiveSigned(APDU apdu) {
         byte[] buf = apdu.getBuffer();
         short lc = (short) (buf[ISO7816.OFFSET_LC] & 0xFF);
-        short got = apdu.setIncomingAndReceive();
-        if (got != lc) {
+        try {
+            receiveAll(apdu, lc);
+        } catch (ISOException e) {
             auth.clear();
-            ISOException.throwIt(CardConst.SW_WRONG_LENGTH);
+            throw e;
         }
-        return auth.verifySigned(buf, ISO7816.OFFSET_CDATA, lc, buf[ISO7816.OFFSET_INS],
+        return auth.verifySigned(in, ISO7816.OFFSET_CDATA, lc, buf[ISO7816.OFFSET_INS],
                 buf[ISO7816.OFFSET_P1], buf[ISO7816.OFFSET_P2], cardId);
     }
 
     private void authenticate(APDU apdu) {
         byte[] buf = apdu.getBuffer();
         short lc = (short) (buf[ISO7816.OFFSET_LC] & 0xFF);
-        if (lc != 16 || apdu.setIncomingAndReceive() != lc) {
+        if (lc != 16) {
             ISOException.throwIt(CardConst.SW_WRONG_LENGTH);
         }
+        receiveAll(apdu, lc);
         authMsg[0] = 0x41;
-        Util.arrayCopyNonAtomic(buf, ISO7816.OFFSET_CDATA, authMsg, (short) 1, (short) 16);
+        Util.arrayCopyNonAtomic(in, ISO7816.OFFSET_CDATA, authMsg, (short) 1, (short) 16);
         Util.arrayCopyNonAtomic(cardId, (short) 0, authMsg, (short) 17, (short) 16);
         wallet.counter(authMsg, (short) 33);
         Util.arrayCopyNonAtomic(authMsg, (short) 33, buf, (short) 0, (short) 4);
@@ -260,23 +290,34 @@ public class TravelCardApplet extends Applet {
         if (target == status[S_STATE]) {
             return;
         }
-        JCSystem.beginTransaction();
         if (target == CardConst.STATE_TERMINATED) {
-            pin.wipe();
-            keys.clear();
-            serverKey.clearKey();
-            wallet.wipe();
-            tickets.wipe();
-        } else if (target == CardConst.STATE_LOCKED) {
+            // Commit only the state flip + wipePending (small, tear-safe). The wipes are not
+            // journaled (arrayFillNonAtomic, key clearing, OwnerPIN counter), so they run outside
+            // the transaction and are idempotent; process() re-runs them while wipePending is set.
+            JCSystem.beginTransaction();
+            status[S_STATE] = CardConst.STATE_TERMINATED;
+            status[S_WIPE] = 1;
+            JCSystem.commitTransaction();
+            completeWipe();
+            return;
+        }
+        JCSystem.beginTransaction();
+        if (target == CardConst.STATE_LOCKED) {
             pin.clearSession();
         }
         status[S_STATE] = target;
         JCSystem.commitTransaction();
-        if (target == CardConst.STATE_TERMINATED) {
-            // Outside the transaction (10 KB exceeds a real card's commit buffer). The state is
-            // already TERMINATED and the DEK gone, so a partial wipe leaves only ciphertext.
-            store.wipe();
-        }
+    }
+
+    /** Idempotent TERMINATE wipe of all secrets and user data; clears wipePending last. */
+    void completeWipe() {
+        pin.wipe();
+        keys.clear();
+        serverKey.clearKey();
+        wallet.wipe();
+        tickets.wipe();
+        store.wipe();
+        status[S_WIPE] = 0;
     }
 
     private void readData(APDU apdu) {
@@ -298,10 +339,11 @@ public class TravelCardApplet extends Applet {
         byte target = buf[ISO7816.OFFSET_P1];
         SecureStore.checkTarget(target);
         short lc = (short) (buf[ISO7816.OFFSET_LC] & 0xFF);
-        if (lc != 2 || apdu.setIncomingAndReceive() != lc) {
+        if (lc != 2) {
             ISOException.throwIt(CardConst.SW_WRONG_LENGTH);
         }
-        store.begin(target, Util.getShort(buf, ISO7816.OFFSET_CDATA));
+        receiveAll(apdu, lc);
+        store.begin(target, Util.getShort(in, ISO7816.OFFSET_CDATA));
     }
 
     private void writeChunk(APDU apdu) {
@@ -309,10 +351,8 @@ public class TravelCardApplet extends Applet {
         byte target = buf[ISO7816.OFFSET_P1];
         SecureStore.checkTarget(target);
         short lc = (short) (buf[ISO7816.OFFSET_LC] & 0xFF);
-        if (apdu.setIncomingAndReceive() != lc) {
-            ISOException.throwIt(CardConst.SW_WRONG_LENGTH);
-        }
-        store.writeChunk(target, buf[ISO7816.OFFSET_P2], buf, ISO7816.OFFSET_CDATA, lc, pin.dek());
+        receiveAll(apdu, lc);
+        store.writeChunk(target, buf[ISO7816.OFFSET_P2], in, ISO7816.OFFSET_CDATA, lc, pin.dek());
     }
 
     private void commitWrite(APDU apdu) {
@@ -323,20 +363,15 @@ public class TravelCardApplet extends Applet {
         if (payloadLen != 34) {
             ISOException.throwIt(CardConst.SW_WRONG_LENGTH);
         }
-        store.commit(target, buf, ISO7816.OFFSET_CDATA, Util.getShort(buf, (short) (ISO7816.OFFSET_CDATA + 32)));
+        store.commit(target, in, ISO7816.OFFSET_CDATA, Util.getShort(in, (short) (ISO7816.OFFSET_CDATA + 32)));
     }
 
     private void resetPin(APDU apdu) {
-        byte[] buf = apdu.getBuffer();
         short payloadLen = receiveSigned(apdu);
-        try {
-            if (payloadLen != 16) {
-                ISOException.throwIt(CardConst.SW_WRONG_LENGTH);
-            }
-            pin.resetWithEscrow(buf, ISO7816.OFFSET_CDATA);
-        } finally {
-            Util.arrayFillNonAtomic(buf, ISO7816.OFFSET_CDATA, (short) 16, (byte) 0);
+        if (payloadLen != 16) {
+            ISOException.throwIt(CardConst.SW_WRONG_LENGTH);
         }
+        pin.resetWithEscrow(in, ISO7816.OFFSET_CDATA);
     }
 
     private void init(APDU apdu) {
@@ -345,33 +380,29 @@ public class TravelCardApplet extends Applet {
         if (lc != 167) {
             ISOException.throwIt(CardConst.SW_WRONG_LENGTH);
         }
-        short got = apdu.setIncomingAndReceive();
-        if (got != lc) {
-            ISOException.throwIt(CardConst.SW_WRONG_LENGTH);
-        }
+        receiveAll(apdu, lc);
         final short base = ISO7816.OFFSET_CDATA;
         final short pinOff = (short) (base + 16 + 1 + 128);
         final short escrowOff = (short) (pinOff + 6);
         for (short i = 0; i < CardConst.PIN_LEN; i++) {
-            byte d = buf[(short) (pinOff + i)];
+            byte d = in[(short) (pinOff + i)];
             if (d < 0x30 || d > 0x39) {
                 ISOException.throwIt(CardConst.SW_BAD_DATA);
             }
         }
-        byte type = buf[(short) (base + 16)];
+        byte type = in[(short) (base + 16)];
         if (type != CardConst.TYPE_CUSTOMER && type != CardConst.TYPE_STAFF) {
             ISOException.throwIt(CardConst.SW_BAD_DATA);
         }
         keys.generate();
         JCSystem.beginTransaction();
-        Util.arrayCopy(buf, base, cardId, (short) 0, (short) 16);
+        Util.arrayCopy(in, base, cardId, (short) 0, (short) 16);
         status[S_TYPE] = type;
-        serverKey.setModulus(buf, (short) (base + 17), (short) 128);
+        serverKey.setModulus(in, (short) (base + 17), (short) 128);
         serverKey.setExponent(exponent, (short) 0, (short) 3);
-        pin.init(buf, pinOff, escrowOff);
+        pin.init(in, pinOff, escrowOff);
         status[S_STATE] = CardConst.STATE_ACTIVE;
         JCSystem.commitTransaction();
-        Util.arrayFillNonAtomic(buf, pinOff, (short) 22, (byte) 0);
         short n = keys.getModulus(buf, (short) 0);
         apdu.setOutgoingAndSend((short) 0, n);
     }

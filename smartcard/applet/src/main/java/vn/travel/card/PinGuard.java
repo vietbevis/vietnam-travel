@@ -12,6 +12,12 @@ import javacardx.crypto.Cipher;
 
 /** PIN, DEK wrapping (PIN-derived KEK and escrow key) and session DEK. */
 final class PinGuard {
+    /** tmp: [0..15] DEK, [16..47] SHA-256 output, [48..63] new salt, [64..79] new encDekPin, [80..95] new encDekEscrow. */
+    private static final short TMP_LEN = 96;
+    private static final short NEW_SALT = 48;
+    private static final short NEW_ENC_PIN = 64;
+    private static final short NEW_ENC_ESC = 80;
+
     private final OwnerPIN pin;
     private final byte[] salt;
     private final byte[] encDekPin;
@@ -36,39 +42,44 @@ final class PinGuard {
                 KeyBuilder.TYPE_AES_TRANSIENT_DESELECT, KeyBuilder.LENGTH_AES_128, false);
         kekKey = (AESKey) KeyBuilder.buildKey(
                 KeyBuilder.TYPE_AES_TRANSIENT_DESELECT, KeyBuilder.LENGTH_AES_128, false);
-        tmp = JCSystem.makeTransientByteArray((short) 48, JCSystem.CLEAR_ON_DESELECT);
+        tmp = JCSystem.makeTransientByteArray(TMP_LEN, JCSystem.CLEAR_ON_DESELECT);
         sha = MessageDigest.getInstance(MessageDigest.ALG_SHA_256, false);
         ecb = Cipher.getInstance(Cipher.ALG_AES_BLOCK_128_ECB_NOPAD, false);
         rnd = RandomData.getInstance(RandomData.ALG_SECURE_RANDOM);
     }
 
-    /** buf[pinOff..+6] = PIN digits, buf[escrowOff..+16] = escrow key. */
+    /**
+     * buf[pinOff..+6] = PIN digits, buf[escrowOff..+16] = escrow key. All crypto output goes to the
+     * transient tmp first; the persistent fields are only written by Util.arrayCopy (journaled).
+     */
     void init(byte[] buf, short pinOff, short escrowOff) {
         // DEK -> tmp[0..15]
         rnd.generateData(tmp, (short) 0, (short) 16);
-        rnd.generateData(salt, (short) 0, (short) 16);
-        // wrap with PIN-derived KEK
-        deriveKek(buf, pinOff);
-        wrap(kekKey, encDekPin);
-        // wrap with escrow key
+        rnd.generateData(tmp, NEW_SALT, (short) 16);
+        deriveKek(tmp, NEW_SALT, buf, pinOff);
+        wrap(kekKey, NEW_ENC_PIN);
         escrowKey.setKey(buf, escrowOff);
-        wrap(escrowKey, encDekEscrow);
-        Util.arrayFillNonAtomic(tmp, (short) 0, (short) 48, (byte) 0);
+        wrap(escrowKey, NEW_ENC_ESC);
+        Util.arrayCopy(tmp, NEW_SALT, salt, (short) 0, (short) 16);
+        Util.arrayCopy(tmp, NEW_ENC_PIN, encDekPin, (short) 0, (short) 16);
+        Util.arrayCopy(tmp, NEW_ENC_ESC, encDekEscrow, (short) 0, (short) 16);
+        Util.arrayFillNonAtomic(tmp, (short) 0, TMP_LEN, (byte) 0);
         pin.update(buf, pinOff, CardConst.PIN_LEN);
         mustChange[0] = 1;
     }
 
-    private void deriveKek(byte[] buf, short pinOff) {
+    /** KEK = SHA-256(salt16 || pin6)[0..15] -> kekKey (hash lands in tmp[16..47]). */
+    private void deriveKek(byte[] saltBuf, short saltOff, byte[] buf, short pinOff) {
         sha.reset();
-        sha.update(salt, (short) 0, (short) 16);
+        sha.update(saltBuf, saltOff, (short) 16);
         sha.doFinal(buf, pinOff, CardConst.PIN_LEN, tmp, (short) 16);
         kekKey.setKey(tmp, (short) 16);
     }
 
-    /** Encrypts tmp[0..15] (the DEK) under key into dest. */
-    private void wrap(AESKey key, byte[] dest) {
+    /** Encrypts tmp[0..15] (the DEK) under key into tmp[destOff..+16]. */
+    private void wrap(AESKey key, short destOff) {
         ecb.init(key, Cipher.MODE_ENCRYPT);
-        ecb.doFinal(tmp, (short) 0, (short) 16, dest, (short) 0);
+        ecb.doFinal(tmp, (short) 0, (short) 16, tmp, destOff);
     }
 
     /** Throws 63Cx / 6983 unless the PIN at buf[off..+6] is correct. */
@@ -85,7 +96,7 @@ final class PinGuard {
 
     /** Unwraps encDekPin with the KEK from the PIN at buf[off..+6] into tmp[0..15]. */
     private void unwrapDek(byte[] buf, short off) {
-        deriveKek(buf, off);
+        deriveKek(salt, (short) 0, buf, off);
         ecb.init(kekKey, Cipher.MODE_DECRYPT);
         ecb.doFinal(encDekPin, (short) 0, (short) 16, tmp, (short) 0);
         kekKey.clearKey();
@@ -97,7 +108,7 @@ final class PinGuard {
         checkPin(buf, off);
         unwrapDek(buf, off);
         dekKey.setKey(tmp, (short) 0);
-        Util.arrayFillNonAtomic(tmp, (short) 0, (short) 48, (byte) 0);
+        Util.arrayFillNonAtomic(tmp, (short) 0, TMP_LEN, (byte) 0);
     }
 
     /** CHANGE_PIN: re-wraps the DEK under a KEK from the new PIN and a fresh salt. */
@@ -105,10 +116,12 @@ final class PinGuard {
         checkPin(buf, oldOff);
         unwrapDek(buf, oldOff);
         dekKey.clearKey();
+        rnd.generateData(tmp, NEW_SALT, (short) 16);
+        deriveKek(tmp, NEW_SALT, buf, newOff);
+        wrap(kekKey, NEW_ENC_PIN);
         JCSystem.beginTransaction();
-        rnd.generateData(salt, (short) 0, (short) 16);
-        deriveKek(buf, newOff);
-        wrap(kekKey, encDekPin);
+        Util.arrayCopy(tmp, NEW_SALT, salt, (short) 0, (short) 16);
+        Util.arrayCopy(tmp, NEW_ENC_PIN, encDekPin, (short) 0, (short) 16);
         pin.update(buf, newOff, CardConst.PIN_LEN);
         mustChange[0] = 0;
         JCSystem.commitTransaction();
@@ -127,7 +140,7 @@ final class PinGuard {
     void clearSession() {
         dekKey.clearKey();
         kekKey.clearKey();
-        Util.arrayFillNonAtomic(tmp, (short) 0, (short) 48, (byte) 0);
+        Util.arrayFillNonAtomic(tmp, (short) 0, TMP_LEN, (byte) 0);
         pin.reset();
     }
 
@@ -165,10 +178,12 @@ final class PinGuard {
         // DEK -> tmp[0..15]
         ecb.init(escrowKey, Cipher.MODE_DECRYPT);
         ecb.doFinal(encDekEscrow, (short) 0, (short) 16, tmp, (short) 0);
+        rnd.generateData(tmp, NEW_SALT, (short) 16);
+        deriveKek(tmp, NEW_SALT, buf, encPinOff);
+        wrap(kekKey, NEW_ENC_PIN);
         JCSystem.beginTransaction();
-        rnd.generateData(salt, (short) 0, (short) 16);
-        deriveKek(buf, encPinOff);
-        wrap(kekKey, encDekPin);
+        Util.arrayCopy(tmp, NEW_SALT, salt, (short) 0, (short) 16);
+        Util.arrayCopy(tmp, NEW_ENC_PIN, encDekPin, (short) 0, (short) 16);
         pin.update(buf, encPinOff, CardConst.PIN_LEN);
         pin.resetAndUnblock();
         mustChange[0] = 1;
@@ -177,7 +192,7 @@ final class PinGuard {
         clearSession();
     }
 
-    /** TERMINATE: destroys all key material and leaves the PIN random and blocked (never a known PIN). */
+    /** TERMINATE: destroys all key material (idempotent, runs outside any transaction; re-run until the wipe flag clears) and leaves the PIN random and blocked (never a known PIN). */
     void wipe() {
         clearSession();
         escrowKey.clearKey();
