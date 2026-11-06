@@ -112,7 +112,7 @@ final class SecureStore {
         if (len != expected) {
             ISOException.throwIt(CardConst.SW_WRONG_LENGTH);
         }
-        short padded = (short) ((len + 15) & 0xFFF0);
+        short padded = (short) ((short) (len + 15) & 0x7FF0);
         Util.arrayCopyNonAtomic(buf, off, chunkBuf, (short) 0, len);
         if (padded > len) {
             Util.arrayFillNonAtomic(chunkBuf, len, (short) (padded - len), (byte) 0);
@@ -142,7 +142,7 @@ final class SecureStore {
         }
         short decl = Util.getShort(sess, S_DECL);
         boolean ok = Util.getShort(sess, S_WRITTEN) == decl && decl == len
-                && sess[S_NEXT] == (byte) ((len + CardConst.CHUNK - 1) / CardConst.CHUNK);
+                && sess[S_NEXT] == (byte) ((short) (len + CardConst.CHUNK - 1) / CardConst.CHUNK);
         digest.doFinal(hash, (short) 0, (short) 0, hash, (short) 0);
         ok = ok && Util.arrayCompare(hash, (short) 0, buf, hashOff, (short) 32) == 0;
         endSession();
@@ -165,7 +165,7 @@ final class SecureStore {
         if (len == 0) {
             ISOException.throwIt(CardConst.SW_NOT_FOUND);
         }
-        short chunks = (short) ((len + CardConst.CHUNK - 1) / CardConst.CHUNK);
+        short chunks = (short) ((short) (len + CardConst.CHUNK - 1) / CardConst.CHUNK);
         if (index < 0 || index >= chunks) {
             ISOException.throwIt(CardConst.SW_BAD_P1P2);
         }
@@ -174,7 +174,7 @@ final class SecureStore {
         if (n > CardConst.CHUNK) {
             n = CardConst.CHUNK;
         }
-        short padded = (short) ((n + 15) & 0xFFF0);
+        short padded = (short) ((short) (n + 15) & 0x7FF0);
         Util.arrayCopyNonAtomic(iv, ivOff(target), ivTmp, (short) 0, (short) 16);
         ivTmp[15] = (byte) (ivTmp[15] ^ index);
         cipher.init(dek, Cipher.MODE_DECRYPT, ivTmp, (short) 0, (short) 16);
