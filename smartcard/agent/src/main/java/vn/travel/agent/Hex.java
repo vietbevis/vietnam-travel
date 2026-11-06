@@ -1,10 +1,16 @@
 package vn.travel.agent;
 
+/** Tiện ích chuyển đổi giữa mảng byte và chuỗi hex. */
 public final class Hex {
     private static final char[] DIGITS = "0123456789ABCDEF".toCharArray();
 
     private Hex() {}
 
+    /**
+     * Giải mã chuỗi hex (chấp nhận chữ hoa và thường). Chuỗi rỗng {@code ""} trả về mảng rỗng.
+     *
+     * @throws IllegalArgumentException nếu chuỗi null, độ dài lẻ hoặc chứa ký tự không phải hex
+     */
     public static byte[] decode(String s) {
         if (s == null || (s.length() & 1) != 0) {
             throw new IllegalArgumentException("hex length must be even");
@@ -21,6 +27,7 @@ public final class Hex {
         return out;
     }
 
+    /** Mã hóa mảng byte thành chuỗi hex chữ hoa; mảng rỗng cho chuỗi rỗng. */
     public static String encode(byte[] b) {
         char[] c = new char[b.length * 2];
         for (int i = 0; i < b.length; i++) {

@@ -1,6 +1,7 @@
 package vn.travel.agent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -11,6 +12,8 @@ import org.junit.jupiter.api.Test;
 
 class SimCardPortTest {
     static final byte[] SELECT = Hex.decode("00A4040008F054524156454C01");
+    /** Lệnh cần PIN: thẻ khách hàng đã INIT nên GET_BALANCE trả 9000 khi có phiên PIN (READ_DATA trả 6A88 vì chưa ghi dữ liệu). */
+    static final byte[] NEEDS_PIN = Hex.decode("8050000000");
     static final byte[] INFO = Hex.decode("8010000000");
 
     static String swOf(byte[] r) {
@@ -66,13 +69,21 @@ class SimCardPortTest {
 
     @Test void switchSlotResetsSession() throws Exception {
         var p = new SimCardPort(4);
-        var r = p.transmitBatch(List.of(SELECT, init(), verify()));
-        assertEquals("9000", swOf(r.get(2)));
+        // sau INIT thẻ buộc đổi PIN (mustChangePin) nên phải CHANGE_PIN trước khi lệnh cần PIN được phép
+        byte[] changePin = Hex.decode("802100000C" + Hex.encode("482915".getBytes()) + Hex.encode("715043".getBytes()));
+        byte[] verifyNew = Hex.decode("8020000006" + Hex.encode("715043".getBytes()));
+        var r = p.transmitBatch(List.of(SELECT, init(), changePin, verifyNew));
+        assertEquals(4, r.size());
+        assertEquals("9000", swOf(r.get(3)));
+        // đối chứng: ngay sau VERIFY đúng PIN thì lệnh cần PIN được phép
+        var before = p.transmitBatch(List.of(NEEDS_PIN));
+        assertEquals("9000", swOf(before.get(0)));
         p.selectSlot(1);
         p.selectSlot(0);
-        var after = p.transmitBatch(List.of(SELECT, Hex.decode("8040000000")));
-        assertEquals(2, after.size());
-        assertNotEquals("9000", swOf(after.get(1)));
+        // không SELECT lại: phiên PIN đã mất nên applet trả SW_PIN_NOT_VERIFIED (6982)
+        var after = p.transmitBatch(List.of(NEEDS_PIN));
+        assertEquals(1, after.size());
+        assertEquals("6982", swOf(after.get(0)));
     }
 
     @Test void resetSlotBlanksCard() throws Exception {
@@ -95,6 +106,6 @@ class SimCardPortTest {
         assertThrows(NoCardException.class, () -> p.transmitBatch(List.of(SELECT)));
         // lần gọi thứ hai thử lại (không giữ trạng thái cũ) và vẫn báo no-card, không bao giờ sập
         assertThrows(NoCardException.class, () -> p.transmitBatch(List.of(SELECT)));
-        assertEquals(false, p.cardPresent());
+        assertFalse(p.cardPresent());
     }
 }
