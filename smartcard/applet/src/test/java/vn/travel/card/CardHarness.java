@@ -172,4 +172,68 @@ public final class CardHarness {
             throw new IllegalStateException(e);
         }
     }
+
+    public static byte[] sha256(byte[] d) {
+        try {
+            return java.security.MessageDigest.getInstance("SHA-256").digest(d);
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    public ResponseAPDU beginWrite(int target, int totalLen) {
+        return send(0x41, target, 0, new byte[] {(byte) (totalLen >> 8), (byte) totalLen});
+    }
+
+    public ResponseAPDU writeChunk(int target, int index, byte[] chunk) {
+        return send(0x42, target, index, chunk);
+    }
+
+    /** COMMIT_WRITE with payload sha256_32 || len2, signed by the test server. */
+    public ResponseAPDU commit(int target, byte[] hash, int len) {
+        byte[] p = Arrays.copyOf(hash, 34);
+        p[32] = (byte) (len >> 8);
+        p[33] = (byte) len;
+        return signed(0x43, target, 0, p);
+    }
+
+    /** BEGIN, WRITE each chunk, signed COMMIT; every step must return 9000. */
+    public void writeTarget(int target, byte[] data) {
+        ok(0x41, target, 0, new byte[] {(byte) (data.length >> 8), (byte) data.length});
+        for (int i = 0, idx = 0; i < data.length; i += 224, idx++) {
+            ok(0x42, target, idx, Arrays.copyOfRange(data, i, Math.min(data.length, i + 224)));
+        }
+        ResponseAPDU r = commit(target, sha256(data), data.length);
+        assertEquals(0x9000, r.getSW(), () -> String.format("COMMIT SW=%04X", r.getSW()));
+    }
+
+    /** Length via P2 = FF, then every chunk concatenated. */
+    public byte[] readTarget(int target) {
+        byte[] l = ok(0x40, target, 0xFF, null);
+        int len = ((l[0] & 0xFF) << 8) | (l[1] & 0xFF);
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        for (int i = 0, idx = 0; i < len; i += 224, idx++) {
+            byte[] c = ok(0x40, target, idx, null);
+            out.write(c, 0, c.length);
+        }
+        return out.toByteArray();
+    }
+
+    /** The in-process applet instance, for white-box checks of persistent state. */
+    Object appletInstance() throws Exception {
+        java.lang.reflect.Field rf = null;
+        for (Class<?> k = sim.getClass(); k != null && rf == null; k = k.getSuperclass()) {
+            for (java.lang.reflect.Field f : k.getDeclaredFields()) {
+                if (f.getType().getName().endsWith("SimulatorRuntime")) {
+                    rf = f;
+                    break;
+                }
+            }
+        }
+        rf.setAccessible(true);
+        Object rt = rf.get(sim);
+        java.lang.reflect.Method m = rt.getClass().getDeclaredMethod("getApplet", AID.class);
+        m.setAccessible(true);
+        return m.invoke(rt, aid);
+    }
 }

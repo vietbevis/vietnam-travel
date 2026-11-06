@@ -2,7 +2,6 @@ package vn.travel.card;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 class PinTest {
@@ -94,15 +93,25 @@ class PinTest {
         CardHarness c = CardHarness.fresh();
         c.activate();
         c.verifyPin();
-        // validated: PIN gate passes (READ_DATA itself is not implemented yet -> 6D00)
-        assertEquals(0x6D00, c.send(0x40, 0x01, 0xFF, null).getSW());
+        // validated: PIN gate passes (empty profile -> length 0000)
+        assertEquals(0x9000, c.send(0x40, 0x01, 0xFF, null).getSW());
         c.reselect();
         c.assertSw(0x6982, 0x40, 0x01, 0xFF, null);
         c.verifyPin();
-        assertEquals(0x6D00, c.send(0x40, 0x01, 0xFF, null).getSW());
+        assertEquals(0x9000, c.send(0x40, 0x01, 0xFF, null).getSW());
     }
 
-    @Disabled("enabled in Task 6 (needs profile write/read)")
     @Test
-    void dekSurvivesPinChange() {}
+    void dekSurvivesPinChange() {
+        CardHarness c = CardHarness.fresh();
+        c.activate();
+        c.verifyPin();
+        byte[] profile = new byte[300];
+        new java.util.Random(7).nextBytes(profile);
+        c.writeTarget(1, profile);
+        c.changePin(c.pin, "260814");
+        c.reselect();
+        c.verifyPin();
+        org.junit.jupiter.api.Assertions.assertArrayEquals(profile, c.readTarget(1));
+    }
 }

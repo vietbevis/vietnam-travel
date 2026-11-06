@@ -9,7 +9,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.Arrays;
 import javax.crypto.Cipher;
 import javax.crypto.spec.SecretKeySpec;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 class ServerAuthTest {
@@ -272,7 +271,21 @@ class ServerAuthTest {
         assertTrue(g.mustChangePin());
     }
 
-    @Disabled("Task 6: needs profile storage")
     @Test
-    void resetPinKeepsData() {}
+    void resetPinKeepsData() throws Exception {
+        CardHarness c = active();
+        c.verifyPin();
+        byte[] profile = new byte[300];
+        new java.util.Random(11).nextBytes(profile);
+        c.writeTarget(1, profile);
+        c.reselect();
+        assertEquals(0x9000, c.signed(0x22, 0, 0, encPin("903172")).getSW());
+        c.ok(0x20, 0, 0, CardHarness.ascii("903172"));
+        // mustChangePin = 1 blocks READ_DATA (6985) until the customer changes the PIN
+        c.assertSw(0x6985, 0x40, 0x01, 0xFF, null);
+        c.changePin("903172", "260814");
+        c.reselect();
+        c.verifyPin();
+        assertArrayEquals(profile, c.readTarget(1));
+    }
 }

@@ -13,6 +13,7 @@ public class TravelCardApplet extends Applet {
     private final PinGuard pin;
     private final CardKeys keys;
     private final ServerAuth auth;
+    private final SecureStore store;
     private final RSAPublicKey serverKey;
     private final byte[] exponent;
     private final byte[] cardId;
@@ -30,6 +31,7 @@ public class TravelCardApplet extends Applet {
         serverKey = (RSAPublicKey) KeyBuilder.buildKey(KeyBuilder.TYPE_RSA_PUBLIC, KeyBuilder.LENGTH_RSA_1024, false);
         exponent = new byte[] {0x01, 0x00, 0x01};
         auth = new ServerAuth(serverKey);
+        store = new SecureStore();
         cardId = new byte[16];
         status = new byte[2];
         authMsg = JCSystem.makeTransientByteArray((short) 37, JCSystem.CLEAR_ON_DESELECT);
@@ -82,6 +84,18 @@ public class TravelCardApplet extends Applet {
                 break;
             case CardConst.INS_RESET_PIN:
                 resetPin(apdu);
+                break;
+            case CardConst.INS_READ_DATA:
+                readData(apdu);
+                break;
+            case CardConst.INS_BEGIN_WRITE:
+                beginWrite(apdu);
+                break;
+            case CardConst.INS_WRITE_CHUNK:
+                writeChunk(apdu);
+                break;
+            case CardConst.INS_COMMIT_WRITE:
+                commitWrite(apdu);
                 break;
             default:
                 ISOException.throwIt(CardConst.SW_INS_NOT_SUPPORTED);
@@ -184,6 +198,58 @@ public class TravelCardApplet extends Applet {
         }
         status[S_STATE] = target;
         JCSystem.commitTransaction();
+        if (target == CardConst.STATE_TERMINATED) {
+            // Outside the transaction (10 KB exceeds a real card's commit buffer). The state is
+            // already TERMINATED and the DEK gone, so a partial wipe leaves only ciphertext.
+            store.wipe();
+        }
+    }
+
+    private void readData(APDU apdu) {
+        byte[] buf = apdu.getBuffer();
+        byte target = buf[ISO7816.OFFSET_P1];
+        SecureStore.checkTarget(target);
+        byte p2 = buf[ISO7816.OFFSET_P2];
+        if (p2 == (byte) 0xFF) {
+            Util.setShort(buf, (short) 0, store.length(target));
+            apdu.setOutgoingAndSend((short) 0, (short) 2);
+            return;
+        }
+        short n = store.readChunk(target, p2, pin.dek(), buf, (short) 0);
+        apdu.setOutgoingAndSend((short) 0, n);
+    }
+
+    private void beginWrite(APDU apdu) {
+        byte[] buf = apdu.getBuffer();
+        byte target = buf[ISO7816.OFFSET_P1];
+        SecureStore.checkTarget(target);
+        short lc = (short) (buf[ISO7816.OFFSET_LC] & 0xFF);
+        if (lc != 2 || apdu.setIncomingAndReceive() != lc) {
+            ISOException.throwIt(CardConst.SW_WRONG_LENGTH);
+        }
+        store.begin(target, Util.getShort(buf, ISO7816.OFFSET_CDATA));
+    }
+
+    private void writeChunk(APDU apdu) {
+        byte[] buf = apdu.getBuffer();
+        byte target = buf[ISO7816.OFFSET_P1];
+        SecureStore.checkTarget(target);
+        short lc = (short) (buf[ISO7816.OFFSET_LC] & 0xFF);
+        if (apdu.setIncomingAndReceive() != lc) {
+            ISOException.throwIt(CardConst.SW_WRONG_LENGTH);
+        }
+        store.writeChunk(target, buf[ISO7816.OFFSET_P2], buf, ISO7816.OFFSET_CDATA, lc, pin.dek());
+    }
+
+    private void commitWrite(APDU apdu) {
+        byte[] buf = apdu.getBuffer();
+        byte target = buf[ISO7816.OFFSET_P1];
+        SecureStore.checkTarget(target);
+        short payloadLen = receiveSigned(apdu);
+        if (payloadLen != 34) {
+            ISOException.throwIt(CardConst.SW_WRONG_LENGTH);
+        }
+        store.commit(target, buf, ISO7816.OFFSET_CDATA, Util.getShort(buf, (short) (ISO7816.OFFSET_CDATA + 32)));
     }
 
     private void resetPin(APDU apdu) {
