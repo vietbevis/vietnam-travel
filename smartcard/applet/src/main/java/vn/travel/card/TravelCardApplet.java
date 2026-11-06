@@ -14,6 +14,7 @@ public class TravelCardApplet extends Applet {
     private final CardKeys keys;
     private final ServerAuth auth;
     private final SecureStore store;
+    private final Wallet wallet;
     private final RSAPublicKey serverKey;
     private final byte[] exponent;
     private final byte[] cardId;
@@ -33,6 +34,7 @@ public class TravelCardApplet extends Applet {
         auth = new ServerAuth(serverKey);
         store = new SecureStore();
         cardId = new byte[16];
+        wallet = new Wallet(keys, cardId);
         status = new byte[2];
         authMsg = JCSystem.makeTransientByteArray((short) 37, JCSystem.CLEAR_ON_DESELECT);
         status[S_TYPE] = CardConst.TYPE_BLANK;
@@ -55,7 +57,18 @@ public class TravelCardApplet extends Applet {
         if (!knownIns(ins)) {
             ISOException.throwIt(CardConst.SW_INS_NOT_SUPPORTED);
         }
-        checkAllowed(ins);
+        try {
+            checkAllowed(ins);
+            dispatch(apdu, buf, ins);
+        } finally {
+            if (ins == CardConst.INS_DEBIT) {
+                // Spec 3.3: DEBIT always drops the PIN session and DEK, whatever the outcome.
+                pin.clearSession();
+            }
+        }
+    }
+
+    private void dispatch(APDU apdu, byte[] buf, byte ins) {
         switch (ins) {
             case CardConst.INS_GET_PUBLIC_INFO:
                 getPublicInfo(apdu);
@@ -97,9 +110,43 @@ public class TravelCardApplet extends Applet {
             case CardConst.INS_COMMIT_WRITE:
                 commitWrite(apdu);
                 break;
+            case CardConst.INS_GET_BALANCE:
+                apdu.setOutgoingAndSend((short) 0, wallet.balance(buf, (short) 0));
+                break;
+            case CardConst.INS_CREDIT:
+                apdu.setOutgoingAndSend((short) 0, walletTx(apdu, true));
+                break;
+            case CardConst.INS_DEBIT:
+                apdu.setOutgoingAndSend((short) 0, walletTx(apdu, false));
+                break;
+            case CardConst.INS_READ_TX_LOG:
+                apdu.setOutgoingAndSend((short) 0, wallet.log(buf, (short) 0));
+                break;
+            case CardConst.INS_GET_RECEIPT:
+                getReceipt(apdu);
+                break;
             default:
                 ISOException.throwIt(CardConst.SW_INS_NOT_SUPPORTED);
         }
+    }
+
+    private short walletTx(APDU apdu, boolean credit) {
+        byte[] buf = apdu.getBuffer();
+        short payloadLen = receiveSigned(apdu);
+        if (payloadLen != 12) {
+            ISOException.throwIt(CardConst.SW_WRONG_LENGTH);
+        }
+        return credit ? wallet.credit(buf, ISO7816.OFFSET_CDATA, buf, (short) 0)
+                : wallet.debit(buf, ISO7816.OFFSET_CDATA, buf, (short) 0);
+    }
+
+    private void getReceipt(APDU apdu) {
+        byte[] buf = apdu.getBuffer();
+        short lc = (short) (buf[ISO7816.OFFSET_LC] & 0xFF);
+        if (lc != 8 || apdu.setIncomingAndReceive() != lc) {
+            ISOException.throwIt(CardConst.SW_WRONG_LENGTH);
+        }
+        apdu.setOutgoingAndSend((short) 0, wallet.receipt(buf, ISO7816.OFFSET_CDATA, buf, (short) 0));
     }
 
     public void deselect() {
@@ -167,8 +214,7 @@ public class TravelCardApplet extends Applet {
         authMsg[0] = 0x41;
         Util.arrayCopyNonAtomic(buf, ISO7816.OFFSET_CDATA, authMsg, (short) 1, (short) 16);
         Util.arrayCopyNonAtomic(cardId, (short) 0, authMsg, (short) 17, (short) 16);
-        // txCounter4: constant 0 until Task 7 wires the wallet counter.
-        Util.arrayFillNonAtomic(authMsg, (short) 33, (short) 4, (byte) 0);
+        wallet.counter(authMsg, (short) 33);
         Util.arrayCopyNonAtomic(authMsg, (short) 33, buf, (short) 0, (short) 4);
         keys.sign(authMsg, (short) 0, (short) 37, buf, (short) 4);
         apdu.setOutgoingAndSend((short) 0, (short) 132);
@@ -193,6 +239,7 @@ public class TravelCardApplet extends Applet {
             pin.wipe();
             keys.clear();
             serverKey.clearKey();
+            wallet.wipe();
         } else if (target == CardConst.STATE_LOCKED) {
             pin.clearSession();
         }

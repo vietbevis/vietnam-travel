@@ -142,6 +142,13 @@ public final class CardHarness {
         return send(ins, p1, p2, signedData(CARD_ID, ins, p1, p2, payload));
     }
 
+    /** signed(...) that requires 9000 and returns the response data. */
+    public byte[] signedOk(int ins, byte[] payload) {
+        ResponseAPDU r = signed(ins, 0, 0, payload);
+        assertEquals(0x9000, r.getSW(), () -> String.format("SW=%04X", r.getSW()));
+        return r.getData();
+    }
+
     static byte[] ascii(String s) {
         return s.getBytes(java.nio.charset.StandardCharsets.US_ASCII);
     }
@@ -217,6 +224,46 @@ public final class CardHarness {
             out.write(c, 0, c.length);
         }
         return out.toByteArray();
+    }
+
+    /** Parsed wallet receipt; construction asserts the card signature over r[0..38). */
+    public static final class Receipt {
+        public int type;
+        public byte[] txRef;
+        public long amount;
+        public long balanceAfter;
+        public long counter;
+    }
+
+    public static byte[] u32(long v) {
+        return new byte[] {(byte) (v >> 24), (byte) (v >> 16), (byte) (v >> 8), (byte) v};
+    }
+
+    public static long u32(byte[] b, int off) {
+        return ((b[off] & 0xFFL) << 24) | ((b[off + 1] & 0xFFL) << 16) | ((b[off + 2] & 0xFFL) << 8) | (b[off + 3] & 0xFFL);
+    }
+
+    /** txRef8 || amount4. */
+    public static byte[] txPayload(int refByte, long amount) {
+        byte[] p = new byte[12];
+        Arrays.fill(p, 0, 8, (byte) refByte);
+        System.arraycopy(u32(amount), 0, p, 8, 4);
+        return p;
+    }
+
+    public Receipt parseReceipt(byte[] r) {
+        assertEquals(166, r.length);
+        byte[] m = Arrays.copyOfRange(r, 0, 38);
+        org.junit.jupiter.api.Assertions.assertTrue(verifyCardSig(m, Arrays.copyOfRange(r, 38, 166)), "receipt signature");
+        assertEquals(0x52, m[0]);
+        org.junit.jupiter.api.Assertions.assertArrayEquals(CARD_ID, Arrays.copyOfRange(m, 1, 17));
+        Receipt x = new Receipt();
+        x.type = m[17];
+        x.txRef = Arrays.copyOfRange(m, 18, 26);
+        x.amount = u32(m, 26);
+        x.balanceAfter = u32(m, 30);
+        x.counter = u32(m, 34);
+        return x;
     }
 
     /** The in-process applet instance, for white-box checks of persistent state. */
