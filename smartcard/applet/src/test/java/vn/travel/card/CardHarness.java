@@ -22,6 +22,8 @@ public final class CardHarness {
     };
 
     public byte[] cardModulus;
+    /** PIN currently set on the card (changes with activate()). */
+    public String pin = PIN;
     private final CardSimulator sim;
     private final AID aid;
 
@@ -87,6 +89,31 @@ public final class CardHarness {
         System.arraycopy(TestServer.escrowKey(CARD_ID), 0, d, 151, 16);
         cardModulus = ok(0x01, 0, 0, d);
         return cardModulus;
+    }
+
+    public static final String ACTIVE_PIN = "715043";
+
+    /** personalize + CHANGE_PIN(PIN -> ACTIVE_PIN); leaves mustChangePin = 0. */
+    public byte[] activate() {
+        byte[] mod = personalize((byte) 0x01);
+        changePin(PIN, ACTIVE_PIN);
+        return mod;
+    }
+
+    public void changePin(String oldPin, String newPin) {
+        byte[] d = new byte[12];
+        System.arraycopy(ascii(oldPin), 0, d, 0, 6);
+        System.arraycopy(ascii(newPin), 0, d, 6, 6);
+        ok(0x21, 0, 0, d);
+        pin = newPin;
+    }
+
+    public void verifyPin() {
+        ok(0x20, 0, 0, ascii(pin));
+    }
+
+    static byte[] ascii(String s) {
+        return s.getBytes(java.nio.charset.StandardCharsets.US_ASCII);
     }
 
     /** Deselect by selecting another applet (or none), then select ours again. */

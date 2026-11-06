@@ -1,5 +1,6 @@
 package vn.travel.card;
 
+import javacard.framework.ISOException;
 import javacard.framework.JCSystem;
 import javacard.framework.OwnerPIN;
 import javacard.framework.Util;
@@ -70,6 +71,48 @@ final class PinGuard {
         ecb.doFinal(tmp, (short) 0, (short) 16, dest, (short) 0);
     }
 
+    /** Throws 63Cx / 6983 unless the PIN at buf[off..+6] is correct. */
+    private void checkPin(byte[] buf, short off) {
+        if (pin.getTriesRemaining() == 0) {
+            ISOException.throwIt(CardConst.SW_PIN_BLOCKED);
+        }
+        if (!pin.check(buf, off, CardConst.PIN_LEN)) {
+            ISOException.throwIt((short) (CardConst.SW_PIN_FAILED_BASE | pin.getTriesRemaining()));
+        }
+    }
+
+    /** Unwraps encDekPin with the KEK from the PIN at buf[off..+6] into tmp[0..15]. */
+    private void unwrapDek(byte[] buf, short off) {
+        deriveKek(buf, off);
+        ecb.init(kekKey, Cipher.MODE_DECRYPT);
+        ecb.doFinal(encDekPin, (short) 0, (short) 16, tmp, (short) 0);
+        kekKey.clearKey();
+        Util.arrayFillNonAtomic(tmp, (short) 16, (short) 32, (byte) 0);
+    }
+
+    /** VERIFY_PIN: on success the DEK is opened into the transient key. */
+    void verify(byte[] buf, short off) {
+        checkPin(buf, off);
+        unwrapDek(buf, off);
+        dekKey.setKey(tmp, (short) 0);
+        Util.arrayFillNonAtomic(tmp, (short) 0, (short) 48, (byte) 0);
+    }
+
+    /** CHANGE_PIN: re-wraps the DEK under a KEK from the new PIN and a fresh salt. */
+    void change(byte[] buf, short oldOff, short newOff) {
+        checkPin(buf, oldOff);
+        unwrapDek(buf, oldOff);
+        dekKey.clearKey();
+        JCSystem.beginTransaction();
+        rnd.generateData(salt, (short) 0, (short) 16);
+        deriveKek(buf, newOff);
+        wrap(kekKey, encDekPin);
+        pin.update(buf, newOff, CardConst.PIN_LEN);
+        mustChange[0] = 0;
+        JCSystem.commitTransaction();
+        clearSession();
+    }
+
     boolean isValidated() {
         return pin.isValidated();
     }
@@ -104,5 +147,9 @@ final class PinGuard {
         Util.arrayFillNonAtomic(salt, (short) 0, (short) 16, (byte) 0);
         Util.arrayFillNonAtomic(encDekPin, (short) 0, (short) 16, (byte) 0);
         Util.arrayFillNonAtomic(encDekEscrow, (short) 0, (short) 16, (byte) 0);
+        // PIN becomes 000000 and the flag is cleared; the card state (TERMINATED) gates everything.
+        pin.update(tmp, (short) 0, CardConst.PIN_LEN);
+        pin.resetAndUnblock();
+        mustChange[0] = 0;
     }
 }

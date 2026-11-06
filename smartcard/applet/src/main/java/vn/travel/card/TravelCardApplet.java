@@ -56,8 +56,56 @@ public class TravelCardApplet extends Applet {
             case CardConst.INS_INIT:
                 init(apdu);
                 break;
+            case CardConst.INS_VERIFY_PIN:
+                verifyPin(apdu);
+                break;
+            case CardConst.INS_CHANGE_PIN:
+                changePin(apdu);
+                break;
             default:
                 ISOException.throwIt(CardConst.SW_INS_NOT_SUPPORTED);
+        }
+    }
+
+    public void deselect() {
+        pin.clearSession();
+    }
+
+    private short receivePins(APDU apdu, short expected) {
+        byte[] buf = apdu.getBuffer();
+        short lc = (short) (buf[ISO7816.OFFSET_LC] & 0xFF);
+        if (lc != expected) {
+            ISOException.throwIt(CardConst.SW_WRONG_LENGTH);
+        }
+        if (apdu.setIncomingAndReceive() != lc) {
+            ISOException.throwIt(CardConst.SW_WRONG_LENGTH);
+        }
+        for (short i = 0; i < lc; i++) {
+            byte d = buf[(short) (ISO7816.OFFSET_CDATA + i)];
+            if (d < 0x30 || d > 0x39) {
+                ISOException.throwIt(CardConst.SW_BAD_DATA);
+            }
+        }
+        return ISO7816.OFFSET_CDATA;
+    }
+
+    private void verifyPin(APDU apdu) {
+        byte[] buf = apdu.getBuffer();
+        short off = receivePins(apdu, CardConst.PIN_LEN);
+        try {
+            pin.verify(buf, off);
+        } finally {
+            Util.arrayFillNonAtomic(buf, off, CardConst.PIN_LEN, (byte) 0);
+        }
+    }
+
+    private void changePin(APDU apdu) {
+        byte[] buf = apdu.getBuffer();
+        short off = receivePins(apdu, (short) (2 * CardConst.PIN_LEN));
+        try {
+            pin.change(buf, off, (short) (off + CardConst.PIN_LEN));
+        } finally {
+            Util.arrayFillNonAtomic(buf, off, (short) (2 * CardConst.PIN_LEN), (byte) 0);
         }
     }
 
@@ -93,6 +141,7 @@ public class TravelCardApplet extends Applet {
         pin.init(buf, pinOff, escrowOff);
         status[S_STATE] = CardConst.STATE_ACTIVE;
         JCSystem.commitTransaction();
+        Util.arrayFillNonAtomic(buf, pinOff, (short) 22, (byte) 0);
         short n = keys.getModulus(buf, (short) 0);
         apdu.setOutgoingAndSend((short) 0, n);
     }
