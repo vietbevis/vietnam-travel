@@ -24,6 +24,7 @@ app.use(express.static(path.join(__dirname, "public")));
 
 // Tạo biến toàn cục trong file PUG
 app.locals.pathAdmin = variableConfig.pathAdmin;
+app.locals.cardAgentUrl = process.env.CARD_AGENT_URL;
 
 // Tạo biến toàn cục trong các file backend
 global.pathAdmin = variableConfig.pathAdmin;

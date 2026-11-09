@@ -10,9 +10,9 @@ Dự án là web du lịch Node/Express + Mongo + Pug (thanh toán ZaloPay/VNPay
 |---|---|---|
 | Plan 01: Applet Java Card | **Xong** | 266 test pass, build được file CAP |
 | Plan 02: Card Agent (cầu HTTP giữa trình duyệt và thẻ) | **Xong** | 30 test pass, chạy thử được chế độ sim |
-| Plan 03: Web (server + giao diện) | **Chưa bắt đầu** | 16 task, việc chính còn lại |
+| Plan 03: Web (server + giao diện) | **Task 1 đã triển khai và kiểm thử** | 46 unit test pass; Task 2–16 chưa triển khai |
 
-Chưa có dòng code nào của web (Node/Pug) bị sửa. Toàn bộ phần đã làm nằm trong thư mục `smartcard/` và `docs/superpowers/`.
+**Cập nhật 2026-11-10:** Task 1 Plan 03 đã bổ sung helper giao thức/mật mã, `CardShared`, test runner, keygen và cấu hình web tối thiểu. Review độc lập: Spec PASS / Quality Approved; không phát hiện vấn đề cần sửa. Xem [báo cáo Task 1](reports/2026-11-10-smartcard-03-task-1.md). Chưa triển khai giao diện/nghiệp vụ thẻ; bước tiếp theo là Task 2 qua agent sim.
 
 ## 2. Tài liệu cần đọc (theo thứ tự)
 
@@ -53,7 +53,7 @@ Plan 03 chia thành 16 task, dự kiến làm theo 3 đợt. Chạy tuần tự,
 
 | Task | Nội dung |
 |---|---|
-| 1 | Nền tảng: test runner, sinh khóa, `card-shared.js`, crypto, APDU (dùng `vectors.json`) |
+| 1 | **Đã triển khai/kiểm thử** — test runner, sinh khóa, `card-shared.js`, crypto, APDU; 46/46 unit test PASS, review Approved |
 | 2 | Test giao thức đầu cuối qua agent sim |
 | 3 | Model, quyền, nhật ký, hạng thành viên, quy tắc ví |
 | 4 | Tách helper thanh toán và `markOrderPaid` |

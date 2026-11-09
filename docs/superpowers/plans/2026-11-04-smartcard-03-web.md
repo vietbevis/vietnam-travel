@@ -137,7 +137,7 @@ test/*.test.js, test/integration/*.test.js, test/helpers/db.js
 - `encodeTicket({orderCode, tourId, departureDate, pax}) → Buffer(33)`: ngày theo `utcOffset(420)`
 - `ticketKey({orderCode, tourId}) → Buffer(24)`
 
-- [ ] **Step 1: Viết test (sẽ fail)**
+- [x] **Step 1: Viết test (sẽ fail)**
 
 ```js
 // test/card-shared.test.js
@@ -167,13 +167,13 @@ test('initData length 167', () => assert.equal(A.buildInitData({cardIdHex:V.card
 test('ticket encoding', () => { const t = A.encodeTicket({orderCode:'OD1234567890', tourId:'65f0a1b2c3d4e5f601234567', departureDate:new Date('2026-12-14T20:00:00Z'), pax:3}); assert.equal(t.length, 33); assert.equal(t.subarray(24,32).toString(), '20261215'); assert.equal(t[32], 3); });
 ```
 
-- [ ] **Step 2: Chạy test, xác nhận fail**
+- [x] **Step 2: Chạy test, xác nhận fail**
 
   Run: `npm test`
 
   Expected: FAIL (`Cannot find module`).
 
-- [ ] **Step 3: Cài đặt 3 module và script sinh khoá**
+- [x] **Step 3: Cài đặt 3 module và script sinh khoá**
 
   - `generate-card-key.js`:
     - `crypto.generateKeyPairSync('rsa', {modulusLength:1024, publicExponent:65537})`;
@@ -184,17 +184,17 @@ test('ticket encoding', () => { const t = A.encodeTicket({orderCode:'OD123456789
   - Ký: `crypto.sign('sha256', msg, {key, padding: crypto.constants.RSA_PKCS1_PADDING})`.
   - AES: `aes-128-ecb` với `setAutoPadding(false)`.
 
-- [ ] **Step 4: Chạy test, xác nhận pass**
+- [x] **Step 4: Chạy test, xác nhận pass**
 
   Run: `npm test`
 
   Expected: mọi test pass.
 
-- [ ] **Step 5: Sinh khoá dev**
+- [x] **Step 5: Sinh khoá dev**
 
   Run: `npm run card:keygen`, rồi chép dòng in ra vào `.env` (không commit `.env`).
 
-- [ ] **Step 6: Commit** — `feat(card): shared card protocol helpers with cross-language vectors`
+- [x] **Step 6: Commit** — `feat(card): shared card protocol helpers with cross-language vectors`
 
 ---
 

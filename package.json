@@ -4,7 +4,10 @@
   "main": "index.js",
   "license": "MIT",
   "scripts": {
-    "start": "nodemon --inspect index.js"
+    "start": "nodemon --inspect index.js",
+    "test": "node --test \"test/*.test.js\"",
+    "test:integration": "node --test \"test/integration/*.test.js\"",
+    "card:keygen": "node scripts/generate-card-key.js"
   },
   "resolutions": {
     "jwa": "1.4.2"
