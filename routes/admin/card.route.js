@@ -17,4 +17,6 @@ router.get('/detail/:cardId',controller.detail);
 router.post('/status',controller.statusPost);
 router.post('/reset-pin',controller.resetPinPost);
 router.post('/topup-cash',controller.topupCashPost);
+router.post('/profile/build',controller.profileBuildPost);
+router.post('/replace',controller.replacePost);
 module.exports=router;

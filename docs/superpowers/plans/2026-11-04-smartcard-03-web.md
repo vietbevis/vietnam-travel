@@ -767,21 +767,21 @@ test('cash topup daily cap per staff', async () => { /* 2 tx cash done hôm nay 
   - item của khách đang `written` → `pending`;
   - thẻ mới lưu `replaceOf`.
 
-- [ ] **Step 1: Viết test**
+- [x] **Step 1: Viết test**
 
 ```js
 test('replace transfers balance and tickets', async () => { /* thẻ cũ balance 700 000, 1 item written → replace → issue thẻ mới (giả lập các bước) → finish: thẻ cũ balance 0, tx transfer debit done; thẻ mới có credit pending-card 700 000; item 'pending' */ });
 test('profile update applies only on done', async () => { /* build với phone mới → Customer.phone chưa đổi; confirm commit-write 9000 → đã đổi; confirm 6A80 → không đổi */ });
 ```
 
-- [ ] **Step 2: Chạy test, xác nhận fail. Cài đặt. Chạy test, xác nhận pass.**
+- [x] **Step 2: Chạy test, xác nhận fail. Cài đặt. Chạy test, xác nhận pass.**
 
-- [ ] **Step 3: Kiểm thủ công**
+- [x] **Step 3: Kiểm thủ công**
 
   1. Sửa SĐT và ảnh của thẻ đang cắm (khách nhập PIN). Expected: đọc lại hồ sơ và ảnh từ thẻ đều đúng bản mới.
   2. Cấp lại thẻ có số dư và vé: dùng sim slot 1 làm thẻ mới, sau đó mở phiên. Expected: số dư được chuyển lên thẻ mới, vé được ghi lại; thẻ cũ (slot 0) khi cắm vào thì bị TERMINATE.
 
-- [ ] **Step 4: Commit** — `feat(card): on-card profile/photo update and card replacement`
+- [x] **Step 4: Commit** — `feat(card): on-card profile/photo update and card replacement`
 
 ---
 

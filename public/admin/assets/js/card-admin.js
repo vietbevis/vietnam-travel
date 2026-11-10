@@ -129,13 +129,65 @@
     }finally{clearTimeout(timeout);signal?.removeEventListener('abort',abort);controller.abort();}
   }
   async function renewOperationStepUp(client,options){
+    await authenticateStaff(client,options);
+    const error=new Error('Đã xác thực nhân viên. Hãy cắm lại đúng thẻ đang xem rồi bấm lại thao tác; giữ nguyên yêu cầu tiền mặt cũ nếu có.');error.code='SWITCH_TARGET_CARD';throw error;
+  }
+  async function authenticateStaff(client,options){
     await options.onStepUp?.();
     const base=options.base||'/admin/card',info=await client.openSession();
     if(info.state!==S.STATE.ACTIVE||info.cardType!==2)throw new Error('Hãy cắm thẻ nhân viên đang hoạt động của tài khoản hiện tại để xác thực lại.');
     let pin;try{pin=await client.askPin('Nhập PIN thẻ nhân viên để xác thực thao tác');await client.verifyPin(pin);}finally{pin='';}
     const proof=await client.authenticate({challengeUrl:base+'/step-up/challenge',verifyUrl:base+'/step-up/verify'});
     if(proof.code!=='success')throw new Error('Không thể xác thực thẻ nhân viên.');
-    const error=new Error('Đã xác thực nhân viên. Hãy cắm lại đúng thẻ đang xem rồi bấm lại thao tác; giữ nguyên yêu cầu tiền mặt cũ nếu có.');error.code='SWITCH_TARGET_CARD';throw error;
+  }
+  async function replaceFlow(body,options={}){
+    const payload={cardId:body.cardId,reason:body.reason};
+    try{return await operationPost('/replace',payload,options);}
+    catch(error){if(error.code!=='STEP_UP_REQUIRED')throw error;await authenticateStaff(options.client||root.cardClient,options);return operationPost('/replace',payload,options);}
+  }
+  async function profileFlow(body,options={}){
+    const client=options.client||root.cardClient,base=options.base||'/admin/card';
+    const card=await client.openSession({expectedCardId:body.cardId,sync:false});
+    if(card.state!==S.STATE.ACTIVE||card.cardType!==1||card.cardId!==body.cardId.toUpperCase())throw new Error('Hãy cắm đúng thẻ khách đang hoạt động.');
+    let pin;try{pin=await client.askPin('Khách nhập PIN để sửa hồ sơ / ảnh');await client.verifyPin(pin);}finally{pin='';}
+    const bytes=body.photo?(body.photo instanceof Uint8Array?body.photo:await preparePhoto(body.photo)):undefined;
+    const prepared=await operationPost('/profile/build',{cardId:body.cardId,...(body.fields?{fields:body.fields}:{}),...(bytes?{photoBase64:base64(bytes)}:{})},options);
+    const result={profile:'not-requested',photo:'not-requested'};
+    for(const [key,target,id,data]of [['profile',1,prepared.profileOpId,prepared.profileHex&&S.fromHex(prepared.profileHex)],['photo',2,prepared.photoOpId,bytes]]){
+      if(!id)continue;
+      try{await client.writeTarget(target,data);const confirmed=await client.runSignedOp({opId:id,signUrl:base+'/op/sign',confirmUrl:base+'/op/confirm'});result[key]=confirmed.ok?'done':'failed';}
+      catch(error){result[key]='unknown';result[key+'Message']=error.message;}
+    }
+    return result;
+  }
+  function bindProfileReplacement(){
+    const document=root.document,profile=document.querySelector('[data-card-profile-form]'),replace=document.querySelector('[data-card-replace-form]');
+    let busy=false,aborter,previewUrl;
+    const controls=()=>Array.from(document.querySelectorAll('[card-actions] button,[card-actions] input,[card-actions] select'));
+    const setBusy=value=>{busy=value;for(const element of controls())element.disabled=value;};
+    root.addEventListener('pagehide',()=>{aborter?.abort();if(previewUrl)root.URL.revokeObjectURL(previewUrl);});
+    profile?.elements.photo.addEventListener('change',()=>{if(previewUrl)root.URL.revokeObjectURL(previewUrl);previewUrl=null;const preview=document.querySelector('[data-card-profile-preview]');preview.removeAttribute('src');if(profile.elements.photo.files[0]){previewUrl=root.URL.createObjectURL(profile.elements.photo.files[0]);preview.src=previewUrl;}});
+    profile?.addEventListener('submit',async event=>{
+      event.preventDefault();if(busy||!profile.reportValidity())return;setBusy(true);aborter=new AbortController();const message=document.querySelector('[data-card-profile-message]');message.textContent='Đang ghi hồ sơ / ảnh; giữ nguyên thẻ khách…';
+      const fields={};for(const element of profile.querySelectorAll('[data-profile-field]'))if(element.value!==element.defaultValue)fields[element.name]=element.name==='dob'?element.value.replace(/-/g,''):element.value;
+      try{
+        const result=await profileFlow({cardId:profile.dataset.cardId,...(Object.keys(fields).length?{fields}:{}),photo:profile.elements.photo.files[0]},{base:profile.dataset.cardBase,signal:aborter.signal});
+        const names={done:'đã xác nhận',failed:'thẻ báo lỗi',unknown:'chưa rõ kết quả', 'not-requested':'không yêu cầu'};
+        message.textContent='Hồ sơ: '+names[result.profile]+'. Ảnh: '+names[result.photo]+'. Tải lại dữ liệu server trước khi sửa tiếp. Kết quả chưa rõ cần đối chiếu và ghi lại từ hồ sơ chuẩn; không tự áp thay đổi.';
+        profile.querySelector('[data-card-profile-reload]').hidden=false;
+        // Không gửi lại form chứa dữ liệu trước khi biết kết quả từng operation.
+        profile.querySelector('button[type="submit"]').dataset.finished='true';
+      }catch(error){message.textContent=error.message;}
+      finally{setBusy(false);if(profile.querySelector('button[type="submit"]').dataset.finished)profile.querySelector('button[type="submit"]').disabled=true;}
+    });
+    profile?.querySelector('[data-card-profile-reload]').addEventListener('click',()=>root.location.reload());
+    replace?.addEventListener('submit',async event=>{
+      event.preventDefault();if(busy||!replace.reportValidity()||!root.confirm('Cấp lại sẽ thu hồi vĩnh viễn thẻ cũ. Số dư được giữ đến khi thẻ mới hoàn tất. Tiếp tục?'))return;
+      setBusy(true);aborter=new AbortController();const message=document.querySelector('[data-card-replace-message]');
+      try{const result=await replaceFlow({cardId:replace.dataset.cardId,reason:replace.elements.replacementReason.value.trim()},{base:replace.dataset.cardBase,signal:aborter.signal,onStepUp:()=>{if(!root.confirm('Cắm thẻ nhân viên của tài khoản hiện tại rồi bấm OK để xác thực cấp lại.'))throw new Error('Đã hủy xác thực.');}});root.location.assign(result.redirect);}
+      catch(error){message.textContent=error.message+' Nếu mất phản hồi, tải lại trang để tiếp tục từ thẻ nguồn; không hoàn tiền thủ công.';}
+      finally{setBusy(false);}
+    });
   }
   async function resetPinFlow(body,options={}){
     const client=options.client||root.cardClient,base=options.base||'/admin/card';
@@ -245,6 +297,7 @@
   function bind(){
     bindStatus();
     bindOperations();
+    bindProfileReplacement();
     const document=root.document,form=document.querySelector('[data-card-issue]');if(!form)return;
     const status=document.querySelector('[data-card-status]'),preview=document.querySelector('[data-card-preview]'),pinDialog=document.querySelector('[data-card-pin-dialog]'),pin=document.querySelector('[data-card-pin]'),reset=document.querySelector('[data-card-reset]');
     let previewUrl=null,busy=false,aborter,pendingRequestId=null;
@@ -272,6 +325,7 @@
           pendingRequestId=null;recoverCustomer(cancelled.customerId);
         }
         const body={ownerType:form.elements.ownerType.value,photo:form.elements.photo.files[0]};
+        if(form.dataset.replaceOf)body.replaceOf=form.dataset.replaceOf;
         if(body.ownerType==='staff')body.accountId=form.elements.accountId.value;
         else if(form.elements.customerId.value)body.customerId=form.elements.customerId.value;
         else{body.customer={};for(const key of ['fullName','email','phone','dob','gender','idNumber','emergencyName','emergencyPhone','bloodType','allergies'])if(form.elements[key].value)body.customer[key]=form.elements[key].value;}
@@ -290,5 +344,5 @@
       }catch{status.textContent='Chưa xác nhận được reset thẻ ảo. Hãy kiểm tra Card Agent.';}
     });
   }
-  return {preparePhoto,issueFlow,resetSim,statusFlow,resetPinFlow,cashTopupFlow,bind};
+  return {preparePhoto,issueFlow,resetSim,statusFlow,resetPinFlow,cashTopupFlow,profileFlow,replaceFlow,bind};
 }));

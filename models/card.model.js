@@ -18,6 +18,9 @@ const schema = new mongoose.Schema({
   revokedAt:Date,
   revokedReason:String,
   replaceOf:{type:String,match:/^[a-fA-F0-9]{32}$/,uppercase:true},
+  // Claim bền: giữ đích đã hoàn tất để nguồn không cấp vốn cho thẻ thứ hai.
+  replacement:{type:new mongoose.Schema({actorId:String,reason:String,targetCardId:String,completedAt:Date},{_id:false})},
+  writeOpIds:{type:new mongoose.Schema({profile:String,photo:String},{_id:false})},
   // Chỉ đọc rõ metadata ở luồng phát hành; không đưa PIN hoặc APDU INIT vào dữ liệu công khai.
   issuance:{type:new mongoose.Schema({pinCipher:String,expireAt:Date,profileOpId:String,photoOpId:String,requestId:String},{_id:false}),select:false},
   lastSeenAt:Date

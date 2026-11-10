@@ -24,7 +24,7 @@ const cardLog=require('../../helpers/card-log.helper');
 const walletRules=require('../../helpers/wallet-rule.helper');
 const objectId=value=>typeof value==='string'&&/^[a-fA-F0-9]{24}$/.test(value);
 function fail(code,status=409,message='Yêu cầu phát hành thẻ không hợp lệ hoặc đã kết thúc.'){const error=new Error(message);Object.assign(error,{code,status});throw error;}
-function problem(res,error){return res.status(error.status||500).json({code:'error',errorCode:error.code||'INTERNAL',message:error.status?error.message:'Không thể xử lý yêu cầu thẻ.'});}
+function problem(res,error){if(error.code==='STEP_UP_REQUIRED')return res.status(403).json({code:'step-up-required',message:'Hãy xác thực lại thẻ nhân viên trước khi cấp lại thẻ.'});return res.status(error.status||500).json({code:'error',errorCode:error.code||'INTERNAL',message:error.status?error.message:'Không thể xử lý yêu cầu thẻ.'});}
 module.exports.authenticate=async(req,res,next)=>{
   res.set('Cache-Control','no-store');
   try{
@@ -61,13 +61,55 @@ async function load(cardId,actorId,session,allowExpired=false){
 }
 async function expire(cardId,actorId){const card=await Card.findOne({cardId:cardId.toUpperCase(),issuedBy:actorId,status:'issuing'}).select('+issuance').lean();if(card&&(!card.issuance||card.issuance.expireAt<=new Date())){await transaction(session=>cleanup(card.cardId,actorId,session));fail('ISSUE_EXPIRED');}}
 function profile(owner){const data={};for(const key of ['fullName','dob','gender','phone','idNumber','emergencyName','emergencyPhone','bloodType','allergies'])if(owner[key])data[key]=key==='dob'?new Date(owner[key]).toISOString().slice(0,10).replace(/-/g,''):owner[key];return Buffer.from(S.encodeProfile(data)).toString('hex').toUpperCase();}
-async function replacement(body,ownerId,session){
+function replacementPermission(req){
+  requirePermission(req,'card-issue');requirePermission(req,'card-revoke');
+  if(!adminToken.stepUp.isFresh(req))fail('STEP_UP_REQUIRED',403);
+}
+async function obligations(cardId,session){
+  const liability=await Tx.exists({cardId,status:{$ne:'done'},$or:[{status:{$in:['awaiting-payment','pending-card','sent']}},{signedOpId:{$exists:true}}]}).session(session);
+  const prepared=await Op.exists({cardId,status:'prepared',type:{$ne:'set-state'}}).session(session);
+  if(liability||prepared)fail('RECONCILIATION_REQUIRED',409,'Thẻ còn giao dịch hoặc lệnh đã ký cần đối soát. Không được cấp lại khi chưa xác nhận kết quả.');
+}
+async function replacement(body,ownerId,session,actorId){
   const stale=await Card.find({ownerId,cardType:body.ownerType,status:'issuing',isCurrent:true}).select('+issuance').session(session).lean();
   for(const card of stale)if(!card.issuance||!(card.issuance.expireAt>new Date()))await cleanup(card.cardId,card.issuedBy,session);
   if(await Card.exists({ownerId,cardType:body.ownerType,isCurrent:true}).session(session))fail('CURRENT_CARD',409,'Người này đã có thẻ đang hoạt động');
-  const previous=await Card.find({ownerId,cardType:body.ownerType,status:'revoked',isCurrent:false}).select('cardId balance').session(session).lean();
-  if(body.replaceOf&&!previous.some(card=>card.cardId===body.replaceOf.toUpperCase()))fail('INVALID_REPLACEMENT');
-  if(previous.length&&(previous.some(card=>card.balance>0)||await Tx.exists({cardId:{$in:previous.map(card=>card.cardId)},status:{$ne:'done'}}).session(session)||await Order.exists({customerId:ownerId,deleted:false,items:{$elemMatch:{ticketStatus:{$in:['pending','written','used','pending-delete']}}}}).session(session)))fail('REPLACEMENT_DEFERRED',409,'Thẻ cũ còn số dư hoặc vé cần chuyển; chức năng cấp lại chưa hỗ trợ trường hợp này.');
+  const previous=await Card.find({ownerId,cardType:body.ownerType,status:'revoked',isCurrent:false}).session(session).lean();
+  if(body.replaceOf){
+    const source=previous.find(card=>card.cardId===body.replaceOf.toUpperCase());
+    if(!source?.replacement||source.revokedReason!=='replaced'||source.replacement.completedAt)fail('INVALID_REPLACEMENT');
+    if(source.replacement.actorId!==actorId)fail('OP_FORBIDDEN',403);
+    if(source.replacement.targetCardId){
+      const target=await Card.findOne({cardId:source.replacement.targetCardId}).session(session).lean();
+      if(target&&target.status!=='failed')fail('CURRENT_CARD');
+    }
+    await obligations(source.cardId,session);
+    return source;
+  }
+  if(previous.some(card=>card.replacement&&!card.replacement.completedAt)||previous.length&&(previous.some(card=>card.balance>0)||await Tx.exists({cardId:{$in:previous.map(card=>card.cardId)},status:{$ne:'done'}}).session(session)||body.ownerType==='customer'&&await Order.exists({customerId:ownerId,deleted:false,items:{$elemMatch:{ticketStatus:{$in:['pending','written','used','pending-delete']}}}}).session(session)))fail('REPLACEMENT_DEFERRED',409,'Thẻ cũ còn tài sản hoặc yêu cầu cấp lại; hãy dùng Cấp lại từ thẻ nguồn.');
+}
+async function replacementSource(card,actorId,session){
+  const source=await Card.findOne({cardId:card.replaceOf,ownerId:card.ownerId,cardType:card.cardType,status:'revoked',isCurrent:false,revokedReason:'replaced','replacement.actorId':actorId,'replacement.targetCardId':card.cardId,'replacement.completedAt':{$exists:false}}).session(session).lean();
+  if(!source)fail('INVALID_REPLACEMENT');
+  return source;
+}
+async function transferReplacement(card,actorId,session,req){
+  const source=await replacementSource(card,actorId,session);
+  await obligations(source.cardId,session);
+  const won=await Card.updateOne({_id:source._id,__v:source.__v,balance:source.balance,'replacement.targetCardId':card.cardId,'replacement.completedAt':{$exists:false}},{$set:{balance:0,'replacement.completedAt':new Date()},$inc:{__v:1}},{session});
+  if(won.modifiedCount!==1)fail('INVALID_REPLACEMENT');
+  if(card.cardType==='customer'){
+    if(source.balance>0)await Tx.create([{cardId:source.cardId,txRef:C.randomHex(8),type:'debit',source:'transfer',amount:source.balance,status:'done',balanceAfter:0,createdBy:actorId},{cardId:card.cardId,txRef:C.randomHex(8),type:'credit',source:'transfer',amount:source.balance,status:'pending-card',createdBy:actorId}],{session,ordered:true});
+    const orders=await Order.find({customerId:card.ownerId,deleted:false,paymentStatus:'paid',status:{$nin:['cancel','cancelled']},'items.ticketStatus':'written'}).session(session).lean();
+    const today=new Date(Date.now()+7*3600000).toISOString().slice(0,10);
+    const tickets=require('../../helpers/ticket.helper');
+    for(const order of orders){const changes={};for(let i=0;i<order.items.length;i++){
+      const item=order.items[i];if(item.ticketStatus!=='written'||item.checkedInAt||item.checkedInBy||item.used===true||item.cancelled===true||['cancel','cancelled','used'].includes(item.status))continue;
+      try{const data=tickets.ticketData(order,i);A.encodeTicket(data);if(new Date(new Date(data.departureDate).getTime()+7*3600000).toISOString().slice(0,10)<today)continue;}catch{continue;}
+      changes['items.'+i+'.ticketStatus']='pending';
+    }if(Object.keys(changes).length)await Order.updateOne({_id:order._id},{$set:changes},{session});}
+  }
+  await cardLog.write({action:'replace-finish',cardId:card.cardId,actorType:'admin',actorId,result:'success',detail:{replaceOf:source.cardId,amount:card.cardType==='customer'?source.balance:0},req},{session});
 }
 function requestDigest(body,bytes){
   const canonical=value=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).sort().map(key=>[key,canonical(value[key])])):value;
@@ -83,6 +125,7 @@ async function recoverPrepare(request,actorId,digest){
   if(request.state!=='ready')fail('ISSUE_PREPARING',409,'Yêu cầu đang chuẩn bị; hãy hủy yêu cầu trước khi thử lại.');
   const card=await Card.findOne({cardId:request.cardId,issuedBy:actorId,status:'issuing',isCurrent:true}).select('+issuance').lean();
   if(!card||card.publicKeyModulus||!card.issuance||!(card.issuance.expireAt>new Date()))fail('ISSUE_STARTED');
+  if(card.replaceOf)await replacementSource(card,actorId,null);
   const profileOp=await Op.findOne({_id:card.issuance.profileOpId,cardId:card.cardId,status:'draft',actorType:'admin',actorId,type:'commit-write','params.target':1}).lean();
   const photoOp=await Op.findOne({_id:card.issuance.photoOpId,cardId:card.cardId,status:'draft',actorType:'admin',actorId,type:'commit-write','params.target':2}).lean();
   if(!profileOp||!photoOp)fail('ISSUE_INCOMPLETE');
@@ -103,20 +146,37 @@ async function cancelRequest(requestId,actorId){
     return {customerId:await requestCustomer(request,session)};
   });
 }
-module.exports.issue=async(req,res)=>{try{if(!req.cardActor?.permissions.includes('card-issue'))fail('OP_FORBIDDEN',403);const [customers,accounts]=await Promise.all([Customer.find({deleted:false,status:'active'}).select('_id fullName email phone').sort({fullName:1}).limit(500).lean(),Account.find({deleted:false,status:'active'}).select('_id fullName email').sort({fullName:1}).limit(500).lean()]);res.render('admin/pages/card-issue',{pageTitle:'Phát hành thẻ',customers,accounts});}catch(error){problem(res,error);}};
+module.exports.issue=async(req,res)=>{
+  try{
+    requirePermission(req,'card-issue');
+    let replaceSource,sourceOwner;
+    if(req.query.replaceOf!==undefined){
+      replacementPermission(req);
+      if(typeof req.query.replaceOf!=='string'||! /^[a-fA-F0-9]{32}$/.test(req.query.replaceOf))fail('INVALID_INPUT',400);
+      replaceSource=await Card.findOne({cardId:req.query.replaceOf.toUpperCase(),status:'revoked',revokedReason:'replaced','replacement.actorId':req.cardActor.id,'replacement.completedAt':{$exists:false}}).lean();
+      if(!replaceSource)fail('INVALID_REPLACEMENT');
+      sourceOwner=await (replaceSource.cardType==='customer'?Customer:Account).findOne({_id:replaceSource.ownerId,deleted:false,status:'active'}).select('_id fullName email phone').lean();
+      if(!sourceOwner)fail('OWNER_STATE');
+    }
+    const [customers,accounts]=await Promise.all([Customer.find({deleted:false,status:'active'}).select('_id fullName email phone').sort({fullName:1}).limit(500).lean(),Account.find({deleted:false,status:'active'}).select('_id fullName email').sort({fullName:1}).limit(500).lean()]);
+    if(sourceOwner){const list=replaceSource.cardType==='customer'?customers:accounts;if(!list.some(owner=>String(owner._id)===replaceSource.ownerId))list.push(sourceOwner);}
+    res.render('admin/pages/card-issue',{pageTitle:'Phát hành thẻ',customers,accounts,replaceSource});
+  }catch(error){problem(res,error);}
+};
 module.exports.issuePrepare=endpoint('prepare',async(req,res,body)=>{
+  if(body.replaceOf)replacementPermission(req);
   let bytes;try{bytes=V.decodePhoto(body.photoBase64);}catch{fail('INVALID_PHOTO',400,'Ảnh phải là JPEG hợp lệ và không quá 10 080 byte.');}
   const actorId=req.cardActor.id;
   const requestId=(body.requestId||C.randomHex(16)).toUpperCase(),digest=requestDigest(body,bytes);
   let request=await Request.findOne({requestId}).lean();
   if(request)return res.json(await recoverPrepare(request,actorId,digest));
   let owner;
-  if(body.ownerType==='staff')owner=await Account.findOne({_id:body.accountId,status:'active',deleted:false}).select('_id fullName email phone').lean();
+  if(body.ownerType==='staff')owner=await Account.findOne({_id:body.accountId,status:'active',deleted:false}).select('_id fullName email phone dob gender idNumber emergencyName emergencyPhone bloodType allergies avatar').lean();
   else if(body.customerId)owner=await Customer.findOne({_id:body.customerId,status:'active',deleted:false}).lean();
   else owner={...body.customer,_id:new mongoose.Types.ObjectId()};
   if(!owner||!owner.email)fail('OWNER_STATE');
   const ownerId=String(owner._id);
-  await replacement(body,ownerId,null);
+  await replacement(body,ownerId,null,actorId);
   let profileHex;try{profileHex=profile(owner);}catch{fail('INVALID_PROFILE',400);}
   const cardId=C.randomHex(16),initialPin=C.generatePin(owner.dob),pinCipher=encryptPin(cardId,initialPin);
   const initApdu=S.apdu(S.INS.INIT,0,0,A.buildInitData({cardIdHex:cardId,cardType:body.ownerType==='customer'?1:2,pin:initialPin,kEscrow:C.deriveEscrowKey(cardId)}));
@@ -129,16 +189,17 @@ module.exports.issuePrepare=endpoint('prepare',async(req,res,body)=>{
       const claim=await Request.findOne({requestId,actorId,state:'preparing',expireAt:{$gt:new Date()}}).session(session).lean();
       if(!claim)fail('ISSUE_CLOSED');
       if(body.customerId&&!await Customer.exists({_id:ownerId,status:'active',deleted:false}).session(session)||body.ownerType==='staff'&&!await Account.exists({_id:ownerId,status:'active',deleted:false}).session(session))fail('OWNER_STATE');
-      await replacement(body,ownerId,session);
+      const source=await replacement(body,ownerId,session,actorId);
+      if(source){const claimed=await Card.updateOne({_id:source._id,__v:source.__v,'replacement.completedAt':{$exists:false}},{$set:{'replacement.targetCardId':cardId},$inc:{__v:1}},{session});if(claimed.modifiedCount!==1)fail('INVALID_REPLACEMENT');}
       if(body.ownerType==='customer'){
         if(!body.customerId)await Customer.create([{...body.customer,_id:owner._id,avatar:upload.secure_url,createdBy:actorId}],{session});
-        else await Customer.updateOne({_id:ownerId},{$set:{avatar:upload.secure_url,updatedBy:actorId}},{session});
+        else if(!body.replaceOf)await Customer.updateOne({_id:ownerId},{$set:{avatar:upload.secure_url,updatedBy:actorId}},{session});
       }
       await Card.create([{cardId,cardType:body.ownerType,ownerId,issuedBy:actorId,status:'issuing',isCurrent:true,replaceOf:body.replaceOf,issuance:{pinCipher,expireAt:claim.expireAt,requestId}}],{session});
       const updated=await Request.updateOne({_id:claim._id,state:'preparing',expireAt:{$gt:new Date()}},{$set:{cardId},$inc:{__v:1}},{session});if(updated.modifiedCount!==1)fail('ISSUE_CLOSED');
     });
     const profileOp=await E.createOp({cardId,type:'commit-write',params:{target:1,dataHex:profileHex},actorType:'admin',actorId});
-    const photoOp=await E.createOp({cardId,type:'commit-write',params:{target:2,dataHex:bytes.toString('hex').toUpperCase()},actorType:'admin',actorId});
+    const photoOp=await E.createOp({cardId,type:'commit-write',params:{target:2,dataHex:bytes.toString('hex').toUpperCase(),...(body.replaceOf&&body.ownerType==='customer'?{customerUpdate:{avatar:upload.secure_url}}:{})},actorType:'admin',actorId});
     await transaction(async session=>{
       const update=await Card.updateOne({cardId,status:'issuing',issuedBy:actorId,'issuance.expireAt':{$gt:new Date()}},{$set:{'issuance.profileOpId':profileOp.id,'issuance.photoOpId':photoOp.id}},{session});
       if(update.modifiedCount!==1)fail('CARD_STATE');
@@ -161,6 +222,7 @@ module.exports.issueFinish=endpoint('card',async(req,res,body)=>{
     notification=undefined;
     const existing=await Card.findOne({cardId:body.cardId.toUpperCase()}).session(session).lean();
     if(existing?.issuedBy!==req.cardActor.id)fail('OP_FORBIDDEN',403);
+    if(existing?.replaceOf)replacementPermission(req);
     if(existing.status==='active')return {alreadyFinished:true,emailStatus:'already-claimed'};
     const card=await load(body.cardId,req.cardActor.id,session);
     if(!/^[A-F0-9]{256}$/.test(card.publicKeyModulus||''))fail('INVALID_INIT');
@@ -169,6 +231,7 @@ module.exports.issueFinish=endpoint('card',async(req,res,body)=>{
     for(const [id,target]of [[meta.profileOpId,1],[meta.photoOpId,2]])if(!await Op.exists({_id:id,cardId:card.cardId,type:'commit-write',actorType:'admin',actorId:req.cardActor.id,status:'done','params.target':target}).session(session))fail('ISSUE_INCOMPLETE');
     const Owner=card.cardType==='customer'?Customer:Account;
     const owner=await Owner.findOne({_id:card.ownerId,status:'active',deleted:false}).session(session).lean();if(!owner?.email)fail('OWNER_STATE');
+    if(card.replaceOf)await transferReplacement(card,req.cardActor.id,session,req);
     notification={email:owner.email,pin:decryptPin(card.cardId,meta.pinCipher)};
     const updated=await Card.updateOne({_id:card._id,status:'issuing',isCurrent:true,'issuance.expireAt':{$gt:new Date()}},{$set:{status:'active',issuedAt:new Date(),activatedAt:new Date()},$unset:{issuance:1}},{session});if(updated.modifiedCount!==1)fail('CARD_STATE');
     if(meta.requestId){const claimed=await Request.updateOne({requestId:meta.requestId,actorId:req.cardActor.id,cardId:card.cardId,state:'ready'},{$set:{state:'finished'},$inc:{__v:1}},{session});if(claimed.modifiedCount!==1)fail('CARD_STATE');}
@@ -221,6 +284,50 @@ function requireStepUp(req,res){
   if(adminToken.stepUp.isFresh(req))return true;
   res.status(403).json({code:'step-up-required',message:'Hãy xác thực lại thẻ nhân viên trước khi thực hiện thao tác.'});return false;
 }
+async function auditTask11Failure(action,req,error){
+  // Không lưu body, dữ liệu hồ sơ, ảnh hoặc lý do từ request bị từ chối.
+  const rawId=req.body?.cardId;
+  const cardId=typeof rawId==='string'&&/^[a-fA-F0-9]{32}$/.test(rawId)?rawId.toUpperCase():undefined;
+  const errorCode=typeof error.code==='string'&&/^[A-Z_]{1,64}$/.test(error.code)?error.code:'INTERNAL';
+  await cardLog.write({action,cardId,actorType:'admin',actorId:req.cardActor?.id,result:'fail',detail:{errorCode},req});
+}
+module.exports.profileBuildPost=async(req,res)=>{
+  try{
+    requirePermission(req,'card-edit');
+    const {error,value:body}=V.schemas.profile.validate(req.body,{convert:false});if(error)fail('INVALID_INPUT',400,'Thông tin hồ sơ không hợp lệ.');
+    const card=await Card.findOne({cardId:body.cardId.toUpperCase(),cardType:'customer',status:'active',isCurrent:true}).lean();
+    if(!card)fail('CARD_STATE',409,'Chỉ sửa hồ sơ thẻ khách đang hoạt động.');
+    const customer=await Customer.findOne({_id:card.ownerId,status:'active',deleted:false}).lean();if(!customer)fail('OWNER_STATE');
+    const fields={...body.fields};
+    if(fields.dob){const value=fields.dob,day=value.slice(0,4)+'-'+value.slice(4,6)+'-'+value.slice(6);const date=new Date(day+'T00:00:00Z');if(!Number.isFinite(date.getTime())||date.toISOString().slice(0,10)!==day)fail('INVALID_INPUT',400);fields.dob=date;}
+    let profileHex,bytes;
+    try{if(body.fields)profileHex=profile({...customer,...fields});}catch{fail('INVALID_PROFILE',400,'Hồ sơ vượt giới hạn 448 byte hoặc chứa trường không hợp lệ.');}
+    try{if(body.photoBase64)bytes=V.decodePhoto(body.photoBase64);}catch{fail('INVALID_PHOTO',400,'Ảnh phải là JPEG hợp lệ và không quá 10 080 byte.');}
+    let avatar;if(bytes){const uploaded=await cloud.uploadPhoto(bytes);if(!uploaded?.secure_url||!/^https:\/\/[^\s]+$/.test(uploaded.secure_url))fail('PHOTO_UPLOAD',502);avatar=uploaded.secure_url;}
+    const result={code:'success',message:'Đã chuẩn bị lệnh ghi; hồ sơ và ảnh chỉ cập nhật sau khi từng lệnh được xác nhận.'};
+    if(body.fields){const op=await E.createOp({cardId:card.cardId,type:'commit-write',params:{target:1,dataHex:profileHex,customerUpdate:fields},actorType:'admin',actorId:req.cardActor.id});Object.assign(result,{profileOpId:op.id,profileHex});}
+    if(bytes){const op=await E.createOp({cardId:card.cardId,type:'commit-write',params:{target:2,dataHex:bytes.toString('hex').toUpperCase(),customerUpdate:{avatar}},actorType:'admin',actorId:req.cardActor.id});result.photoOpId=op.id;}
+    await cardLog.write({action:'profile-build',cardId:card.cardId,actorType:'admin',actorId:req.cardActor.id,result:'success',detail:{...(result.profileOpId?{profileOpId:result.profileOpId}:{}),...(result.photoOpId?{photoOpId:result.photoOpId}:{}),targets:[...(result.profileOpId?[1]:[]),...(result.photoOpId?[2]:[])]},req});
+    res.json(result);
+  }catch(error){await auditTask11Failure('profile-build',req,error);problem(res,error);}
+};
+module.exports.replacePost=async(req,res)=>{
+  try{
+    replacementPermission(req);
+    const {error,value:body}=V.schemas.replace.validate(req.body,{convert:false});if(error)fail('INVALID_INPUT',400,'Cấp lại thẻ cần mã thẻ và lý do.');
+    const result=await transaction(async session=>{
+      const card=await Card.findOne({cardId:body.cardId.toUpperCase()}).session(session).lean();if(!card)fail('CARD_NOT_FOUND',404);
+      if(card.replacement){if(card.replacement.actorId!==req.cardActor.id)fail('OP_FORBIDDEN',403);if(card.replacement.reason!==body.reason||card.replacement.completedAt)fail('INVALID_REPLACEMENT');return {cardId:card.cardId};}
+      if(!['active','locked'].includes(card.status)||!card.isCurrent)fail('CARD_STATE');
+      const owner=await (card.cardType==='customer'?Customer:Account).exists({_id:card.ownerId,status:'active',deleted:false}).session(session);if(!owner)fail('OWNER_STATE');
+      const changed=await Card.updateOne({_id:card._id,status:card.status,__v:card.__v},{$set:{status:'revoked',isCurrent:false,revokedReason:'replaced',revokedBy:req.cardActor.id,revokedAt:new Date(),replacement:{actorId:req.cardActor.id,reason:body.reason}},$inc:{__v:1}},{session});if(changed.modifiedCount!==1)fail('CARD_STATE');
+      await obligations(card.cardId,session);
+      await cardLog.write({action:'replace',cardId:card.cardId,actorType:'admin',actorId:req.cardActor.id,result:'success',detail:{reason:body.reason,balanceHeld:card.balance},req},{session});
+      return {cardId:card.cardId};
+    });
+    res.json({code:'success',redirect:'/admin/card/issue?replaceOf='+result.cardId,message:'Thẻ cũ đã thu hồi; số dư được giữ đến khi phát hành thẻ mới hoàn tất.'});
+  }catch(error){await auditTask11Failure('replace',req,error);problem(res,error);}
+};
 module.exports.resetPinPost=async(req,res)=>{
   try{
     requirePermission(req,'card-reset-pin');
@@ -330,7 +437,7 @@ function pageNumber(query){
 const escapedRegex=value=>value.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
 async function owners(cards){
   const ids=cards.map(card=>card.ownerId).filter(objectId);
-  const [customers,accounts]=await Promise.all([Customer.find({_id:{$in:ids},deleted:false}).select('_id fullName email phone').lean(),Account.find({_id:{$in:ids},deleted:false}).select('_id fullName email phone').lean()]);
+  const [customers,accounts]=await Promise.all([Customer.find({_id:{$in:ids},deleted:false}).select('_id fullName email phone dob gender idNumber emergencyName emergencyPhone bloodType allergies avatar').lean(),Account.find({_id:{$in:ids},deleted:false}).select('_id fullName email phone dob gender idNumber emergencyName emergencyPhone bloodType allergies avatar').lean()]);
   const map=new Map([...customers.map(owner=>['customer:'+owner._id,owner]),...accounts.map(owner=>['staff:'+owner._id,owner])]);
   return cards.map(card=>({...card,owner:map.get(card.cardType+':'+card.ownerId)}));
 }

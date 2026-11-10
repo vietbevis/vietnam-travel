@@ -8,13 +8,15 @@ const customer=Joi.object({
   emergencyName:text(60),emergencyPhone:text(15),bloodType:text(3),allergies:text(120)
 }).unknown(false);
 module.exports.schemas={
+  profile:Joi.object({cardId,fields:Joi.object({fullName:Joi.string().min(1).max(60),phone:text(15),dob:Joi.string().pattern(/^\d{8}$/),gender:Joi.string().valid('male','female','other'),idNumber:text(20),emergencyName:text(60),emergencyPhone:text(15),bloodType:text(3),allergies:text(120)}).min(1).unknown(false),photoBase64:Joi.string().max(13463)}).or('fields','photoBase64').unknown(false),
+  replace:Joi.object({cardId,reason:Joi.string().trim().min(1).max(500).required()}).unknown(false),
   cash:Joi.object({cardId,amount:Joi.number().integer().min(10000).max(50000000).required()}).unknown(false),
   status:Joi.object({cardId,action:Joi.string().valid('lock','unlock','revoke').required(),reason:Joi.string().max(500).allow(''),refunded:Joi.boolean()}).unknown(false).custom((value,helpers)=>{
     if(value.action==='revoke'&&!(value.reason||'').trim())return helpers.error('any.invalid');
     return value;
   }),
   prepare:Joi.object({requestId:Joi.string().hex().length(32),ownerType:Joi.string().valid('customer','staff').required(),customerId:id,customer,accountId:id,photoBase64:Joi.string().max(13463).required(),replaceOf:Joi.string().hex().length(32)}).unknown(false).custom((value,helpers)=>{
-    if(value.ownerType==='customer' ? (!value.customerId===!value.customer)||value.accountId : !value.accountId||value.customerId||value.customer||value.replaceOf)return helpers.error('any.invalid');
+    if(value.ownerType==='customer' ? (!value.customerId===!value.customer)||value.accountId : !value.accountId||value.customerId||value.customer)return helpers.error('any.invalid');
     return value;
   }),
   init:Joi.object({cardId,response:Joi.string().hex().length(256).required(),sw:Joi.string().hex().length(4).required()}).unknown(false),

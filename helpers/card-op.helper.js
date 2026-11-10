@@ -159,19 +159,23 @@ async function policy(card,op,session,creating=false) {
   }
   if(op.type==='commit-write') {
     const p=op.params;
+    const latest=card.writeOpIds?.[p.target===1?'profile':'photo'];
+    if(!issuing&&!creating&&latest&&latest!==String(op._id))fail('OP_STATE');
     if(![1,2].includes(p.target)||typeof p.dataHex!=='string'||!/^([a-fA-F0-9]{2})+$/.test(p.dataHex)||p.dataHex.length/2>(p.target===1?448:10080))
       fail('OP_STATE');
     if(op.actorType==='customer'&&p.target!==1)
       fail('OP_FORBIDDEN');
     const update=p.customerUpdate;
     if(update) {
-      if(card.cardType!=='customer'||p.target!==1||typeof update!=='object'||Array.isArray(update)||Object.keys(update).some(k=>!profileFields.includes(k)||op.actorType==='customer'&&!['phone','emergencyName','emergencyPhone'].includes(k)))
+      const photo=p.target===2&&op.actorType==='admin'&&Object.keys(update).length===1&&typeof update.avatar==='string'&&/^https:\/\/[^\s]+$/.test(update.avatar);
+      if(card.cardType!=='customer'||typeof update!=='object'||Array.isArray(update)||!photo&&(p.target!==1||Object.keys(update).some(k=>!profileFields.includes(k)||op.actorType==='customer'&&!['phone','emergencyName','emergencyPhone'].includes(k))))
         fail('OP_FORBIDDEN');
     }
     if(update||op.actorType==='customer') {
-      const customer=await Customer.findOne({_id:card.ownerId,deleted:false}).session(session).lean();
+      const customer=await Customer.findOne({_id:card.ownerId,deleted:false,status:'active'}).session(session).lean();
       if(!customer)
         fail('OP_STATE');
+      if(p.target===2)return{};
       let encoded;
       try {
         encoded=Buffer.from(S.encodeProfile(profileData(customer,update)));
@@ -256,6 +260,7 @@ async function createOp({cardId,type,params={},actorType,actorId}) {
     };
     await policy(card,candidate,session,true);
     const [op]=await Op.create([candidate],{session});
+    if(type==='commit-write'&&card.status==='active')await Card.updateOne({_id:card._id},{$set:{['writeOpIds.'+(params.target===1?'profile':'photo')]:op.id},$inc:{__v:1}},{session});
     return op;
   });
 }
@@ -353,6 +358,12 @@ async function confirmOp({opId,responseHex='',sw,actorType,actorId,req}) {
     logCardId=found?.cardId;
     if(found&&['done','failed'].includes(found.status)) {
       actorCheck(found,{actorType,actorId});
+      // Mất HTTP confirm chỉ được đọc lại kết quả commit đã ghi nhận; không phát APDU mới.
+      if(found.status==='done'&&found.type==='commit-write'&&sw.toUpperCase()==='9000'&&responseHex===''){
+        const card=await Card.findOne({cardId:found.cardId}).session(session).lean();
+        await policy(card,found,session);
+        return{ok:true,message:'Thao tác đã được xác nhận.',result:{type:found.type}};
+      }
       return{ok:false,message:'Thao tác đã kết thúc.',result:null};
     }
     const op=await loadOp(String(opId),{actorType,actorId},session,'prepared');
