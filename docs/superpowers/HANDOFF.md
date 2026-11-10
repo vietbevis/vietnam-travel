@@ -10,9 +10,11 @@ Dự án là web du lịch Node/Express + Mongo + Pug (thanh toán ZaloPay/VNPay
 |---|---|---|
 | Plan 01: Applet Java Card | **Xong** | 266 test pass, build được file CAP |
 | Plan 02: Card Agent (cầu HTTP giữa trình duyệt và thẻ) | **Xong** | 30 test pass, chạy thử được chế độ sim |
-| Plan 03: Web (server + giao diện) | **Task 1 đã triển khai và kiểm thử** | 46 unit test pass; Task 2–16 chưa triển khai |
+| Plan 03: Web (server + giao diện) | **Task 1–2 đã triển khai và kiểm thử** | 46 unit + 5 E2E jCardSim pass; Task 3–16 chưa triển khai |
 
-**Cập nhật 2026-11-10:** Task 1 Plan 03 đã bổ sung helper giao thức/mật mã, `CardShared`, test runner, keygen và cấu hình web tối thiểu. Review độc lập: Spec PASS / Quality Approved; không phát hiện vấn đề cần sửa. Xem [báo cáo Task 1](reports/2026-11-10-smartcard-03-task-1.md). Chưa triển khai giao diện/nghiệp vụ thẻ; bước tiếp theo là Task 2 qua agent sim.
+**Cập nhật 2026-11-10:** Task 1 Plan 03 đã bổ sung helper giao thức/mật mã, `CardShared`, test runner, keygen và cấu hình web tối thiểu. Review độc lập: Spec PASS / Quality Approved; không phát hiện vấn đề cần sửa. Xem [báo cáo Task 1](reports/2026-11-10-smartcard-03-task-1.md).
+
+**Task 2 đã hoàn tất:** năm E2E giao thức thật qua Card Agent/jCardSim đạt PASS; tổng suite có agent là 51 PASS, không agent là 46 PASS/5 SKIP. Review phát hiện và đã sửa điều kiện `AGENT_URL` rỗng phải FAIL; re-review Spec PASS / Quality Approved. Xem [báo cáo Task 2](reports/2026-11-10-smartcard-03-task-2.md), gồm giới hạn Node 26 chưa chạy. Dừng trước Task 3; các chức năng nghiệp vụ website chưa được triển khai.
 
 ## 2. Tài liệu cần đọc (theo thứ tự)
 
@@ -54,7 +56,7 @@ Plan 03 chia thành 16 task, dự kiến làm theo 3 đợt. Chạy tuần tự,
 | Task | Nội dung |
 |---|---|
 | 1 | **Đã triển khai/kiểm thử** — test runner, sinh khóa, `card-shared.js`, crypto, APDU; 46/46 unit test PASS, review Approved |
-| 2 | Test giao thức đầu cuối qua agent sim |
+| 2 | **Đã kiểm thử** — 5/5 E2E giao thức qua agent sim; full suite 51 PASS, re-review Approved |
 | 3 | Model, quyền, nhật ký, hạng thành viên, quy tắc ví |
 | 4 | Tách helper thanh toán và `markOrderPaid` |
 | 5 | Card Operation engine, sync planner, endpoint `/card-api` |

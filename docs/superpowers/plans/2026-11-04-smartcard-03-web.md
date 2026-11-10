@@ -206,7 +206,7 @@ test('ticket encoding', () => { const t = A.encodeTicket({orderCode:'OD123456789
 **Interfaces:**
 - Consumes: mọi export của Task 1; agent `--sim` (plan 02)
 
-- [ ] **Step 1: Viết test**
+- [x] **Step 1: Viết test**
 
   Test chỉ chạy khi có `AGENT_URL`, không có thì `skip`. Server key và escrow master dùng bộ test (như `card-crypto.test.js`). Trước mỗi test gọi `POST /v1/sim/reset {"slot":0}`.
 
@@ -218,13 +218,13 @@ test('reset pin via escrow', async () => { /* RESET_PIN với encryptResetPin(ca
 test('profile write+commit', async () => { /* encodeProfile → BEGIN/WRITE/COMMIT(sha256 ‖ len) → READ_DATA trả đúng byte đã ghi */ });
 ```
 
-- [ ] **Step 2: Chạy test**
+- [x] **Step 2: Chạy test**
 
   Run: `(cd smartcard && ./gradlew :agent:run --args="--sim") &` rồi `AGENT_URL=http://127.0.0.1:31999 node --test test/card-e2e.test.js`
 
   Expected: PASS 5/5. Nếu FAIL, sửa helper ở Task 1, không sửa applet, trừ khi applet vi phạm spec.
 
-- [ ] **Step 3: Commit** — `test(card): end-to-end protocol test against simulated card`
+- [x] **Step 3: Commit** — `test(card): end-to-end protocol test against simulated card`
 
 ---
 
