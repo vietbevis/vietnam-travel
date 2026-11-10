@@ -7,6 +7,7 @@ const schema = new mongoose.Schema({
   status:{type:String,required:true,enum:['draft','prepared','done','failed'],default:'draft'},
   actorType:{type:String,required:true,enum:['admin','customer','system']},
   actorId:String,
+  emailStatus:{type:String,enum:['sent','failed','not-applicable']},
   expireAt:{type:Date,required:true,expires:0,default:()=>new Date(Date.now()+300_000)}
 },{timestamps:true});
 module.exports=mongoose.model('CardOperation',schema,'card-operations');

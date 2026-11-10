@@ -11,9 +11,12 @@ const schema = new mongoose.Schema({
   txCounter:{type:Number,min:0,max:0xffffffff,validate:{validator:value=>value==null || Number.isSafeInteger(value)}},
   receiptHex:{type:String,match:/^[a-fA-F0-9]{332}$/,uppercase:true},
   createdBy:String,
+  // Mã ý định thu tiền mặt không hết hạn: gửi lại không được tạo khoản nạp mới.
+  cashRequestId:{type:String,match:/^[a-fA-F0-9]{32}$/,uppercase:true},
   // Dấu đã cấp quyền ký sống lâu hơn TTL operation, ngăn ký ví lần hai.
   signedOpId:{type:String,match:/^[a-fA-F0-9]{24}$/},
   signedAt:Date
 },{timestamps:true});
 schema.index({txRef:1},{unique:true});
+schema.index({cashRequestId:1},{unique:true,partialFilterExpression:{cashRequestId:{$type:'string'}}});
 module.exports=mongoose.model('CardTransaction',schema,'card-transactions');

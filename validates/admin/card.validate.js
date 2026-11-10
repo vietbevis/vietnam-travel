@@ -8,6 +8,7 @@ const customer=Joi.object({
   emergencyName:text(60),emergencyPhone:text(15),bloodType:text(3),allergies:text(120)
 }).unknown(false);
 module.exports.schemas={
+  cash:Joi.object({cardId,amount:Joi.number().integer().min(10000).max(50000000).required()}).unknown(false),
   status:Joi.object({cardId,action:Joi.string().valid('lock','unlock','revoke').required(),reason:Joi.string().max(500).allow(''),refunded:Joi.boolean()}).unknown(false).custom((value,helpers)=>{
     if(value.action==='revoke'&&!(value.reason||'').trim())return helpers.error('any.invalid');
     return value;

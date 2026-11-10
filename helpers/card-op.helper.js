@@ -346,6 +346,9 @@ async function confirmOp({opId,responseHex='',sw,actorType,actorId,req}) {
     await Op.updateOne({_id:opId,expireAt:{$lte:new Date()}},{$unset:{'params.encryptedPin':1,'params.newPin':1}});
   let notification,logCardId;
   const output=await transaction(async session=> {
+    // Driver có thể chạy lại callback sau write conflict; chỉ lượt commit thắng được giữ PIN/mail.
+    notification=undefined;
+    let newPin;
     const found=await Op.findById(objectId(String(opId))?opId:null).session(session).lean();
     logCardId=found?.cardId;
     if(found&&['done','failed'].includes(found.status)) {
@@ -364,7 +367,7 @@ async function confirmOp({opId,responseHex='',sw,actorType,actorId,req}) {
     if(['credit','debit'].includes(op.type)&&!context.tx)
       fail('OP_STATE');
     if(sw.toUpperCase()!=='9000') {
-      await Op.updateOne({_id:op._id,status:'prepared'},{$set:{status:'failed'},$unset:{'params.encryptedPin':1}},{session});
+      await Op.updateOne({_id:op._id,status:'prepared'},{$set:{status:'failed'},$unset:{'params.encryptedPin':1,'params.newPin':1}},{session});
       if(context.tx?.signedOpId===String(op._id)) {
         if(op.type==='credit')
           await Tx.updateOne({_id:context.tx._id,status:{$ne:'done'}},{$set:{status:'pending-card'}},{session});
@@ -379,7 +382,7 @@ async function confirmOp({opId,responseHex='',sw,actorType,actorId,req}) {
         return{ok:false,message:'Biên nhận không hợp lệ.',result:null};
     }
     else {
-      const claimed=await Op.updateOne({_id:op._id,status:'prepared',expireAt:{$gt:new Date()}},{$set:{status:'done'},$unset:{'params.encryptedPin':1}},{session});
+      const claimed=await Op.updateOne({_id:op._id,status:'prepared',expireAt:{$gt:new Date()}},{$set:{status:'done'},$unset:{'params.encryptedPin':1,'params.newPin':1}},{session});
       if(claimed.modifiedCount!==1)
         fail('OP_STATE');
       await Card.updateOne({_id:card._id},{$inc:{__v:1},$set:{lastSeenAt:new Date()}},{session});
@@ -396,15 +399,13 @@ async function confirmOp({opId,responseHex='',sw,actorType,actorId,req}) {
         await Customer.updateOne({_id:card.ownerId,deleted:false},{$set:op.params.customerUpdate},{session,runValidators:true});
       if(op.type==='reset-pin') {
         const owner=card.cardType==='customer'?await Customer.findById(card.ownerId).session(session).lean():await Account.findById(card.ownerId).session(session).lean();
-        if(owner?.email) {
-          const decipher=crypto.createDecipheriv('aes-128-ecb',C.deriveEscrowKey(card.cardId),null);
-          decipher.setAutoPadding(false);
-          const clear=Buffer.concat([decipher.update(Buffer.from(op.params.encryptedPin,'hex')),decipher.final()]);
-          notification={email:owner.email,pin:clear.subarray(0,6).toString('ascii')};
-        }
+        const decipher=crypto.createDecipheriv('aes-128-ecb',C.deriveEscrowKey(card.cardId),null);
+        decipher.setAutoPadding(false);
+        const clear=Buffer.concat([decipher.update(Buffer.from(op.params.encryptedPin,'hex')),decipher.final()]);
+        try{newPin=clear.subarray(0,6).toString('ascii');if(owner?.email)notification={email:owner.email,pin:newPin};}finally{clear.fill(0);}
       }
     }
-    return{ok:true,message:'Đã tiếp nhận xác nhận.',result:{type:op.type}};
+    return{ok:true,message:'Đã tiếp nhận xác nhận.',result:{type:op.type,...(newPin?{newPin}:{} )}};
   });
   await log.write({
     action:'card-op-confirm',
@@ -415,8 +416,15 @@ async function confirmOp({opId,responseHex='',sw,actorType,actorId,req}) {
     detail:{opId:String(opId),sw},
     req
   });
-  if(notification)
-    mail.sendMail(notification.email,'Reset PIN thẻ thành viên',`PIN mới: ${notification.pin}`);
+  if(output.ok&&output.result?.type==='reset-pin'){
+    let emailStatus='not-applicable';
+    if(notification){
+      try{emailStatus=(await mail.sendMail(notification.email,'Reset PIN thẻ thành viên',`PIN mới: ${notification.pin}`))?.sent===true?'sent':'failed';}catch{emailStatus='failed';}
+      finally{notification.pin='';notification=undefined;}
+    }
+    output.result.emailStatus=emailStatus;
+    await Op.updateOne({_id:opId,status:'done'},{$set:{emailStatus}});
+  }
   return output;
 }
 module.exports={

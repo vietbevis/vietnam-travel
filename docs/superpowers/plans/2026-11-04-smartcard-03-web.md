@@ -729,23 +729,25 @@ test('transitions', () => { assert.equal(S.nextStatus('active','lock'), 'locked'
   - đồng thời phải thoả `checkOnlineTopup` (giới hạn 50 triệu)
   - tạo tx `pending-card`; sync sẽ thực hiện CREDIT
 
-- [ ] **Step 1: Viết test**
+- [x] **Step 1: Viết test**
 
 ```js
 test('reset pin op hides pin after confirm', async () => { /* createOp reset-pin → confirm sw 9000 → result.newPin có giá trị; đọc lại op từ DB: params.newPin undefined */ });
 test('cash topup daily cap per staff', async () => { /* 2 tx cash done hôm nay tổng 18 000 000 của staff A → topup 2 500 000 bị từ chối; staff B → OK */ });
 ```
 
-- [ ] **Step 2: Chạy test, xác nhận fail. Cài đặt. Chạy test, xác nhận pass.**
+- [x] **Step 2: Chạy test, xác nhận fail. Cài đặt. Chạy test, xác nhận pass.**
 
-- [ ] **Step 3: Kiểm thủ công**
+- [x] **Step 3: Kiểm thủ công**
 
   1. Cố tình sai PIN 5 lần để khoá → Reset PIN. Expected: PIN mới hiện ra; trên thẻ `mustChangePin = 1`; khách đổi PIN được; hồ sơ đọc lại vẫn đúng.
   2. Nạp tiền mặt 500 000 khi thẻ đang cắm. Expected: JS tự chạy `openSession()`; `GET_BALANCE` trên thẻ = server = 500 000; tx `done`.
 
-- [ ] **Step 4: Commit** — `feat(card): admin PIN reset via escrow and cash top-up`
+- [x] **Step 4: Commit** — `feat(card): admin PIN reset via escrow and cash top-up`
 
 ---
+
+**Kết quả Task 10 (2026-11-10):** 156 unit + 5 E2E jCardSim + 164 Mongo/HTTP integration PASS; Edge thật 22 mục PASS gồm reset PIN bị chặn, giữ hồ sơ/ảnh/vé/ví có 500.000đ, cash mất Agent/confirm và GET_RECEIPT đúng một lần. Spec PASS / Quality Approved / SecurityApproved, không Critical/Important; Minor mốc ngày/createdAt được ghi nhận. SMTP MOCK, REAL NOT_RUN. Header Idempotency-Key 32 hex bổ sung cho cash; reset chỉ persist ciphertext. Xem [báo cáo Task 10](../reports/2026-11-10-smartcard-03-task-10.md). Dừng trước Task 11.
 
 ### Task 11: Sửa hồ sơ/ảnh trên thẻ (A7) và cấp lại thẻ (A6)
 

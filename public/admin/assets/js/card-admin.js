@@ -110,6 +110,108 @@
     if(!output.response.ok||output.result.code!=='success')throw new Error(output.result.message||'Không thể cập nhật trạng thái thẻ.');
     return output.result;
   }
+  async function operationPost(path,body,options={},requestId){
+    const controller=new AbortController(),signal=options.signal,abort=()=>controller.abort();
+    if(signal?.aborted)controller.abort();signal?.addEventListener('abort',abort,{once:true});
+    let timeout;
+    try{
+      return await Promise.race([(async()=>{
+        if(controller.signal.aborted)throw new Error('Yêu cầu đã bị hủy.');
+        const response=await (options.fetch||root.fetch.bind(root))((options.base||'/admin/card')+path,{method:'POST',credentials:'same-origin',redirect:'error',cache:'no-store',headers:{'Content-Type':'application/json',...(requestId?{'Idempotency-Key':requestId}:{})},body:JSON.stringify(body),signal:controller.signal});
+        const result=await response.json();
+        if(controller.signal.aborted)throw new Error('Yêu cầu đã bị hủy; cần đối chiếu kết quả trên server.');
+        if(result.code==='step-up-required'){
+          const error=new Error('Cần xác thực lại thẻ nhân viên.');error.code='STEP_UP_REQUIRED';error.status=response.status;throw error;
+        }
+        if(!response.ok||result.code!=='success'){const error=new Error(result.message||'Yêu cầu thẻ bị từ chối.');error.status=response.status;throw error;}
+        return result;
+      })(),new Promise((resolve,reject)=>{timeout=setTimeout(()=>{abort();reject(new Error('Hết thời gian chờ; hãy đối chiếu cùng yêu cầu, không thu tiền lần nữa.'));},15000);})]);
+    }finally{clearTimeout(timeout);signal?.removeEventListener('abort',abort);controller.abort();}
+  }
+  async function renewOperationStepUp(client,options){
+    await options.onStepUp?.();
+    const base=options.base||'/admin/card',info=await client.openSession();
+    if(info.state!==S.STATE.ACTIVE||info.cardType!==2)throw new Error('Hãy cắm thẻ nhân viên đang hoạt động của tài khoản hiện tại để xác thực lại.');
+    let pin;try{pin=await client.askPin('Nhập PIN thẻ nhân viên để xác thực thao tác');await client.verifyPin(pin);}finally{pin='';}
+    const proof=await client.authenticate({challengeUrl:base+'/step-up/challenge',verifyUrl:base+'/step-up/verify'});
+    if(proof.code!=='success')throw new Error('Không thể xác thực thẻ nhân viên.');
+    const error=new Error('Đã xác thực nhân viên. Hãy cắm lại đúng thẻ đang xem rồi bấm lại thao tác; giữ nguyên yêu cầu tiền mặt cũ nếu có.');error.code='SWITCH_TARGET_CARD';throw error;
+  }
+  async function resetPinFlow(body,options={}){
+    const client=options.client||root.cardClient,base=options.base||'/admin/card';
+    const target=await client.openSession({expectedCardId:body.cardId,sync:false});
+    if(target.state!==S.STATE.ACTIVE||target.cardId!==body.cardId.toUpperCase())throw new Error('Hãy cắm đúng thẻ đang hoạt động được xem trước khi reset PIN.');
+    let prepared;
+    try{prepared=await operationPost('/reset-pin',{cardId:body.cardId},options);}
+    catch(error){if(error.code==='STEP_UP_REQUIRED')await renewOperationStepUp(client,options);throw error;}
+    options.onPrepared?.(prepared.opId);
+    const confirmed=await client.runSignedOp({opId:prepared.opId,signUrl:base+'/op/sign',confirmUrl:base+'/op/confirm'});
+    if(!confirmed.ok||!S.isPinFormat(confirmed.result?.newPin))throw new Error('Chưa nhận được PIN mới. Không tự gửi lại RESET_PIN; hãy kiểm tra trạng thái thẻ.');
+    const result={newPin:confirmed.result.newPin,emailStatus:confirmed.result.emailStatus};confirmed.result.newPin='';return result;
+  }
+  async function cashTopupFlow(intent,options={}){
+    const client=options.client||root.cardClient;
+    const body={cardId:intent.cardId,amount:intent.amount},requestId=intent.requestId;
+    if(!/^[a-fA-F0-9]{32}$/.test(requestId||'')||!Number.isSafeInteger(body.amount)||body.amount<10000)throw new Error('Số tiền hoặc mã yêu cầu nạp không hợp lệ.');
+    const target=await client.openSession({expectedCardId:body.cardId,sync:false});
+    if(target.state!==S.STATE.ACTIVE||target.cardId!==body.cardId.toUpperCase())throw new Error('Hãy cắm đúng thẻ khách đang hoạt động được xem trước khi nạp tiền.');
+    let accepted;
+    try{
+      try{accepted=await operationPost('/topup-cash',body,options,requestId);}
+      catch(error){if(error.status||options.signal?.aborted)throw error;accepted=await operationPost('/topup-cash',body,options,requestId);}
+    }catch(error){if(error.code==='STEP_UP_REQUIRED')await renewOperationStepUp(client,options);throw error;}
+    options.onAccepted?.(accepted);
+    if(accepted.status==='done')return accepted;
+    try{
+      await client.openSession({expectedCardId:body.cardId});
+      return await operationPost('/topup-cash',body,options,requestId);
+    }catch(error){error.txRef=accepted.txRef;throw error;}
+  }
+  function bindOperations(){
+    const document=root.document,resetForm=document.querySelector('[data-card-reset-pin-form]'),cashForm=document.querySelector('[data-card-topup-cash-form]');
+    if(!resetForm&&!cashForm)return;
+    const section=document.querySelector('[card-actions]'),message=document.querySelector('[data-card-ops-message]'),dialog=document.querySelector('[data-card-new-pin-dialog]'),pin=document.querySelector('[data-card-new-pin]'),recover=document.querySelector('[data-card-cash-recover]'),newPayment=document.querySelector('[data-card-new-cash-payment]');
+    let busy=false,aborter,intent=null,completed=false,resetUncertain=false;
+    const controls=Array.from(section.querySelectorAll('button,input'));
+    const clearPin=()=>{if(pin)pin.textContent='';if(dialog?.open)dialog.close();};
+    dialog?.addEventListener('close',clearPin);document.querySelector('[data-card-new-pin-dismiss]')?.addEventListener('click',clearPin);
+    function setBusy(value){busy=value;for(const control of controls)control.disabled=value;if(cashForm){cashForm.elements.amount.disabled=value||!!intent;cashForm.querySelector('button[type="submit"]').disabled=value||completed;}if(resetForm)resetForm.querySelector('button').disabled=value||resetUncertain;}
+    root.addEventListener('pagehide',()=>{aborter?.abort();clearPin();});
+    const options=form=>({base:form.dataset.cardBase,signal:aborter.signal,onStepUp:()=>{
+      message.textContent='Yêu cầu chưa được tạo mới. Hãy cắm thẻ nhân viên của tài khoản hiện tại để xác thực; sau đó cắm lại thẻ đang xem và gửi lại cùng yêu cầu.';
+      if(!root.confirm('Hãy cắm thẻ nhân viên của tài khoản hiện tại, sau đó bấm OK để xác thực. Chưa thu tiền hoặc tạo khoản nạp mới.'))throw new Error('Đã hủy xác thực; giữ nguyên yêu cầu để đối chiếu.');
+    }});
+    resetForm?.addEventListener('submit',async event=>{
+      event.preventDefault();if(busy||resetUncertain)return;clearPin();setBusy(true);aborter=new AbortController();message.textContent='Đang reset PIN; giữ đúng thẻ trong đầu đọc…';
+      try{
+        const result=await resetPinFlow({cardId:resetForm.dataset.cardId},{...options(resetForm),onPrepared:()=>{resetUncertain=true;}});
+        try{
+          if(aborter.signal.aborted)return;
+          message.textContent=result.emailStatus==='failed'?'Đã reset PIN. Gửi email thất bại; PIN mới chỉ hiện một lần. Khách cần đổi PIN trước khi sử dụng.':result.emailStatus==='not-applicable'?'Đã reset PIN. Chủ thẻ chưa có email; PIN mới chỉ hiện một lần.':'Đã reset PIN và gửi email. PIN mới chỉ hiện một lần; khách cần đổi PIN.';
+          pin.textContent=result.newPin;dialog.showModal();
+        }finally{result.newPin='';}
+      }catch(error){if(!aborter.signal.aborted)message.textContent=error.message+(resetUncertain?' Kết quả reset cần kiểm tra; không tự gửi lệnh reset lần nữa.':'');}
+      finally{setBusy(false);}
+    });
+    async function cashRun(){
+      if(busy||completed)return;setBusy(true);aborter=new AbortController();message.textContent='Đang đối chiếu khoản tiền mặt; không thu tiền lần nữa…';
+      try{
+        const result=await cashTopupFlow(intent,{...options(cashForm),onAccepted:accepted=>{intent.txRef=accepted.txRef;}});
+        if(aborter.signal.aborted)return;
+        completed=result.status==='done';
+        message.textContent=completed?`Giao dịch ${result.txRef} đã hoàn tất. Chỉ bắt đầu khoản nạp mới khi nhận một khoản tiền khác.`:`Giao dịch ${result.txRef}: ${result.status}. Chưa xác nhận nạp xong; giữ nguyên yêu cầu và đồng bộ/đối soát, không thu tiền lại.`;
+        recover.hidden=completed;newPayment.hidden=!completed;
+      }catch(error){if(error.txRef)intent.txRef=error.txRef;if(!aborter.signal.aborted)message.textContent=error.message+(intent.txRef?` Giao dịch ${intent.txRef} cần đối soát; không thu tiền lại.`:' Giữ nguyên yêu cầu để đối chiếu; chưa xác nhận đã tạo khoản nạp.');recover.hidden=false;}
+      finally{setBusy(false);}
+    }
+    cashForm?.addEventListener('submit',event=>{
+      event.preventDefault();if(busy||completed||!cashForm.reportValidity())return;
+      if(!intent){if(!root.confirm('Xác nhận đã nhận khoản tiền mặt này? Nếu đang đối soát khoản cũ, hãy đồng bộ thay vì tạo khoản mới.'))return;intent={cardId:cashForm.dataset.cardId,amount:Number(cashForm.elements.amount.value),requestId:root.crypto.randomUUID().replace(/-/g,'')};}
+      cashRun();
+    });
+    recover?.addEventListener('click',()=>{if(intent)cashRun();});
+    newPayment?.addEventListener('click',()=>{if(busy||!completed)return;intent=null;completed=false;cashForm.reset();recover.hidden=true;newPayment.hidden=true;message.textContent='Có thể nhập một khoản tiền mặt mới.';setBusy(false);});
+  }
   function bindStatus(){
     const document=root.document,form=document.querySelector('[data-card-status-form]');if(!form)return;
     const message=document.querySelector('[data-card-status-message]'),sync=document.querySelector('[data-card-sync]'),controls=Array.from(form.querySelectorAll('button,input'));
@@ -142,6 +244,7 @@
   }
   function bind(){
     bindStatus();
+    bindOperations();
     const document=root.document,form=document.querySelector('[data-card-issue]');if(!form)return;
     const status=document.querySelector('[data-card-status]'),preview=document.querySelector('[data-card-preview]'),pinDialog=document.querySelector('[data-card-pin-dialog]'),pin=document.querySelector('[data-card-pin]'),reset=document.querySelector('[data-card-reset]');
     let previewUrl=null,busy=false,aborter,pendingRequestId=null;
@@ -187,5 +290,5 @@
       }catch{status.textContent='Chưa xác nhận được reset thẻ ảo. Hãy kiểm tra Card Agent.';}
     });
   }
-  return {preparePhoto,issueFlow,resetSim,statusFlow,bind};
+  return {preparePhoto,issueFlow,resetSim,statusFlow,resetPinFlow,cashTopupFlow,bind};
 }));

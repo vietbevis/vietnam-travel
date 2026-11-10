@@ -41,6 +41,27 @@ block main
       p(data-card-status-message role="status" aria-live="polite") Cắm thẻ đang xem để đồng bộ trạng thái từ server.
       if permissions.includes('card-lock') || permissions.includes('card-revoke')
         button(type="button" data-card-sync) Đồng bộ ngay
+    if card.status==='active'
+      if permissions.includes('card-reset-pin')
+        form(data-card-reset-pin-form data-card-id=card.cardId data-card-base=`/${pathAdmin}/card`)
+          button(type="submit") Reset PIN
+          p PIN mới chỉ hiện một lần sau khi xác nhận. Chủ thẻ cần đổi PIN trước khi sử dụng.
+      if permissions.includes('card-topup') && card.cardType==='customer'
+        form(data-card-topup-cash-form data-card-id=card.cardId data-card-base=`/${pathAdmin}/card`)
+          label(for="cash-amount") Số tiền mặt đã nhận (đ)
+          input#cash-amount(name="amount" type="number" required min="10000" max="20000000" step="1" inputmode="numeric")
+          button(type="submit") Nạp tiền mặt
+          button(type="button" data-card-cash-recover hidden) Đối chiếu / đồng bộ khoản đang chờ
+          button(type="button" data-card-new-cash-payment hidden) Bắt đầu khoản tiền mặt khác
+          p Tối thiểu 10.000 đ; mỗi nhân viên tối đa 20.000.000 đ/ngày theo giờ Việt Nam. Giữ cùng yêu cầu nếu mất phản hồi.
+      if permissions.includes('card-reset-pin') || permissions.includes('card-topup')
+        p(data-card-ops-message role="status" aria-live="polite") Cắm đúng thẻ đang xem trước khi thao tác. Có thể cần thẻ nhân viên để xác thực lại.
+    if permissions.includes('card-reset-pin')
+      dialog(data-card-new-pin-dialog aria-label="PIN mới chỉ hiển thị một lần")
+        p PIN mới (chỉ hiển thị lần này)
+        strong(data-card-new-pin)
+        p Chủ thẻ phải đổi PIN trước khi sử dụng.
+        button(type="button" data-card-new-pin-dismiss) Đã lưu PIN an toàn
   h2 Credit đang chờ
   ul
     each tx in pendingCredits

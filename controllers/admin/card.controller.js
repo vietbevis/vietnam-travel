@@ -21,6 +21,7 @@ const mail=require('../../helpers/mail.helper');
 const V=require('../../validates/admin/card.validate');
 const api=require('../client/card-api.controller');
 const cardLog=require('../../helpers/card-log.helper');
+const walletRules=require('../../helpers/wallet-rule.helper');
 const objectId=value=>typeof value==='string'&&/^[a-fA-F0-9]{24}$/.test(value);
 function fail(code,status=409,message='Yêu cầu phát hành thẻ không hợp lệ hoặc đã kết thúc.'){const error=new Error(message);Object.assign(error,{code,status});throw error;}
 function problem(res,error){return res.status(error.status||500).json({code:'error',errorCode:error.code||'INTERNAL',message:error.status?error.message:'Không thể xử lý yêu cầu thẻ.'});}
@@ -216,6 +217,61 @@ module.exports.stepUpVerify=async(req,res)=>{
 function requirePermission(req,permission){
   if(!req.cardActor?.permissions.includes(permission))fail('OP_FORBIDDEN',403,'Bạn không có quyền thực hiện thao tác này.');
 }
+function requireStepUp(req,res){
+  if(adminToken.stepUp.isFresh(req))return true;
+  res.status(403).json({code:'step-up-required',message:'Hãy xác thực lại thẻ nhân viên trước khi thực hiện thao tác.'});return false;
+}
+module.exports.resetPinPost=async(req,res)=>{
+  try{
+    requirePermission(req,'card-reset-pin');
+    const {error,value:body}=V.schemas.card.validate(req.body,{convert:false});if(error)fail('INVALID_INPUT',400,'Mã thẻ không hợp lệ.');
+    if(!requireStepUp(req,res))return;
+    const card=await Card.findOne({cardId:body.cardId.toUpperCase(),status:'active',isCurrent:true}).lean();
+    if(!card)fail('CARD_STATE',409,'Chỉ reset PIN thẻ đang hoạt động.');
+    const owner=await (card.cardType==='customer'?Customer:Account).findOne({_id:card.ownerId,deleted:false}).lean();
+    if(!owner)fail('CARD_STATE',409,'Không tìm thấy chủ thẻ hiện tại.');
+    const dob=owner.dob?new Date(owner.dob).toISOString().slice(0,10).replace(/-/g,''):undefined;
+    const op=await E.createOp({cardId:card.cardId,type:'reset-pin',params:{newPin:C.generatePin(dob)},actorType:'admin',actorId:req.cardActor.id});
+    res.json({code:'success',opId:op.id,message:'Đã chuẩn bị reset PIN; giữ đúng thẻ trong đầu đọc.'});
+  }catch(error){problem(res,error);}
+};
+function cashReplay(tx,body,actorId){
+  if(tx.createdBy!==actorId||tx.cardId!==body.cardId.toUpperCase()||tx.amount!==body.amount||tx.type!=='credit'||tx.source!=='cash')fail('REQUEST_MISMATCH',409,'Mã yêu cầu đã được dùng cho một khoản thu khác.');
+  return {txRef:tx.txRef,status:tx.status};
+}
+module.exports.topupCashPost=async(req,res)=>{
+  try{
+    requirePermission(req,'card-topup');
+    const {error,value:body}=V.schemas.cash.validate(req.body,{convert:false});
+    const rawKey=req.get('Idempotency-Key');if(error||typeof rawKey!=='string'||!/^[a-fA-F0-9]{32}$/.test(rawKey))fail('INVALID_INPUT',400,'Số tiền hoặc mã yêu cầu nạp không hợp lệ.');
+    if(!requireStepUp(req,res))return;
+    const cashRequestId=rawKey.toUpperCase(),actorId=req.cardActor.id;
+    let result;
+    try{result=await transaction(async session=>{
+      // Một khóa chung theo nhân viên bảo vệ hạn mức qua nhiều thẻ; khóa Card bảo vệ ví.
+      const staff=await Account.updateOne({_id:actorId,status:'active',deleted:false},{$inc:{__v:1}},{session});
+      if(staff.modifiedCount!==1)fail('OP_FORBIDDEN',403);
+      const previous=await Tx.findOne({cashRequestId}).session(session).lean();
+      if(previous)return cashReplay(previous,body,actorId);
+      const card=await Card.findOne({cardId:body.cardId.toUpperCase(),cardType:'customer',status:'active',isCurrent:true}).session(session).lean();
+      if(!card)fail('CARD_STATE',409,'Chỉ nạp tiền cho thẻ khách đang hoạt động.');
+      await Card.updateOne({_id:card._id},{$inc:{__v:1}},{session});
+      const now=Date.now(),from=new Date(Math.floor((now+7*3600000)/86400000)*86400000-7*3600000),to=new Date(from.getTime()+86400000);
+      const daily=await Tx.aggregate([{$match:{type:'credit',source:'cash',createdBy:actorId,createdAt:{$gte:from,$lt:to}}},{$group:{_id:null,total:{$sum:'$amount'}}}]).session(session);
+      const pending=await Tx.aggregate([{$match:{cardId:card.cardId,type:'credit',$or:[{status:{$in:['pending-card','sent']}},{status:'failed',signedOpId:{$exists:true}}]}},{$group:{_id:null,total:{$sum:'$amount'}}}]).session(session);
+      const denied=walletRules.checkCashTopup({amount:body.amount,staffTodaySum:daily[0]?.total||0})||walletRules.checkOnlineTopup({balance:card.balance,pendingSum:pending[0]?.total||0,amount:body.amount});
+      if(denied)fail('TOPUP_LIMIT',409,denied);
+      const [tx]=await Tx.create([{cashRequestId,cardId:card.cardId,txRef:C.randomHex(8),type:'credit',source:'cash',amount:body.amount,status:'pending-card',createdBy:actorId}],{session});
+      await cardLog.write({action:'topup-cash',cardId:card.cardId,actorType:'admin',actorId,result:'success',detail:{txRef:tx.txRef,amount:body.amount},req},{session});
+      return {txRef:tx.txRef,status:tx.status};
+    });}catch(error){
+      // Hai nhân viên dùng trùng khóa có thể đụng unique index, vẫn đối chiếu binding.
+      if(error.code!==11000)throw error;
+      const previous=await Tx.findOne({cashRequestId}).lean();if(!previous)throw error;result=cashReplay(previous,body,actorId);
+    }
+    res.json({code:'success',...result,message:result.status==='done'?'Giao dịch đã hoàn tất.':'Đã ghi nhận tiền mặt. Cắm đúng thẻ để đồng bộ; không thu tiền lần nữa.'});
+  }catch(error){problem(res,error);}
+};
 module.exports.statusPost=async(req,res)=>{
   try{
     const {error,value:body}=V.schemas.status.validate(req.body,{convert:false});
