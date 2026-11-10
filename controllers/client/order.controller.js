@@ -7,73 +7,115 @@ const gererateHelper = require("../../helpers/generate.helper");
 const zalopayHelper = require("../../helpers/zalopay.helper");
 const vnpayHelper = require("../../helpers/vnpay.helper");
 const orderPaymentHelper = require("../../helpers/order-payment.helper");
+const tierHelper = require("../../helpers/tier.helper");
+const CardTransaction = require("../../models/card-transaction.model");
 const moment = require("moment");
 
+// Giới hạn một giao dịch ví thẻ (khớp CardTransaction.amount).
+const CARD_MAX_AMOUNT = 50000000;
+const OBJECT_ID = /^[a-fA-F0-9]{24}$/;
+const orderError = message => Object.assign(new Error(message), {userMessage: message});
+const validQuantity = value => Number.isSafeInteger(value) && value >= 0 && value <= 1000;
+const validPrice = value => Number.isSafeInteger(value) && value >= 0;
+
+// Chỉ nhận tourId, nơi khởi hành và số lượng từ client; mọi giá/tên/ảnh lấy từ database.
+function cleanItems(raw) {
+  if (!Array.isArray(raw) || raw.length < 1 || raw.length > 20)
+    throw orderError('Vui lòng đặt ít nhất 1 tour!');
+  const seen = new Set();
+  return raw.map(item => {
+    if (!item || typeof item !== 'object' || Array.isArray(item) || typeof item.tourId !== 'string' || !OBJECT_ID.test(item.tourId)
+      || typeof item.locationFrom !== 'string' || !OBJECT_ID.test(item.locationFrom))
+      throw orderError('Thông tin tour không hợp lệ!');
+    const quantities = [item.quantityAdult, item.quantityChildren, item.quantityBaby];
+    if (!quantities.every(validQuantity) || quantities.reduce((sum, value) => sum + value, 0) < 1)
+      throw orderError('Số lượng hành khách không hợp lệ!');
+    if (seen.has(item.tourId))
+      throw orderError('Mỗi tour chỉ được xuất hiện một lần trong đơn hàng!');
+    seen.add(item.tourId);
+    return {
+      tourId: item.tourId,
+      locationFrom: item.locationFrom,
+      quantityAdult: item.quantityAdult,
+      quantityChildren: item.quantityChildren,
+      quantityBaby: item.quantityBaby
+    };
+  });
+}
+
 module.exports.createPost = async (req, res) => {
+  const reserved = [];
   try {
-    req.body.orderCode = "OD" + gererateHelper.generateRandomNumber(10);
+    const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    if (typeof body.fullName !== 'string' || !body.fullName.trim() || body.fullName.length > 100
+      || typeof body.phone !== 'string' || !body.phone.trim() || body.phone.length > 20
+      || (body.note !== undefined && (typeof body.note !== 'string' || body.note.length > 1000)))
+      throw orderError('Thông tin khách hàng không hợp lệ!');
+    if (typeof body.paymentMethod !== 'string' || !variableConfig.paymentMethod.some(method => method.value === body.paymentMethod))
+      throw orderError('Phương thức thanh toán không hợp lệ!');
+    // Phiên đăng nhập lấy từ cookie phía server; không bao giờ đọc customerId từ body.
+    const customer = req.customer && req.card ? req.customer : null;
+    if (body.paymentMethod === 'card' && !customer)
+      throw orderError('Vui lòng đăng nhập bằng thẻ thành viên để thanh toán bằng ví thẻ!');
 
-    // Danh sách tour
-    for (const item of req.body.items) {
-      const infoTour = await Tour.findOne({
-        _id: item.tourId,
-        status: "active",
-        deleted: false
-      })
-
-      if(infoTour) {
-        // Thêm giá
-        item.priceNewAdult = infoTour.priceNewAdult;
-        item.priceNewChildren = infoTour.priceNewChildren;
-        item.priceNewBaby = infoTour.priceNewBaby;
-
-        // Ngày khởi hành
-        item.departureDate = infoTour.departureDate;
-
-        // Ảnh
-        item.avatar = infoTour.avatar;
-
-        // Tiêu đề
-        item.name = infoTour.name;
-
-        // Cập nhật lại số lượng còn lại của tour
-        if(infoTour.stockAdult < item.quantityAdult || infoTour.stockChildren < item.quantityChildren || infoTour.stockBaby < item.quantityBaby) {
-          res.json({
-            code: "error",
-            message: `Số lượng chỗ của tour ${item.name} đã hết, vui lòng chọn lại`
-          })
-          return;
-        }
-
-        await Tour.updateOne({
-          _id: item.tourId
-        }, {
-          stockAdult: infoTour.stockAdult - item.quantityAdult,
-          stockChildren: infoTour.stockChildren - item.quantityChildren,
-          stockBaby: infoTour.stockBaby - item.quantityBaby,
-        })
-      }
+    const items = cleanItems(body.items);
+    const tours = [];
+    for (const item of items) {
+      const infoTour = await Tour.findOne({_id: item.tourId, status: "active", deleted: false});
+      if (!infoTour || ![infoTour.priceNewAdult, infoTour.priceNewChildren, infoTour.priceNewBaby].every(validPrice))
+        throw orderError('Tour không còn tồn tại hoặc giá không hợp lệ, vui lòng chọn lại!');
+      tours.push(infoTour);
+      item.priceNewAdult = infoTour.priceNewAdult;
+      item.priceNewChildren = infoTour.priceNewChildren;
+      item.priceNewBaby = infoTour.priceNewBaby;
+      item.departureDate = infoTour.departureDate;
+      item.avatar = infoTour.avatar;
+      item.name = infoTour.name;
+      item.ticketStatus = 'none';
     }
 
-    // Thanh toán
-    // Tạm tính
-    req.body.subTotal = req.body.items.reduce((sum, item) => {
-      return sum + ((item.priceNewAdult * item.quantityAdult) + (item.priceNewChildren * item.quantityChildren) + (item.priceNewBaby * item.quantityBaby));
-    }, 0);
+    // Tạm tính, giảm giá theo hạng và tổng đều do backend tính từ dữ liệu database.
+    const subTotal = items.reduce((sum, item) => sum + item.priceNewAdult * item.quantityAdult + item.priceNewChildren * item.quantityChildren + item.priceNewBaby * item.quantityBaby, 0);
+    if (!Number.isSafeInteger(subTotal) || subTotal < 1)
+      throw orderError('Tổng tiền đơn hàng không hợp lệ!');
+    const discount = customer ? tierHelper.discountFor(customer.totalSpent || 0, subTotal) : 0;
+    const total = subTotal - discount;
+    if (!Number.isSafeInteger(total) || total < 1 || discount < 0 || discount > subTotal)
+      throw orderError('Tổng tiền đơn hàng không hợp lệ!');
+    if (body.paymentMethod === 'card' && total > CARD_MAX_AMOUNT)
+      throw orderError('Đơn hàng vượt hạn mức thanh toán một lần của ví thẻ, vui lòng chọn phương thức khác!');
 
-    // Giảm
-    req.body.discount = 0;
+    // Giữ chỗ nguyên tử: kiểm tra và trừ tồn trong cùng một lệnh để không bán vượt.
+    for (const [index, item] of items.entries()) {
+      const result = await Tour.updateOne({
+        _id: item.tourId,
+        status: "active",
+        deleted: false,
+        stockAdult: {$gte: item.quantityAdult},
+        stockChildren: {$gte: item.quantityChildren},
+        stockBaby: {$gte: item.quantityBaby}
+      }, {
+        $inc: {stockAdult: -item.quantityAdult, stockChildren: -item.quantityChildren, stockBaby: -item.quantityBaby}
+      });
+      if (result.modifiedCount !== 1)
+        throw orderError(`Số lượng chỗ của tour ${tours[index].name} đã hết, vui lòng chọn lại`);
+      reserved.push(item);
+    }
 
-    // Thanh toán
-    req.body.total = req.body.subTotal - req.body.discount;
-
-    // Trạng thái thanh toán
-    req.body.paymentStatus = "unpaid"; // unpaid: chưa thánh toán, paid: đã thanh toán
-
-    // Trạng thái đơn hàng
-    req.body.status = "initial"; // initial: khởi tạo, done: hoàn thành, cancel: hủy
-
-    const newRecord = new Order(req.body);
+    const newRecord = new Order({
+      orderCode: "OD" + gererateHelper.generateRandomNumber(10),
+      fullName: body.fullName,
+      phone: body.phone,
+      note: body.note || '',
+      items,
+      customerId: customer ? String(customer._id) : undefined,
+      subTotal,
+      discount,
+      total,
+      paymentMethod: body.paymentMethod,
+      paymentStatus: "unpaid", // unpaid: chưa thánh toán, paid: đã thanh toán
+      status: "initial" // initial: khởi tạo, done: hoàn thành, cancel: hủy
+    });
     await newRecord.save();
 
     res.json({
@@ -82,11 +124,18 @@ module.exports.createPost = async (req, res) => {
       orderId: newRecord.id
     })
   } catch (error) {
-    console.log(error);
+    // Hoàn lại chỗ đã giữ khi đơn không được lưu.
+    for (const item of reserved) {
+      await Tour.updateOne({_id: item.tourId}, {
+        $inc: {stockAdult: item.quantityAdult, stockChildren: item.quantityChildren, stockBaby: item.quantityBaby}
+      }).catch(() => {});
+    }
+    if (!error.userMessage)
+      console.log(error.name);
 
     res.json({
       code: "error",
-      message: "Đặt hàng không thành công!"
+      message: error.userMessage || "Đặt hàng không thành công!"
     })
   }
 }
@@ -229,6 +278,37 @@ module.exports.paymentVNPayResult = async (req, res) => {
     if (!changed && !await Order.findOne({...identity, phone: order.phone, paymentStatus: 'paid'})) return res.redirect('/');
     return res.redirect(`${process.env.DOMAIN_WEBSITE}/order/success?orderId=${orderId}&phone=${order.phone}`);
   } catch {
+    return res.redirect('/');
+  }
+}
+
+module.exports.paymentCard = async (req, res) => {
+  try {
+    res.set('Cache-Control', 'no-store');
+    if (!req.customer || !req.card) return res.redirect('/account/login');
+    const orderId = req.query.orderId;
+    if (typeof orderId !== 'string' || !OBJECT_ID.test(orderId)) return res.redirect('/');
+    // Đơn phải thuộc đúng khách trong phiên; đơn người khác hoặc không tồn tại đều về trang chủ.
+    const order = await Order.findOne({
+      _id: orderId, customerId: String(req.customer._id), paymentMethod: 'card', deleted: false, status: {$ne: 'cancel'}
+    }).lean();
+    if (!order) return res.redirect('/');
+    const successUrl = `/order/success?orderId=${order._id}&phone=${encodeURIComponent(order.phone)}`;
+    if (order.paymentStatus === 'paid') return res.redirect(successUrl);
+    if (order.paymentStatus !== 'unpaid') return res.redirect('/');
+    const tx = order.cardTxRef ? await CardTransaction.findOne({txRef: order.cardTxRef}).lean() : null;
+    const unresolved = !!tx && tx.status !== 'done' && (tx.status === 'sent' || !!tx.signedOpId);
+    for (const item of order.items) {
+      item.departureDateFormat = moment(item.departureDate).format("DD/MM/YYYY");
+    }
+    res.render("client/pages/order-payment-card", {
+      pageTitle: "Thanh toán bằng ví thẻ",
+      order,
+      card: req.card,
+      unresolved,
+      successUrl
+    });
+  } catch (error) {
     return res.redirect('/');
   }
 }

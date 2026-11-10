@@ -429,6 +429,10 @@ if(orderForm) {
                   // Chuyển hướng sang trang thanh toán bằng VNPay
                   window.location.href = `/order/payment-vnpay?orderId=${data.orderId}`;
                   break;
+                case "card":
+                  // Chuyển hướng sang trang thanh toán bằng ví thẻ thành viên
+                  window.location.href = `/order/payment-card?orderId=${encodeURIComponent(data.orderId)}`;
+                  break;
               }
             }
           })
@@ -437,6 +441,48 @@ if(orderForm) {
       }
     })
   ;
+
+  // Điền từ thẻ: chỉ đọc họ tên và SĐT từ chip để điền vào ô nhập, không gửi lên server cho đến khi khách bấm đặt tour.
+  const autofillButton = orderForm.querySelector("[data-card-autofill]");
+  if(autofillButton) {
+    const autofillStatus = orderForm.querySelector("[data-autofill-status]");
+    let autofillBusy = false;
+    autofillButton.addEventListener("click", async () => {
+      if(autofillBusy) return;
+      const customerUi = window.CardCustomer;
+      if(!customerUi || !window.cardClient) {
+        autofillStatus.textContent = "Không kết nối được Card Agent. Vui lòng kiểm tra và thử lại.";
+        return;
+      }
+      autofillBusy = true;
+      autofillButton.disabled = true;
+      autofillStatus.textContent = "Đang xử lý…";
+      try {
+        const profile = await customerUi.autofillFlow({
+          client: window.cardClient,
+          cardId: autofillButton.dataset.cardId
+        });
+        // Chỉ hai ô thông tin liên hệ được điền; giá, tổng tiền, phương thức thanh toán không bị đụng tới.
+        const fullNameInput = orderForm.querySelector("#full-name-input");
+        const phoneInput = orderForm.querySelector("#phone-input");
+        if(profile.fullName) {
+          fullNameInput.value = profile.fullName;
+          fullNameInput.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+        if(profile.phone) {
+          phoneInput.value = profile.phone;
+          phoneInput.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+        autofillStatus.textContent = "Đã điền từ thẻ. Vui lòng kiểm tra lại trước khi đặt tour.";
+      } catch (error) {
+        autofillStatus.textContent = customerUi.message(error);
+      } finally {
+        autofillBusy = false;
+        autofillButton.disabled = false;
+      }
+    });
+  }
+  // End Điền từ thẻ
 
   // List Input Method
   const listInputMethod = orderForm.querySelectorAll("input[name='method']");
@@ -764,11 +810,19 @@ const drawCart = () => {
             return sum;
           }
         }, 0);
-        const discount = 0;
+        // Chỉ để hiển thị; số tiền thật do server tính lại khi tạo đơn.
+        const pageCart = document.querySelector("[page-cart]");
+        const discountPercent = Number(pageCart && pageCart.dataset.discountPercent) || 0;
+        const discount = Math.round(subTotalPrice * discountPercent / 100);
         const totalPrice = subTotalPrice - discount;
-        
+
         const cartSubTotal = document.querySelector("[cart-sub-total]");
         cartSubTotal.innerHTML = subTotalPrice.toLocaleString("vi-VN");
+
+        const cartDiscount = document.querySelector("[cart-discount]");
+        if(cartDiscount) {
+          cartDiscount.innerHTML = discount.toLocaleString("vi-VN");
+        }
 
         const cartTotal = document.querySelector("[cart-total]");
         cartTotal.innerHTML = totalPrice.toLocaleString("vi-VN");

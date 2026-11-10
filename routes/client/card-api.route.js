@@ -7,6 +7,7 @@ router.post('/login/challenge',controller.loginChallenge);
 router.post('/login/verify',controller.loginVerify);
 router.post('/logout',controller.logout);
 router.post('/profile/build',controller.profileBuild);
+router.post('/pay/prepare',controller.payPrepare);
 router.post('/sync/next',controller.next);
 router.post('/sync/confirm',controller.syncConfirm);
 router.post('/sync/receipt',controller.receipt);

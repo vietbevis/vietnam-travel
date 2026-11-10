@@ -20,6 +20,10 @@ module.exports.paymentMethod = [
   {
     label: "Chuyển khoản ngân hàng",
     value: "bank"
+  },
+  {
+    label: "Ví thẻ thành viên",
+    value: "card"
   }
 ];
 

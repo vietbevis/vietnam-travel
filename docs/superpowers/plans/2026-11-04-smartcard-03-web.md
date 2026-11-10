@@ -881,7 +881,7 @@ test('profile update applies only on done', async () => { /* build với phone m
   - tạo CardTransaction debit `source: 'order'`, `orderId`, `amount = total`; tạo op `debit`; lưu `Order.cardTxRef`
 - Nút "Điền từ thẻ" gọi `openSession` → `askPin` → `readProfile` rồi điền `fullName` và `phone`
 
-- [ ] **Step 1: Viết test**
+- [x] **Step 1: Viết test**
 
 ```js
 test('payOtherCustomersOrderRejected', async () => { /* đơn của khách B, req.customer = A → code error, không tạo tx */ });  // Review Focus #3
@@ -890,7 +890,7 @@ test('createPost applies tier discount', async () => { /* customer totalSpent 30
 test('debit confirm marks paid and queues tickets', async () => { /* confirm biên nhận hợp lệ → order paid; items[].ticketStatus 'pending'; totalSpent tăng */ });
 ```
 
-- [ ] **Step 2: Chạy test, xác nhận fail. Cài đặt. Chạy test, xác nhận pass.**
+- [x] **Step 2: Chạy test, xác nhận fail. Cài đặt. Chạy test, xác nhận pass.**
 
   Trang `order-payment-card.pug` hiển thị:
   - tổng tiền và số dư;
@@ -898,14 +898,14 @@ test('debit confirm marks paid and queues tickets', async () => { /* confirm bi�
 
   Lỗi `6F10` / `6982` hiển thị bằng `swMessage`.
 
-- [ ] **Step 3: Kiểm thủ công**
+- [x] **Step 3: Kiểm thủ công**
 
   1. Nạp 2 000 000 tiền mặt (Task 10) → đặt tour 1 500 000 bằng ví thẻ. Expected: đơn `paid`; số dư thẻ = server = 500 000; sync ghi vé (Task 15).
   2. **Mất biên nhận:** mở DevTools, chặn request `/card-api/op/confirm`, bấm thanh toán, rồi tải lại trang thẻ. Expected: sync gọi GET_RECEIPT; đơn chuyển `paid` đúng một lần; số dư đúng.
   3. Đặt đơn vượt số dư. Expected: "Số dư ví không đủ", thẻ không bị trừ.
   4. Khách hạng Gold. Expected: giỏ hàng hiển thị giảm 5%.
 
-- [ ] **Step 4: Commit** — `feat(card): wallet payment, tier discount and card autofill`
+- [x] **Step 4: Commit** — `feat(card): wallet payment, tier discount and card autofill`
 
 ---
 

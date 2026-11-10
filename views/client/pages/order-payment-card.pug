@@ -1,0 +1,74 @@
+extends ../layouts/default.pug
+
+block main
+  - const money = value => Number(value).toLocaleString('vi-VN') + 'đ'
+  .container
+    .section-11.card-pay(
+      data-card-pay
+      data-order-id=String(order._id)
+      data-total=String(order.total)
+      data-card-id=card.cardId
+      data-server-balance=String(card.balance)
+      data-success-url=successUrl
+      data-unresolved=unresolved ? '1' : '0'
+      style="padding-top: 20px;"
+    )
+      .inner-wrap
+        .inner-head
+          .inner-title Thanh toán bằng ví thẻ thành viên
+        p Mã đơn hàng:
+          b #{order.orderCode}
+        p Khách hàng: #{order.fullName}
+        .inner-tour-list
+          each item in order.items
+            .inner-tour-item
+              .inner-product
+                .inner-image
+                  img(alt="" src=item.avatar)
+                .inner-content
+                  .inner-title #{item.name}
+                  .inner-meta
+                    .inner-meta-item
+                      | Ngày Khởi Hành:
+                      b #{item.departureDateFormat}
+              .inner-quantity
+                .inner-list
+                  .inner-item
+                    .inner-item-label Người lớn:
+                    .inner-item-price #{item.quantityAdult} x #{Number(item.priceNewAdult).toLocaleString('vi-VN')}
+                  .inner-item
+                    .inner-item-label Trẻ em:
+                    .inner-item-price #{item.quantityChildren} x #{Number(item.priceNewChildren).toLocaleString('vi-VN')}
+                  .inner-item
+                    .inner-item-label Em bé:
+                    .inner-item-price #{item.quantityBaby} x #{Number(item.priceNewBaby).toLocaleString('vi-VN')}
+        .inner-list-price
+          .inner-item
+            .inner-label Tạm tính:
+            .inner-price #{money(order.subTotal)}
+          .inner-item
+            .inner-label Giảm giá thành viên:
+            .inner-price -#{money(order.discount || 0)}
+          .inner-item
+            .inner-label Tổng tiền thanh toán:
+            .inner-price-highlight #{money(order.total)}
+          .inner-item
+            .inner-label Số dư ví (hệ thống):
+            .inner-price
+              strong(data-server-balance) #{money(card.balance)}
+        if card.balance < order.total
+          p.card-warning(data-pay-insufficient) Số dư ví không đủ để thanh toán đơn này.
+        p.card-pay-hint
+          | Cắm thẻ vào đầu đọc, bấm thanh toán và nhập PIN. Số tiền do hệ thống quyết định, không thể thay đổi từ trình duyệt.
+        .inner-button
+          button(type="button" data-card-pay-button disabled=card.balance < order.total || unresolved) Thanh toán bằng thẻ
+        p(data-card-pay-status role="status" aria-live="polite")
+          if unresolved
+            | Chờ đồng bộ: đơn có giao dịch chưa hoàn tất. Cắm đúng thẻ để hệ thống tự đồng bộ, đừng thanh toán lại.
+        .card-pay-recovery
+          h3 Nếu bị ngắt kết nối giữa chừng
+          ul
+            li Không bấm thanh toán lại ngay và không rút thẻ khi đang xử lý.
+            li Tải lại trang này, cắm đúng thẻ rồi bấm "Đồng bộ thẻ"; hệ thống sẽ đối soát biên nhận trên thẻ.
+            li Thẻ chỉ bị trừ tiền một lần cho mỗi đơn hàng.
+          button(type="button" data-card-pay-sync) Đồng bộ thẻ

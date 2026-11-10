@@ -2,7 +2,7 @@ extends ../layouts/default.pug
 
 block main
   // Section 11
-  .section-11(page-cart)
+  .section-11(page-cart data-discount-percent=tier ? String(tier.percent) : '0')
     .container
       .inner-wrap
         .inner-head
@@ -26,8 +26,11 @@ block main
               span(cart-sub-total) 0
               span đ
           .inner-item
-            .inner-label Giảm:
-            .inner-price -0đ
+            .inner-label Giảm#{tier && tier.percent ? ' hạng ' + tier.label + ' (' + tier.percent + '%)' : ''}:
+            .inner-price
+              span -
+              span(cart-discount) 0
+              span đ
           .inner-item
             .inner-label Thanh toán:
             .inner-price-highlight
@@ -45,15 +48,20 @@ block main
               .inner-input
                 input#full-name-input(
                   placeholder="Họ và tên" 
-                  name="fullName" 
+                  name="fullName"
                   type="text"
+                  value=customer && customer.fullName ? customer.fullName : undefined
                   )
               .inner-input
                 input#phone-input(
                   placeholder="Số điện thoại" 
-                  name="phone" 
+                  name="phone"
                   type="text"
+                  value=customer && customer.phone ? customer.phone : undefined
                   )
+            if customer && card
+              button(type="button" data-card-autofill data-card-id=card.cardId) Điền từ thẻ
+              p(data-autofill-status role="status" aria-live="polite")
             textarea(
               placeholder="Ghi chú" 
               name="note"
@@ -97,6 +105,14 @@ block main
                   type="radio"
                   )
                 label(for="methodBank") Chuyển khoản ngân hàng
+              .inner-item
+                input#methodCard(
+                  value="card"
+                  name="method"
+                  type="radio"
+                  disabled=!customer
+                  )
+                label(for="methodCard") Ví thẻ thành viên#{customer ? '' : ' (đăng nhập bằng thẻ để sử dụng)'}
             .inner-info-bank
               .inner-title Thông tin chuyển khoản
               .inner-text Ngân hàng : Vietcombank

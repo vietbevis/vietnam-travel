@@ -14,6 +14,9 @@ const customerAuth=require('../../middlewares/client/customer-auth.middleware');
 const cardAuth=require('../../helpers/card-auth.helper');
 const cardLog=require('../../helpers/card-log.helper');
 const customerValidation=require('../../validates/client/card.validate');
+const Order=require('../../models/order.model');
+const mongoose=require('mongoose');
+const crypto=require('node:crypto');
 const hex=n=>Joi.string().pattern(new RegExp(`^[a-fA-F0-9]{${n}}$`)).required();
 const response=Joi.string().allow('').pattern(/^([a-fA-F0-9]{2})*$/).max(332).required();
 const schemas={
@@ -27,7 +30,13 @@ const schemas={
     sw:hex(4)
   }).required().unknown(false)
 };
-const problem=(res,status,errorCode)=>res.status(status).json({code:'error',errorCode,message:'Yêu cầu thẻ không hợp lệ hoặc không được phép.'});
+// Thông báo cụ thể chỉ cho các mã lỗi thanh toán an toàn để hiển thị cho khách.
+const payMessages={
+  INSUFFICIENT_BALANCE:'Số dư ví không đủ',
+  UNRESOLVED_TX:'Giao dịch trước chưa hoàn tất, vui lòng cắm thẻ để đồng bộ',
+  ORDER_STATE:'Đơn hàng không thể thanh toán bằng ví thẻ.'
+};
+const problem=(res,status,errorCode)=>res.status(status).json({code:'error',errorCode,message:payMessages[errorCode]||'Yêu cầu thẻ không hợp lệ hoặc không được phép.'});
 function handler(schema,fn) {
   return async(req,res)=> {
     if(!req.is('application/json'))
@@ -277,6 +286,66 @@ module.exports.profileBuild=customerHandler(customerValidation.profile,'customer
   const op=await E.createOp({cardId:req.card.cardId,type:'commit-write',params:{target:1,dataHex:profileHex,customerUpdate:body},actorType:'customer',actorId:String(req.customer._id)});
   await cardLog.write({action:'customer-profile-build',cardId:req.card.cardId,actorType:'customer',actorId:String(req.customer._id),result:'success',detail:{opId:op.id},req});
   res.json({code:'success',message:'Đã chuẩn bị hồ sơ; dữ liệu chỉ đổi sau khi xác nhận ghi thẻ.',opId:op.id,profileHex});
+},true);
+const CARD_MAX_AMOUNT=50000000;
+// Một transaction: kiểm đơn/thẻ/số dư, khóa đơn bằng CAS cardTxRef và tạo (hoặc dùng lại) đúng một debit.
+async function reserveDebit(customer,cardDoc,orderId) {
+  const session=await mongoose.startSession();
+  let result;
+  try {
+    await session.withTransaction(async()=> {
+      result=undefined;
+      const order=await Order.findOne({_id:orderId,customerId:String(customer._id),paymentMethod:'card'}).session(session).lean();
+      if(!order||order.deleted)
+        throw new E.CardOpError('OP_FORBIDDEN');
+      if(order.paymentStatus!=='unpaid'||order.status==='cancel'||!Number.isSafeInteger(order.total)||order.total<1||order.total>CARD_MAX_AMOUNT)
+        throw new E.CardOpError('ORDER_STATE');
+      const card=await Card.findOne({_id:cardDoc._id,cardType:'customer',ownerId:String(customer._id),status:'active',isCurrent:true}).session(session).lean();
+      if(!card)
+        throw new E.CardOpError('CARD_STATE');
+      let tx=order.cardTxRef?await Tx.findOne({txRef:order.cardTxRef}).session(session).lean():null;
+      if(order.cardTxRef&&!tx)
+        throw new E.CardOpError('UNRESOLVED_TX');
+      if(tx) {
+        if(tx.type!=='debit'||tx.source!=='order'||tx.orderId!==String(order._id)||['done','awaiting-payment'].includes(tx.status))
+          throw new E.CardOpError('ORDER_STATE');
+        // sent/failed hoặc đã có chữ ký: chưa biết thẻ đã trừ hay chưa, chỉ receipt mới giải quyết được.
+        if(tx.status!=='pending-card'||tx.signedOpId)
+          throw new E.CardOpError('UNRESOLVED_TX');
+      }
+      if(card.balance<order.total)
+        throw new E.CardOpError('INSUFFICIENT_BALANCE');
+      if(tx) {
+        // Debit chưa ký nên được dùng lại; chỉ chỉnh về thẻ hiện hành và số tiền cố định của đơn.
+        if(tx.cardId!==card.cardId||tx.amount!==order.total) {
+          const moved=await Tx.updateOne({_id:tx._id,status:'pending-card',signedOpId:{$exists:false}},{$set:{cardId:card.cardId,amount:order.total}},{session});
+          if(moved.modifiedCount!==1)
+            throw new E.CardOpError('UNRESOLVED_TX');
+        }
+      }
+      else {
+        const txRef=crypto.randomBytes(8).toString('hex').toUpperCase();
+        // Hai prepare song song cùng ghi order: một bên write-conflict, retry rồi đi nhánh dùng lại.
+        const lock=await Order.updateOne({_id:order._id,paymentStatus:'unpaid',status:{$ne:'cancel'},cardTxRef:{$exists:false}},{$set:{cardTxRef:txRef}},{session});
+        if(lock.modifiedCount!==1)
+          throw new E.CardOpError('UNRESOLVED_TX');
+        await Tx.create([{cardId:card.cardId,txRef,type:'debit',source:'order',amount:order.total,orderId:String(order._id),status:'pending-card',createdBy:String(customer._id)}],{session});
+        tx={txRef};
+      }
+      result={txRef:tx.txRef,amount:order.total,cardId:card.cardId};
+    });
+  }
+  finally {
+    await session.endSession();
+  }
+  return result;
+}
+module.exports.payPrepare=customerHandler(customerValidation.payPrepare,'customer-pay-prepare',async(req,res,body)=>{
+  const reserved=await reserveDebit(req.customer,req.card,body.orderId);
+  const op=await E.createOp({cardId:reserved.cardId,type:'debit',params:{txRef:reserved.txRef},actorType:'customer',actorId:String(req.customer._id)});
+  await cardLog.write({action:'customer-pay-prepare',cardId:reserved.cardId,actorType:'customer',actorId:String(req.customer._id),result:'success',detail:{opId:op.id,txRef:reserved.txRef,orderId:body.orderId},req});
+  // Số tiền chỉ để hiển thị; APDU do server dựng từ giao dịch đã lưu.
+  res.json({code:'success',message:'Đã chuẩn bị thanh toán.',opId:op.id,amount:reserved.amount});
 },true);
 // Mount trực tiếp tại app để bắt cả lỗi parser xảy ra trước router con.
 module.exports.errorHandler=(error,req,res,next)=> {

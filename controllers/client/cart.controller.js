@@ -1,10 +1,15 @@
 const Tour = require("../../models/tour.model");
 const City = require("../../models/city.model");
 const moment = require("moment");
+const tierHelper = require("../../helpers/tier.helper");
 
 module.exports.cart = async (req, res) => {
+  // Hạng thành viên chỉ để hiển thị giảm giá; đơn hàng luôn được tính lại ở backend.
+  const tier = req.customer ? tierHelper.tierOf(req.customer.totalSpent || 0) : null;
   res.render("client/pages/cart", {
-    pageTitle: "Giỏ hàng"
+    pageTitle: "Giỏ hàng",
+    tier,
+    card: req.card || null
   })
 }
 
