@@ -312,7 +312,7 @@ Phải giữ nguyên hành vi của luồng thanh toán hiện tại.
   - khi có chuyển trạng thái và đơn có `customerId`: `Customer.totalSpent += total`, item có `ticketStatus` `'none'` hoặc chưa có → `'pending'`;
   - trả `true` chỉ ở lần chuyển trạng thái đầu tiên.
 
-- [ ] **Step 1: Viết test**
+- [x] **Step 1: Viết test**
 
 ```js
 test('vnpay url verifies itself', () => { /* set VNPAY_SECRET/CODE/URL giả; url = buildPaymentUrl(...); query = parse(url) + vnp_ResponseCode = '00' ký lại theo đúng thuật toán → verifyReturn(query).valid && success */ });
@@ -322,19 +322,21 @@ test('zalopay callback mac', () => { /* ZALOPAY_KEY2 giả; body {data, mac = Hm
 test('markOrderPaid only once', async () => { /* đơn unpaid có customerId, total 1 000 000 → gọi 2 lần: true rồi false; totalSpent == 1 000 000; items[0].ticketStatus == 'pending' */ });
 ```
 
-- [ ] **Step 2: Chạy test, xác nhận fail**
+- [x] **Step 2: Chạy test, xác nhận fail**
 
-- [ ] **Step 3: Cài đặt**
+- [x] **Step 3: Cài đặt**
 
   Chuyển nguyên văn thuật toán ký đang có trong `order.controller.js` sang helper. Callback/return của đơn hàng gọi `markOrderPaid({_id: orderId, phone, deleted: false}, 'zalopay'|'vnpay')`.
 
-- [ ] **Step 4: Chạy test, xác nhận pass**
+- [x] **Step 4: Chạy test, xác nhận pass**
 
 - [ ] **Step 5: Kiểm hồi quy thủ công**
 
   Đặt một đơn VNPay sandbox. Expected: vẫn chuyển hướng sang VNPay; khi quay về, đơn ở trạng thái `paid` như trước.
 
-- [ ] **Step 6: Commit** — `refactor(payment): extract ZaloPay/VNPay helpers and idempotent markOrderPaid`
+**NOT_RUN (2026-11-10):** chưa có thông tin sandbox hợp lệ được xác minh; không coi callback fixture là giao dịch tại cổng. Giữ Step 5 chưa tick theo yêu cầu người dùng. Xem [báo cáo Task 4](../reports/2026-11-10-smartcard-03-task-4.md).
+
+- [x] **Step 6: Commit** — `refactor(payment): extract ZaloPay/VNPay helpers and idempotent markOrderPaid`
 
 ---
 

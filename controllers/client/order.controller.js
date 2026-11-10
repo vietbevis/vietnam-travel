@@ -4,10 +4,9 @@ const City = require("../../models/city.model");
 
 const variableConfig = require("../../config/variable");
 const gererateHelper = require("../../helpers/generate.helper");
-const sortHelper = require("../../helpers/sort.helper");
-
-const axios = require('axios').default; // npm install axios
-const CryptoJS = require('crypto-js'); // npm install crypto-js
+const zalopayHelper = require("../../helpers/zalopay.helper");
+const vnpayHelper = require("../../helpers/vnpay.helper");
+const orderPaymentHelper = require("../../helpers/order-payment.helper");
 const moment = require("moment");
 
 module.exports.createPost = async (req, res) => {
@@ -148,211 +147,88 @@ module.exports.success = async (req, res) => {
 module.exports.paymentZaloPay = async (req, res) => {
   try {
     const orderId = req.query.orderId;
-  
+    if (typeof orderId !== 'string' || !/^[a-fA-F0-9]{24}$/.test(orderId)) return res.redirect('/');
     const orderDetail = await Order.findOne({
-      _id: orderId,
-      paymentStatus: "unpaid",
-      deleted: false
+      _id: orderId, paymentStatus: 'unpaid', paymentMethod: 'zalopay', deleted: false, status: {$ne: 'cancel'}
     });
-
-    if(!orderDetail) {
-      res.redirect("/");
-      return;
-    }
-
-    // APP INFO
-    const config = {
-      app_id: process.env.ZALOPAY_APPID,
-      key1: process.env.ZALOPAY_KEY1,
-      key2: process.env.ZALOPAY_KEY2,
-      endpoint: `${process.env.ZALOPAY_DOMAIN}/v2/create`
-    };
-
-    const embed_data = {
-      redirecturl: `${process.env.DOMAIN_WEBSITE}/order/success?orderId=${orderDetail.id}&phone=${orderDetail.phone}`
-    };
-
-    const items = [{}];
-    const transID = Math.floor(Math.random() * 1000000);
-    const order = {
-      app_id: config.app_id,
-      app_trans_id: `${moment().format('YYMMDD')}_${transID}`, // translation missing: vi.docs.shared.sample_code.comments.app_trans_id
-      app_user: `${orderDetail.phone}-${orderDetail.id}`,
-      app_time: Date.now(), // miliseconds
-      item: JSON.stringify(items),
-      embed_data: JSON.stringify(embed_data),
+    if (!orderDetail) return res.redirect('/');
+    const url = await zalopayHelper.createOrder({
+      appUser: `${orderDetail.phone}-${orderDetail.id}`,
       amount: orderDetail.total,
       description: `Thanh toán đơn hàng ${orderDetail.orderCode}`,
-      bank_code: "",
-      callback_url: `${process.env.DOMAIN_WEBSITE}/order/payment-zalopay-result`
-    };
-
-    // appid|app_trans_id|appuser|amount|apptime|embeddata|item
-    const data = config.app_id + "|" + order.app_trans_id + "|" + order.app_user + "|" + order.amount + "|" + order.app_time + "|" + order.embed_data + "|" + order.item;
-    order.mac = CryptoJS.HmacSHA256(data, config.key1).toString();
-
-    const response = await axios.post(config.endpoint, null, { params: order });
-    if(response.data.return_code == 1) {
-      res.redirect(response.data.order_url);
-    } else {
-      res.redirect("/");
-    }
-  } catch (error) {
-    res.redirect("/");
+      redirectUrl: `${process.env.DOMAIN_WEBSITE}/order/success?orderId=${orderDetail.id}&phone=${orderDetail.phone}`,
+      callbackPath: '/order/payment-zalopay-result'
+    });
+    return res.redirect(url || '/');
+  } catch {
+    return res.redirect('/');
   }
 }
 
 module.exports.paymentZaloPayResultPost = async (req, res) => {
-  const config = {
-    key2: process.env.ZALOPAY_KEY2
-  };
-
-  let result = {};
-
   try {
-    let dataStr = req.body.data;
-    let reqMac = req.body.mac;
-
-    let mac = CryptoJS.HmacSHA256(dataStr, config.key2).toString();
-    console.log("mac =", mac);
-
-
-    // kiểm tra callback hợp lệ (đến từ ZaloPay server)
-    if (reqMac !== mac) {
-      // callback không hợp lệ
-      result.return_code = -1;
-      result.return_message = "mac not equal";
-    }
-    else {
-      // thanh toán thành công
-      let dataJson = JSON.parse(dataStr, config.key2);
-      const [ phone, orderId ] = dataJson.app_user.split("-");
-
-      await Order.updateOne({
-        _id: orderId,
-        phone: phone,
-        deleted: false
-      }, {
-        paymentStatus: "paid"
-      })
-
-      result.return_code = 1;
-      result.return_message = "success";
-    }
-  } catch (ex) {
-    result.return_code = 0; // ZaloPay server sẽ callback lại (tối đa 3 lần)
-    result.return_message = ex.message;
+    const verified = zalopayHelper.verifyCallback(req.body);
+    if (!verified.valid) return res.json({return_code: -1, return_message: 'mac not equal'});
+    const data = verified.data;
+    if (!/^\+?\d{8,15}-[a-fA-F0-9]{24}$/.test(data.app_user)) return res.json({return_code: -1, return_message: 'invalid payment'});
+    const [phone, orderId] = data.app_user.split('-');
+    const identity = {
+      _id: orderId, phone, total: data.amount, paymentMethod: 'zalopay', deleted: false, status: {$ne: 'cancel'}
+    };
+    const order = await Order.findOne(identity);
+    if (!order || !['unpaid', 'paid'].includes(order.paymentStatus)) return res.json({return_code: -1, return_message: 'invalid payment'});
+    const changed = await orderPaymentHelper.markOrderPaid({_id: orderId, phone, deleted: false, total: data.amount}, 'zalopay');
+    // Callback lặp chỉ được ACK khi cùng identity/amount vẫn là đơn paid hợp lệ.
+    if (!changed && !await Order.findOne({...identity, paymentStatus: 'paid'})) return res.json({return_code: -1, return_message: 'invalid payment'});
+    return res.json({return_code: 1, return_message: 'success'});
+  } catch {
+    // Không trả lỗi DB/provider chứa dữ liệu nhạy cảm ra ngoài hoặc ghi MAC vào log.
+    return res.json({return_code: 0, return_message: 'processing failed'});
   }
-
-  // thông báo kết quả cho ZaloPay server
-  res.json(result);
 }
 
 module.exports.paymentVNPay = async (req, res) => {
   try {
     const orderId = req.query.orderId;
-  
+    if (typeof orderId !== 'string' || !/^[a-fA-F0-9]{24}$/.test(orderId)) return res.redirect('/');
     const orderDetail = await Order.findOne({
-      _id: orderId,
-      paymentStatus: "unpaid",
-      deleted: false
+      _id: orderId, paymentStatus: 'unpaid', paymentMethod: 'vnpay', deleted: false, status: {$ne: 'cancel'}
     });
-
-    if(!orderDetail) {
-      res.redirect("/");
-      return;
-    }
-
-    let date = new Date();
-    let createDate = moment(date).format('YYYYMMDDHHmmss');
-    
-    let ipAddr = req.headers['x-forwarded-for'] ||
-        req.connection.remoteAddress ||
-        req.socket.remoteAddress ||
-        req.connection.socket.remoteAddress;
-    
-    let tmnCode = process.env.VNPAY_CODE;
-    let secretKey = process.env.VNPAY_SECRET;
-    let vnpUrl = process.env.VNPAY_URL;
-    let returnUrl = `${process.env.DOMAIN_WEBSITE}/order/payment-vnpay-result`;
-    let orderIdVNP = `${orderId}-${Date.now()}`;
-    let amount = orderDetail.total;
-    let bankCode = "";
-    
-    let locale = "vn";
-    let currCode = 'VND';
-    let vnp_Params = {};
-    vnp_Params['vnp_Version'] = '2.1.0';
-    vnp_Params['vnp_Command'] = 'pay';
-    vnp_Params['vnp_TmnCode'] = tmnCode;
-    vnp_Params['vnp_Locale'] = locale;
-    vnp_Params['vnp_CurrCode'] = currCode;
-    vnp_Params['vnp_TxnRef'] = orderIdVNP;
-    vnp_Params['vnp_OrderInfo'] = 'Thanh toan cho ma GD:' + orderIdVNP;
-    vnp_Params['vnp_OrderType'] = 'other';
-    vnp_Params['vnp_Amount'] = amount * 100;
-    vnp_Params['vnp_ReturnUrl'] = returnUrl;
-    vnp_Params['vnp_IpAddr'] = ipAddr;
-    vnp_Params['vnp_CreateDate'] = createDate;
-    if(bankCode !== null && bankCode !== ''){
-        vnp_Params['vnp_BankCode'] = bankCode;
-    }
-
-    vnp_Params = sortHelper.sortObject(vnp_Params);
-
-    let querystring = require('qs');
-    let signData = querystring.stringify(vnp_Params, { encode: false });
-    let crypto = require("crypto");     
-    let hmac = crypto.createHmac("sha512", secretKey);
-    let signed = hmac.update(new Buffer(signData, 'utf-8')).digest("hex"); 
-    vnp_Params['vnp_SecureHash'] = signed;
-    vnpUrl += '?' + querystring.stringify(vnp_Params, { encode: false });
-
-    res.redirect(vnpUrl)
-  } catch (error) {
-    res.redirect("/");
+    if (!orderDetail) return res.redirect('/');
+    const txnRef = `${orderDetail.id}-${Date.now()}`;
+    const ipAddr = req.headers['x-forwarded-for'] || req.connection?.remoteAddress || req.socket?.remoteAddress || req.connection?.socket?.remoteAddress;
+    const url = vnpayHelper.buildPaymentUrl({
+      txnRef,
+      amount: orderDetail.total,
+      orderInfo: 'Thanh toan cho ma GD:' + txnRef,
+      returnPath: '/order/payment-vnpay-result',
+      ipAddr
+    });
+    return res.redirect(url);
+  } catch {
+    return res.redirect('/');
   }
 }
 
 module.exports.paymentVNPayResult = async (req, res) => {
-  let vnp_Params = req.query;
-
-  let secureHash = vnp_Params['vnp_SecureHash'];
-
-  delete vnp_Params['vnp_SecureHash'];
-  delete vnp_Params['vnp_SecureHashType'];
-
-  vnp_Params = sortHelper.sortObject(vnp_Params);
-
-  let secretKey = process.env.VNPAY_SECRET;
-
-  let querystring = require('qs');
-  let signData = querystring.stringify(vnp_Params, { encode: false });
-  let crypto = require("crypto");     
-  let hmac = crypto.createHmac("sha512", secretKey);
-  let signed = hmac.update(new Buffer(signData, 'utf-8')).digest("hex");
-  
-  if(secureHash === signed){
-    if(vnp_Params["vnp_ResponseCode"] == "00" && vnp_Params["vnp_TransactionStatus"] == "00") {
-      const [ orderId, date ] = vnp_Params["vnp_TxnRef"].split("-");
-
-      const orderDetail = await Order.findOne({
-        _id: orderId,
-        deleted: false
-      });
-
-      await Order.updateOne({
-        _id: orderId,
-        deleted: false
-      }, {
-        paymentStatus: "paid"
-      })
-
-      res.redirect(`${process.env.DOMAIN_WEBSITE}/order/success?orderId=${orderId}&phone=${orderDetail.phone}`);
-    } else {
-      res.render('success', {code: '97'})
-    }
-  } else{
-    res.render('success', {code: '97'})
+  try {
+    const verified = vnpayHelper.verifyReturn(req.query);
+    if (!verified.valid || !verified.success) return res.redirect('/');
+    // Chỉ signed reference chọn đơn; không dùng orderId tự khai trong query.
+    const reference = /^([a-fA-F0-9]{24})-([0-9]{13})$/.exec(verified.txnRef);
+    const rawAmount = req.query.vnp_Amount;
+    if (!reference || !process.env.VNPAY_CODE || req.query.vnp_TmnCode !== process.env.VNPAY_CODE || typeof rawAmount !== 'string' || !/^[1-9][0-9]*$/.test(rawAmount)) return res.redirect('/');
+    const scaled = Number(rawAmount);
+    if (!Number.isSafeInteger(scaled) || scaled % 100 !== 0) return res.redirect('/');
+    const orderId = reference[1];
+    const amount = scaled / 100;
+    const identity = {_id: orderId, total: amount, paymentMethod: 'vnpay', deleted: false, status: {$ne: 'cancel'}};
+    const order = await Order.findOne(identity);
+    if (!order || !['unpaid', 'paid'].includes(order.paymentStatus)) return res.redirect('/');
+    const changed = await orderPaymentHelper.markOrderPaid({_id: orderId, phone: order.phone, deleted: false, total: amount}, 'vnpay');
+    if (!changed && !await Order.findOne({...identity, phone: order.phone, paymentStatus: 'paid'})) return res.redirect('/');
+    return res.redirect(`${process.env.DOMAIN_WEBSITE}/order/success?orderId=${orderId}&phone=${order.phone}`);
+  } catch {
+    return res.redirect('/');
   }
 }
