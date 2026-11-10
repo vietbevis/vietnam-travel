@@ -257,7 +257,7 @@ test('profile write+commit', async () => { /* encodeProfile → BEGIN/WRITE/COMM
   - `close()`
   - `const enabled = !!process.env.TEST_DATABASE`
 
-- [ ] **Step 1: Viết test**
+- [x] **Step 1: Viết test**
 
 ```js
 // tier.test.js
@@ -273,23 +273,23 @@ test('cash daily cap', () => { assert.equal(W.checkCashTopup({amount:5_000_000, 
 test('only one current card per owner+type', async () => { /* tạo 2 Card isCurrent = true cùng ownerId + cardType → lần 2 lỗi E11000; isCurrent = false → OK */ });
 ```
 
-- [ ] **Step 2: Chạy test, xác nhận fail**
+- [x] **Step 2: Chạy test, xác nhận fail**
 
   Run: `npm test`
 
-- [ ] **Step 3: Cài đặt model, helper và quyền**
+- [x] **Step 3: Cài đặt model, helper và quyền**
 
-- [ ] **Step 4: Chạy test, xác nhận pass**
+- [x] **Step 4: Chạy test, xác nhận pass**
 
   Run: `npm test && TEST_DATABASE="<mongo test db>" npm run test:integration`
 
   Expected: PASS. Nếu không có Mongo test thì integration báo skip.
 
-- [ ] **Step 5: Kiểm quyền mới hiển thị**
+- [x] **Step 5: Kiểm quyền mới hiển thị**
 
   Mở `/admin/setting/role/create`. Expected: 9 checkbox quyền thẻ mới xuất hiện.
 
-- [ ] **Step 6: Commit** — `feat(card): card data models, permissions, tier and wallet rules`
+- [x] **Step 6: Commit** — `feat(card): card data models, permissions, tier and wallet rules`
 
 ---
 

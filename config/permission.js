@@ -1,4 +1,13 @@
 module.exports.permissionList = [
+  { label: "Xem thẻ thành viên", value: "card-view" },
+  { label: "Phát hành thẻ", value: "card-issue" },
+  { label: "Sửa hồ sơ thẻ", value: "card-edit" },
+  { label: "Khóa và mở khóa thẻ", value: "card-lock" },
+  { label: "Thu hồi thẻ", value: "card-revoke" },
+  { label: "Đặt lại PIN thẻ", value: "card-reset-pin" },
+  { label: "Nạp tiền mặt vào thẻ", value: "card-topup" },
+  { label: "Điểm danh bằng thẻ", value: "card-checkin" },
+  { label: "Xem nhật ký thẻ", value: "card-log-view" },
   {
     label: "Xem trang Tổng quan",
     value: "dashboard-view"
