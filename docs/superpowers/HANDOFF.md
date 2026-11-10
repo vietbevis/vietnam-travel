@@ -10,7 +10,7 @@ Dự án là web du lịch Node/Express + Mongo + Pug (thanh toán ZaloPay/VNPay
 |---|---|---|
 | Plan 01: Applet Java Card | **Xong** | 266 test pass, build được file CAP |
 | Plan 02: Card Agent (cầu HTTP giữa trình duyệt và thẻ) | **Xong** | 30 test pass, chạy thử được chế độ sim |
-| Plan 03: Web (server + giao diện) | **Task 1–5 đã triển khai, kiểm thử và review** | 89 unit + 5 E2E jCardSim + 78 Mongo/HTTP integration PASS; live engine/recovery jCardSim PASS; Task 6–16 chưa triển khai |
+| Plan 03: Web (server + giao diện) | **Task 1–6 đã triển khai, kiểm thử và review** | 128 unit + 5 E2E jCardSim + 78 Mongo/HTTP integration PASS; Browser Card Client/PIN qua Edge thật PASS; Task 7–16 chưa triển khai |
 
 **Cập nhật 2026-11-10:** Task 1 Plan 03 đã bổ sung helper giao thức/mật mã, `CardShared`, test runner, keygen và cấu hình web tối thiểu. Review độc lập: Spec PASS / Quality Approved; không phát hiện vấn đề cần sửa. Xem [báo cáo Task 1](reports/2026-11-10-smartcard-03-task-1.md).
 
@@ -22,7 +22,9 @@ Dự án là web du lịch Node/Express + Mongo + Pug (thanh toán ZaloPay/VNPay
 
 **Task 5 đã triển khai/kiểm thử và review:** operation engine, planner thuần, chọn vé và năm API `/card-api`; 12 unit mới và 55 integration mới. Full suite 94 PASS (89 unit + 5 E2E), full integration 78 PASS. Phép kiểm engine + HTTP sync + Mongo replica set + jCardSim thật xác nhận debit mất confirm được GET_RECEIPT khôi phục, đơn paid/spend chỉ một lần. Review sau một vòng sửa: Spec PASS / Quality Approved / SecurityApproved. Xem [báo cáo Task 5](reports/2026-11-10-smartcard-03-task-5.md).
 
-**Điều kiện vận hành:** MongoDB standalone hiện tại chỉ phục vụ settlement đơn legacy không customerId. Engine và đơn gắn customerId cần replica set/transaction; standalone bị từ chối để tránh ghi một phần. Test dùng replica set cô lập cổng 27018, không đổi DB website. Manual gateway sandbox, SMTP delivery, Node 26 runtime và UI/thẻ thật chưa kiểm chứng. Bước tiếp theo chỉ khi được giao: Task 6, chưa có card-client/giao diện/nghiệp vụ các task sau.
+**Task 6 đã triển khai/kiểm thử:** UMD Browser Card Client đủ interface, sync tối đa 10 bước, signed APDU chuyển SW thật về backend, modal PIN an toàn, cấu hình escaped và quản lý blob/lifecycle. Thêm 39 test: full suite 133 PASS (128 unit + 5 E2E), integration thật 78 PASS. Edge headless thật PASS 17 mục với layout/API/Mongo test/jCardSim; hai regression lifecycle chuyển RED→GREEN. Chi tiết phạm vi và review trong [báo cáo Task 6](reports/2026-11-10-smartcard-03-task-6.md).
+
+**Điều kiện vận hành:** MongoDB standalone hiện tại chỉ phục vụ settlement đơn legacy không customerId. Engine và đơn gắn customerId cần replica set/transaction; standalone bị từ chối để tránh ghi một phần. Test dùng replica set cô lập cổng 27018, không đổi DB website. Manual gateway sandbox, SMTP delivery, Node 26 runtime và thẻ thật chưa kiểm chứng. Browser proof dùng fixture hai layout, chưa hồi quy mọi trang nghiệp vụ. Bước tiếp theo chỉ khi được giao: Task 7; chưa có giao diện phát hành thẻ/nghiệp vụ các task sau.
 
 **Lưu ý cho các task tiếp theo:** sync state/receipt vẫn public; ký credit/ghi/xóa vé cần current owner hoặc admin có quyền, operation bind actor. Anonymous sync trả `step:null, requiresAuth:true`; chạy lại sync sau đăng nhập. Transaction đã có `signedOpId/signedAt` nhưng chưa done cần recovery ngay cả status failed/pending-card; không xóa marker/cấp chữ ký tiền mới dựa SW hoặc TTL. Các luồng nạp/trả tiền/thu hồi/cấp lại/hủy đơn tương lai phải giữ quy tắc đối soát này. Khi không còn receipt hoặc đơn không còn khớp, cần xử lý thủ công, không tự tạo paid/balance.
 
@@ -70,7 +72,7 @@ Plan 03 chia thành 16 task, dự kiến làm theo 3 đợt. Chạy tuần tự,
 | 3 | **Đã triển khai/kiểm thử** — model, quyền, nhật ký, hạng, ví; 65 unit + 5 E2E + 8 Mongo test PASS, review Approved |
 | 4 | **Đã triển khai/kiểm thử, review Approved** — helper thanh toán, CAS/transaction settlement; 12 unit mới + 15 Mongo payment PASS; manual gateway NOT_RUN |
 | 5 | **Đã triển khai/kiểm thử, review Approved** — engine/planner/API, receipt recovery và chống double confirm; 12 unit + 55 integration mới; live jCardSim proof PASS |
-| 6 | `card-client.js` trên trình duyệt và hộp nhập PIN |
+| 6 | **Đã triển khai/kiểm thử** — Browser Card Client, modal PIN, cấu hình an toàn; 39 unit mới, Edge thật + API/Mongo test/jCardSim PASS |
 
 **Đợt 2: Chức năng admin (Task 7 đến 11)**
 

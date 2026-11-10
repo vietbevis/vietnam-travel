@@ -31,6 +31,13 @@ html
       block main
     //- End Main
 
+    include ../partials/card-pin-modal.pug
+    div(card-agent-config hidden data-card-agent-url=cardAgentUrl)
+    script.
+      window.CARD_AGENT_URL = document.querySelector('[card-agent-config]').dataset.cardAgentUrl;
+    script(src="/assets/js/card/card-shared.js")
+    script(src="/assets/js/card/card-client.js")
+
     script(src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js")
     script(src="https://unpkg.com/filepond-plugin-image-preview/dist/filepond-plugin-image-preview.js") 
     script(src="https://unpkg.com/filepond-plugin-file-validate-type/dist/filepond-plugin-file-validate-type.js") 

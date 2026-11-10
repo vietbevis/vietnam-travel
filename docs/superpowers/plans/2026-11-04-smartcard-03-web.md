@@ -469,7 +469,7 @@ test('sw failure marks op failed', async () => { /* confirm sw 6F20 → op faile
   - POST `verifyUrl` `{cardId, nonce, counter, signature, ...body}`
 - `askPin(title) → Promise<string>`
 
-- [ ] **Step 1: Viết test**
+- [x] **Step 1: Viết test**
 
   Dùng `fetch` giả: agent giả trả theo kịch bản, server giả ghi lại body.
 
@@ -482,9 +482,9 @@ test('writeTarget chunks 224', async () => { /* 500B → BEGIN Lc 2 = 01F4; WRIT
 test('agent down → friendly error', async () => { /* fetch reject → err.message chứa 'Không kết nối được Card Agent' */ });
 ```
 
-- [ ] **Step 2: Chạy test, xác nhận fail**
+- [x] **Step 2: Chạy test, xác nhận fail**
 
-- [ ] **Step 3: Cài đặt**
+- [x] **Step 3: Cài đặt**
 
   Dạng UMD giống `card-shared.js`. Trong Node, `require('./card-shared.js')`; trên trình duyệt, đọc `window.CardShared`.
 
@@ -494,9 +494,11 @@ test('agent down → friendly error', async () => { /* fetch reject → err.mess
   - reject `PIN_CANCELLED` khi bấm Huỷ;
   - xoá giá trị input sau khi dùng.
 
-- [ ] **Step 4: Chạy test, xác nhận pass**
+- [x] **Step 4: Chạy test, xác nhận pass**
 
-- [ ] **Step 5: Commit** — `feat(card): browser card client with sync loop and PIN modal`
+- [x] **Step 5: Commit** — `feat(card): browser card client with sync loop and PIN modal`
+
+**Nghiệm thu 2026-11-10:** 39 test client mới; tổng 128 unit + 5 E2E jCardSim + 78 MongoDB integration PASS, không FAIL/SKIP khi cấu hình đầy đủ. Edge thật PASS 17 mục và hai regression lifecycle (PageTransitionEvent tổng hợp cho restore). Review sửa hai Important, re-review Spec PASS / Quality Approved / Security Approved. Cấu hình Agent dùng data attribute được escape thay nội suy JavaScript; signed SW luôn chuyển backend trước lỗi. Xem [báo cáo Task 6](../reports/2026-11-10-smartcard-03-task-6.md). Chưa triển khai Task 7.
 
 ---
 

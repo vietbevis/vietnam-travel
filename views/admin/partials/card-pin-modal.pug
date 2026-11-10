@@ -1,0 +1,8 @@
+dialog(card-pin-modal aria-labelledby="card-pin-title" aria-describedby="card-pin-status")
+  form(autocomplete="off" novalidate)
+    h2#card-pin-title(card-pin-title) Nhập mã PIN
+    label(for="card-pin-input") Mã PIN (6 chữ số)
+    input#card-pin-input(card-pin-input type="password" inputmode="numeric" maxlength="6" minlength="6" pattern="[0-9]{6}" autocomplete="off" required)
+    p#card-pin-status(card-pin-status role="status" aria-live="polite")
+    button(card-pin-cancel type="button") Huỷ
+    button(type="submit") Xác nhận

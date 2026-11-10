@@ -46,6 +46,13 @@ html(lang="vi")
 
     include ../partials/box-contact.pug
 
+    include ../partials/card-pin-modal.pug
+    div(card-agent-config hidden data-card-agent-url=cardAgentUrl)
+    script.
+      window.CARD_AGENT_URL = document.querySelector('[card-agent-config]').dataset.cardAgentUrl;
+    script(src="/assets/js/card/card-shared.js")
+    script(src="/assets/js/card/card-client.js")
+
     script(src="https://unpkg.com/aos@2.3.1/dist/aos.js")
     script(src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js")
     script(src="https://cdnjs.cloudflare.com/ajax/libs/viewerjs/1.11.7/viewer.min.js")
