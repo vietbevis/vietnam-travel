@@ -8,6 +8,10 @@ const customer=Joi.object({
   emergencyName:text(60),emergencyPhone:text(15),bloodType:text(3),allergies:text(120)
 }).unknown(false);
 module.exports.schemas={
+  status:Joi.object({cardId,action:Joi.string().valid('lock','unlock','revoke').required(),reason:Joi.string().max(500).allow(''),refunded:Joi.boolean()}).unknown(false).custom((value,helpers)=>{
+    if(value.action==='revoke'&&!(value.reason||'').trim())return helpers.error('any.invalid');
+    return value;
+  }),
   prepare:Joi.object({requestId:Joi.string().hex().length(32),ownerType:Joi.string().valid('customer','staff').required(),customerId:id,customer,accountId:id,photoBase64:Joi.string().max(13463).required(),replaceOf:Joi.string().hex().length(32)}).unknown(false).custom((value,helpers)=>{
     if(value.ownerType==='customer' ? (!value.customerId===!value.customer)||value.accountId : !value.accountId||value.customerId||value.customer||value.replaceOf)return helpers.error('any.invalid');
     return value;

@@ -10,7 +10,7 @@ Dự án là web du lịch Node/Express + Mongo + Pug (thanh toán ZaloPay/VNPay
 |---|---|---|
 | Plan 01: Applet Java Card | **Xong** | 266 test pass, build được file CAP |
 | Plan 02: Card Agent (cầu HTTP giữa trình duyệt và thẻ) | **Xong** | 30 test pass, chạy thử được chế độ sim |
-| Plan 03: Web (server + giao diện) | **Task 1–8 đã triển khai, kiểm thử và review** | 140 unit + 5 E2E jCardSim + 130 Mongo/HTTP integration PASS; Task 8 Edge thật 20 mục PASS; Task 9–16 chưa triển khai |
+| Plan 03: Web (server + giao diện) | **Task 1–9 đã triển khai, kiểm thử và review** | 147 unit + 5 E2E jCardSim + 145 Mongo/HTTP integration PASS; Task 9 Edge thật 19 mục PASS; Task 10–16 chưa triển khai |
 
 **Cập nhật 2026-11-10:** Task 1 Plan 03 đã bổ sung helper giao thức/mật mã, `CardShared`, test runner, keygen và cấu hình web tối thiểu. Review độc lập: Spec PASS / Quality Approved; không phát hiện vấn đề cần sửa. Xem [báo cáo Task 1](reports/2026-11-10-smartcard-03-task-1.md).
 
@@ -28,7 +28,9 @@ Dự án là web du lịch Node/Express + Mongo + Pug (thanh toán ZaloPay/VNPay
 
 **Task 8 đã triển khai/kiểm thử, review Approved:** login legacy giữ JWT/cookie, staff password → preToken → PIN/RSA proof, nonce single-use/expiry, middleware revalidate card/role, OTP reset không full-auth bypass và Step-up bound thẻ/account giữ exp cũ. Account layout/account.js có CardClient/PIN và đổi PIN lần đầu. Full 145 PASS (140 unit + 5 E2E), Mongo test 130 PASS, Edge thật 20 mục PASS, gồm token cũ sau lock/revoke và Step-up stale fixture rồi xác thực lại thật. Review không Critical/Important; một Minor định dạng và hai Minor Task 7 tiếp tục ghi nhận. Xem [báo cáo Task 8](reports/2026-11-10-smartcard-03-task-8.md).
 
-**Điều kiện vận hành:** MongoDB standalone hiện tại chỉ phục vụ settlement đơn legacy không customerId. Engine, phát hành và đơn gắn customerId cần replica set/transaction; standalone bị từ chối để tránh ghi một phần. Test dùng replica set cô lập cổng 27018, không đổi DB website. Cloudinary thiếu cấu hình; SMTP có cấu hình nhưng chưa có địa chỉ nhận thử, upload/delivery thật NOT_RUN (Task 7 dùng MOCK; Task 8 không cần dịch vụ này). Manual gateway sandbox, Node 26 runtime và thẻ thật chưa kiểm chứng. Browser proof render layout/route/API thật trong fixture test, bỏ script/CDN không liên quan; chưa hồi quy mọi trang nghiệp vụ. Bước tiếp theo chỉ khi được giao: Task 9. Chuyển số dư/vé khi cấp lại vẫn thuộc Task 11, Task 7 từ chối trường hợp cần chuyển.
+**Task 9 đã triển khai/kiểm thử, review Approved:** danh sách/chi tiết thẻ, khóa/mở/thu hồi với refund và audit transaction, quyền/Step-up, log chỉ xem, sync đúng thẻ. Full 152 PASS (147 unit + 5 E2E), Mongo test thật 145 PASS, Edge thật 19 mục PASS xác nhận chip 03/02/7F và JWT cũ sau thu hồi nhân viên bị từ chối. Đã sửa Important public prepared set-state chặn revoke và hồi quy JWT lệch giây, không Critical/Important mở. Một Minor dữ liệu đang render cần reload sau revoke; giữ các Minor trước đó. Xem [báo cáo Task 9](reports/2026-11-10-smartcard-03-task-9.md).
+
+**Điều kiện vận hành:** MongoDB standalone hiện tại chỉ phục vụ settlement đơn legacy không customerId. Engine, phát hành và đơn gắn customerId cần replica set/transaction; standalone bị từ chối để tránh ghi một phần. Test dùng replica set cô lập cổng 27018, không đổi DB website. Cloudinary thiếu cấu hình; SMTP có cấu hình nhưng chưa có địa chỉ nhận thử, upload/delivery thật NOT_RUN (Task 7 dùng MOCK; Task 8 không cần dịch vụ này). Manual gateway sandbox, Node 26 runtime và thẻ thật chưa kiểm chứng. Browser proof render layout/route/API thật trong fixture test, bỏ script/CDN không liên quan; chưa hồi quy mọi trang nghiệp vụ. Bước tiếp theo chỉ khi được giao: Task 10. Chuyển số dư/vé khi cấp lại vẫn thuộc Task 11, Task 7 từ chối trường hợp cần chuyển.
 
 **Lưu ý cho các task tiếp theo:** sync state/receipt vẫn public; ký credit/ghi/xóa vé cần current owner hoặc admin có quyền, operation bind actor. Anonymous sync trả `step:null, requiresAuth:true`; chạy lại sync sau đăng nhập. Transaction đã có `signedOpId/signedAt` nhưng chưa done cần recovery ngay cả status failed/pending-card; không xóa marker/cấp chữ ký tiền mới dựa SW hoặc TTL. Các luồng nạp/trả tiền/thu hồi/cấp lại/hủy đơn tương lai phải giữ quy tắc đối soát này. Khi không còn receipt hoặc đơn không còn khớp, cần xử lý thủ công, không tự tạo paid/balance.
 
@@ -84,7 +86,7 @@ Plan 03 chia thành 16 task, dự kiến làm theo 3 đợt. Chạy tuần tự,
 |---|---|
 | 7 | **Đã triển khai/kiểm thử, review Approved** — phát hành khách/nhân viên, danh sách/menu; 8 unit + 25 integration mới; Edge thật 19 mục PASS, Cloudinary/SMTP MOCK |
 | 8 | **Đã triển khai/kiểm thử, review Approved** — staff card login/OTP chống bypass/Step-up; 4 unit + 27 integration mới, Edge thật 20 mục PASS |
-| 9 | Danh sách, chi tiết, khóa/mở/thu hồi, nhật ký (A2, A3, A4, A10) |
+| 9 | **Đã triển khai/kiểm thử, review Approved** — list/detail/status/refund/audit, 7 unit + 15 integration mới, Edge thật 19 mục PASS |
 | 10 | Reset PIN (A5) và nạp tiền mặt (A8) |
 | 11 | Sửa hồ sơ/ảnh trên thẻ (A7) và cấp lại thẻ (A6) |
 

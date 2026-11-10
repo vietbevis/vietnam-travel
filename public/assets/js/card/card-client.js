@@ -209,8 +209,11 @@
         const [selected] = await transmit(['00A4040008' + S.AID_HEX + '00']);
         if (selected.sw !== '9000') throw new CardError(selected.sw);
         let info = await publicInfo();
+        // TERMINATE đã xóa cardId; chỉ trả trạng thái, không gửi yêu cầu đồng bộ.
+        if (info.state === S.STATE.TERMINATED) return info;
         for (let round = 0; round < 10; round++) {
           if ([S.STATE.CREATED, S.STATE.TERMINATED].includes(info.state)) return info;
+          if (settings.expectedCardId !== undefined && (!hex(settings.expectedCardId, 16) || info.cardId !== settings.expectedCardId.toUpperCase())) throw new Error('Đang cắm thẻ khác. Hãy cắm đúng thẻ đang xem trước khi đồng bộ.');
           const credentials = info.mustChangePin ? 'omit' : 'same-origin';
           const next = await server(base + '/next', { cardId: info.cardId, cardState: info.state, challenge: await challenge() }, credentials);
           if (next.step === null) return { ...info, ...(next.requiresAuth === true ? { requiresAuth: true } : {}) };

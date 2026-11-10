@@ -420,6 +420,12 @@ async function confirmOp({opId,responseHex='',sw,actorType,actorId,req}) {
   return output;
 }
 module.exports={
+  cardStatus:{nextStatus(current,action){
+    if(action==='lock'&&current==='active')return 'locked';
+    if(action==='unlock'&&current==='locked')return 'active';
+    if(action==='revoke'&&['active','locked','issuing'].includes(current))return 'revoked';
+    return null;
+  }},
   CardOpError,
   createOp,
   signOp,

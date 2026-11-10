@@ -20,6 +20,7 @@ const cloud=require('../../helpers/cloudinary.helper');
 const mail=require('../../helpers/mail.helper');
 const V=require('../../validates/admin/card.validate');
 const api=require('../client/card-api.controller');
+const cardLog=require('../../helpers/card-log.helper');
 const objectId=value=>typeof value==='string'&&/^[a-fA-F0-9]{24}$/.test(value);
 function fail(code,status=409,message='Yêu cầu phát hành thẻ không hợp lệ hoặc đã kết thúc.'){const error=new Error(message);Object.assign(error,{code,status});throw error;}
 function problem(res,error){return res.status(error.status||500).json({code:'error',errorCode:error.code||'INTERNAL',message:error.status?error.message:'Không thể xử lý yêu cầu thẻ.'});}
@@ -209,5 +210,127 @@ module.exports.stepUpVerify=async(req,res)=>{
     if(result.error)fail('OP_FORBIDDEN',403);
     const current=await adminToken.resolve({...ctx.decoded,cardId:result.card.cardId});if(!current)fail('OP_FORBIDDEN',403);
     adminToken.issue(res,{account:current.account,cardId:result.card.cardId,stepUpAt:Date.now(),expiresAt:ctx.decoded.exp});res.json({code:'success'});
+  }catch(error){problem(res,error);}
+};
+
+function requirePermission(req,permission){
+  if(!req.cardActor?.permissions.includes(permission))fail('OP_FORBIDDEN',403,'Bạn không có quyền thực hiện thao tác này.');
+}
+module.exports.statusPost=async(req,res)=>{
+  try{
+    const {error,value:body}=V.schemas.status.validate(req.body,{convert:false});
+    if(error)fail('INVALID_INPUT',400,'Thông tin trạng thái thẻ không hợp lệ; thu hồi cần có lý do.');
+    requirePermission(req,body.action==='revoke'?'card-revoke':'card-lock');
+    if(body.action==='revoke'&&!adminToken.stepUp.isFresh(req))return res.status(403).json({code:'step-up-required',message:'Hãy xác thực lại thẻ nhân viên trước khi thu hồi.'});
+    const result=await transaction(async session=>{
+      const card=await Card.findOne({cardId:body.cardId.toUpperCase()}).select('+issuance').session(session);
+      if(!card)fail('CARD_NOT_FOUND',404,'Không tìm thấy thẻ.');
+      const status=E.cardStatus.nextStatus(card.status,body.action);
+      const previousStatus=card.status,previousBalance=card.balance;
+      if(!status)fail('CARD_STATE',409,card.status==='revoked'?'Thẻ đã bị thu hồi.':'Không thể chuyển trạng thái thẻ này.');
+      // Cùng ghi Card với sign/confirm để snapshot cũ không lọt qua kiểm tra nghĩa vụ.
+      const lock=await Card.updateOne({_id:card._id,status:card.status,__v:card.__v},{$inc:{__v:1}},{session});
+      if(lock.modifiedCount!==1)fail('CARD_STATE',409,'Trạng thái thẻ đã thay đổi; hãy tải lại trang.');
+      if(body.action==='revoke'){
+        const liability=await Tx.exists({cardId:card.cardId,status:{$ne:'done'},$or:[{status:{$in:['awaiting-payment','pending-card','sent']}},{signedOpId:{$exists:true}}]}).session(session);
+        // Sync công khai có thể tạo set-state; lệnh này không được dùng để cản thu hồi.
+        const prepared=await Op.exists({cardId:card.cardId,status:'prepared',type:{$ne:'set-state'}}).session(session);
+        if(liability||prepared)fail('RECONCILIATION_REQUIRED',409,'Thẻ còn giao dịch hoặc lệnh đã ký cần đối soát. Hãy đồng bộ và xác nhận kết quả trước khi thu hồi; có thể khóa thẻ ngay.');
+        if(card.balance>0&&body.refunded!==true)fail('REFUND_REQUIRED',409,'Thẻ còn số dư, hãy xác nhận đã hoàn tiền hoặc dùng Cấp lại thẻ');
+        if(card.balance>0)await Tx.create([{cardId:card.cardId,txRef:C.randomHex(8),type:'debit',source:'refund',amount:card.balance,status:'done',balanceAfter:0,createdBy:req.cardActor.id}],{session});
+        if(card.issuance?.requestId){
+          await Request.updateOne({requestId:card.issuance.requestId,cardId:card.cardId,state:{$in:['preparing','ready']}},{$set:{state:'cancelled'},$inc:{__v:1}},{session});
+        }
+        // Chỉ đóng bản nháp chưa ký; giao dịch tiền và lệnh đã gửi luôn được giữ để đối soát.
+        await Op.updateMany({cardId:card.cardId,status:'draft'},{$set:{status:'failed'},$unset:{'params.encryptedPin':1,'params.newPin':1}},{session});
+      }
+      const reason=(body.reason||'').trim();
+      const update={status,isCurrent:status!=='revoked'};
+      if(body.action==='lock')update.lockedReason=reason;
+      if(body.action==='unlock')update.lockedReason='';
+      if(body.action==='revoke')Object.assign(update,{balance:0,revokedBy:req.cardActor.id,revokedAt:new Date(),revokedReason:reason});
+      card.set(update);
+      if(body.action==='revoke')card.set('issuance',undefined);
+      // Validator isCurrent cần document có status, không dùng query validator thiếu ngữ cảnh.
+      await card.save({session});
+      await cardLog.write({action:body.action,cardId:card.cardId,actorType:'admin',actorId:req.cardActor.id,result:'success',detail:{reason,from:previousStatus,to:status,refunded:body.action==='revoke'&&previousBalance>0},req},{session});
+      return {cardId:card.cardId,status};
+    });
+    res.json({code:'success',...result,message:'Đã cập nhật trạng thái trên server. Cắm thẻ để đồng bộ.'});
+  }catch(error){problem(res,error);}
+};
+
+const statusNames={issuing:'Đang phát hành',active:'Đang hoạt động',locked:'Đã khóa',revoked:'Đã thu hồi',failed:'Phát hành thất bại'};
+function queryText(query,key,max=120){
+  if(query[key]===undefined)return '';
+  if(typeof query[key]!=='string'||query[key].length>max)fail('INVALID_INPUT',400,'Bộ lọc không hợp lệ.');
+  return query[key].trim();
+}
+function pageNumber(query){
+  const value=queryText(query,'page',7);
+  if(value&&!/^[1-9]\d{0,5}$/.test(value))fail('INVALID_INPUT',400,'Trang không hợp lệ.');
+  return value?Number(value):1;
+}
+const escapedRegex=value=>value.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+async function owners(cards){
+  const ids=cards.map(card=>card.ownerId).filter(objectId);
+  const [customers,accounts]=await Promise.all([Customer.find({_id:{$in:ids},deleted:false}).select('_id fullName email phone').lean(),Account.find({_id:{$in:ids},deleted:false}).select('_id fullName email phone').lean()]);
+  const map=new Map([...customers.map(owner=>['customer:'+owner._id,owner]),...accounts.map(owner=>['staff:'+owner._id,owner])]);
+  return cards.map(card=>({...card,owner:map.get(card.cardType+':'+card.ownerId)}));
+}
+function pagination(req,page,total){
+  const pages=Math.max(1,Math.ceil(total/20)),url=new URLSearchParams();
+  for(const [key,value]of Object.entries(req.query))if(key!=='page'&&typeof value==='string')url.set(key,value);
+  const link=number=>{url.set('page',number);return '?'+url.toString();};
+  return {page,pages,total,previous:page>1?link(page-1):null,next:page<pages?link(page+1):null};
+}
+module.exports.list=async(req,res)=>{
+  try{
+    requirePermission(req,'card-view');
+    const page=pageNumber(req.query),status=queryText(req.query,'status'),cardType=queryText(req.query,'cardType'),keyword=queryText(req.query,'keyword');
+    if(status&&!Object.hasOwn(statusNames,status)||cardType&&!['customer','staff'].includes(cardType))fail('INVALID_INPUT',400,'Bộ lọc không hợp lệ.');
+    const query={...(status?{status}:{}),...(cardType?{cardType}:{})};
+    if(keyword){
+      const regex={$regex:escapedRegex(keyword),$options:'i'};
+      const [customers,accounts]=await Promise.all([Customer.find({fullName:regex,deleted:false}).select('_id').lean(),Account.find({fullName:regex,deleted:false}).select('_id').lean()]);
+      query.$or=[{cardId:regex},{cardType:'customer',ownerId:{$in:customers.map(owner=>String(owner._id))}},{cardType:'staff',ownerId:{$in:accounts.map(owner=>String(owner._id))}}];
+    }
+    const [cards,total]=await Promise.all([Card.find(query).select('cardId cardType ownerId status balance createdAt').sort({createdAt:-1,_id:-1}).skip((page-1)*20).limit(20).lean(),Card.countDocuments(query)]);
+    res.render('admin/pages/card-list',{pageTitle:'Quản lý thẻ',cards:await owners(cards),statusNames,filters:{status,cardType,keyword},pagination:pagination(req,page,total)});
+  }catch(error){problem(res,error);}
+};
+module.exports.detail=async(req,res)=>{
+  try{
+    requirePermission(req,'card-view');
+    if(!/^[a-fA-F0-9]{32}$/.test(req.params.cardId))fail('INVALID_INPUT',400,'Mã thẻ không hợp lệ.');
+    const card=await Card.findOne({cardId:req.params.cardId.toUpperCase()}).select('-publicKeyModulus').lean();
+    if(!card)fail('CARD_NOT_FOUND',404,'Không tìm thấy thẻ.');
+    const [transactions,pendingCredits,orders,logs]=await Promise.all([
+      Tx.find({cardId:card.cardId}).select('txRef type source amount status balanceAfter createdAt').sort({createdAt:-1,_id:-1}).limit(100).lean(),
+      Tx.find({cardId:card.cardId,type:'credit',$or:[{status:{$in:['awaiting-payment','pending-card','sent']}},{status:'failed',signedOpId:{$exists:true}}]}).select('txRef amount status').lean(),
+      card.cardType==='customer'?Order.find({customerId:card.ownerId,deleted:false,'items.ticketStatus':{$in:['pending','written','used','pending-delete','deleted']}}).select('orderCode items createdAt').sort({createdAt:-1,_id:-1}).lean():[],
+      // Quyền xem chi tiết bao gồm 50 mục lịch sử của chính thẻ; trang toàn cục cần card-log-view.
+      Log.find({cardId:card.cardId}).select('action actorType actorId result detail ip createdAt').sort({createdAt:-1,_id:-1}).limit(50).lean()
+    ]);
+    res.render('admin/pages/card-detail',{pageTitle:'Chi tiết thẻ',card:(await owners([card]))[0],statusNames,transactions,pendingCredits,orders,logs});
+  }catch(error){problem(res,error);}
+};
+function dateFilter(query,key,end=false){
+  const value=queryText(query,key,10);
+  if(!value)return undefined;
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(value))fail('INVALID_INPUT',400,'Ngày lọc không hợp lệ.');
+  const day=new Date(value+'T00:00:00Z');
+  if(!Number.isFinite(day.getTime())||day.toISOString().slice(0,10)!==value)fail('INVALID_INPUT',400,'Ngày lọc không hợp lệ.');
+  // Ngày giao diện theo Việt Nam; cận cuối là đầu ngày tiếp theo, không mất mili giây.
+  return new Date(day.getTime()-7*3600000+(end?86400000:0));
+}
+module.exports.log=async(req,res)=>{
+  try{
+    requirePermission(req,'card-log-view');
+    const page=pageNumber(req.query),cardId=queryText(req.query,'cardId',32).toUpperCase(),action=queryText(req.query,'action',80),from=dateFilter(req.query,'from'),to=dateFilter(req.query,'to',true);
+    if(cardId&&!/^[A-F0-9]{32}$/.test(cardId)||from&&to&&from>=to)fail('INVALID_INPUT',400,'Bộ lọc không hợp lệ.');
+    const query={...(cardId?{cardId}:{}),...(action?{action}:{}),...(from||to?{createdAt:{...(from?{$gte:from}:{}),...(to?{$lt:to}:{})}}:{})};
+    const [logs,total]=await Promise.all([Log.find(query).sort({createdAt:-1,_id:-1}).skip((page-1)*20).limit(20).lean(),Log.countDocuments(query)]);
+    res.render('admin/pages/card-log',{pageTitle:'Nhật ký thẻ',logs,filters:{cardId,action,from:req.query.from||'',to:req.query.to||''},pagination:pagination(req,page,total)});
   }catch(error){problem(res,error);}
 };

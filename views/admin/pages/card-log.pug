@@ -1,0 +1,44 @@
+extends ../layouts/default.pug
+
+block main
+  h1.box-title Nhật ký thẻ
+  p Nhật ký chỉ xem, theo thời gian Việt Nam; mới nhất trước.
+  form(method="get")
+    label(for="cardId") Mã thẻ
+    input#cardId(name="cardId" value=filters.cardId maxlength="32")
+    label(for="action") Thao tác
+    input#action(name="action" value=filters.action maxlength="80")
+    label(for="from") Từ ngày
+    input#from(type="date" name="from" value=filters.from)
+    label(for="to") Đến hết ngày
+    input#to(type="date" name="to" value=filters.to)
+    button(type="submit") Lọc nhật ký
+  p Tổng #{pagination.total} mục · Trang #{pagination.page}/#{pagination.pages}
+  table.table
+    thead
+      tr
+        th Thời gian
+        th Mã thẻ
+        th Thao tác
+        th Người thực hiện
+        th Kết quả
+        th Chi tiết
+        th IP
+    tbody
+      each entry in logs
+        tr(data-card-log-row)
+          td= new Date(entry.createdAt).toLocaleString('vi-VN', {timeZone:'Asia/Ho_Chi_Minh'})
+          td= entry.cardId || ''
+          td= entry.action
+          td #{entry.actorType} #{entry.actorId || ''}
+          td= entry.result
+          td= entry.detail ? JSON.stringify(entry.detail) : ''
+          td= entry.ip || ''
+      if !logs.length
+        tr
+          td(colspan="7") Không có nhật ký phù hợp.
+  nav(aria-label="Phân trang nhật ký")
+    if pagination.previous
+      a(href=pagination.previous) Trang trước
+    if pagination.next
+      a(href=pagination.next) Trang sau

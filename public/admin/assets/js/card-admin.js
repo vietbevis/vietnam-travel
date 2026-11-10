@@ -80,7 +80,68 @@
     if(!response.ok||json.slot!==info.slot)throw new Error('Agent chưa xác nhận reset.');
     return true;
   }
+  async function statusFlow(body,options={}){
+    const client=options.client||root.cardClient,fetcher=options.fetch||root.fetch.bind(root),base=options.base||'/admin/card';
+    // Chụp payload một lần để yêu cầu gửi lại không thay đổi ý định ban đầu.
+    const payload=JSON.stringify(body);
+    async function send(){
+      const controller=new AbortController(),signal=options.signal;
+      const abort=()=>controller.abort();if(signal?.aborted)controller.abort();signal?.addEventListener('abort',abort,{once:true});
+      const timeout=setTimeout(abort,15000);
+      try{
+        const response=await fetcher(base+'/status',{method:'POST',credentials:'same-origin',redirect:'error',cache:'no-store',headers:{'Content-Type':'application/json'},body:payload,signal:controller.signal});
+        const result=await response.json();
+        if(controller.signal.aborted)throw new Error('Yêu cầu đã bị hủy. Hãy kiểm tra trạng thái thẻ trước khi thử lại.');
+        return {response,result};
+      }finally{clearTimeout(timeout);signal?.removeEventListener('abort',abort);controller.abort();}
+    }
+    let output=await send();
+    if(output.result.code==='step-up-required'){
+      options.onStepUp?.();
+      const info=await client.openSession();
+      if(info.state!==S.STATE.ACTIVE||info.cardType!==2)throw new Error('Hãy cắm thẻ nhân viên đang hoạt động của tài khoản hiện tại để xác thực lại.');
+      let pin;
+      try{pin=await client.askPin('Nhập PIN thẻ nhân viên để xác thực thao tác');await client.verifyPin(pin);}finally{pin='';}
+      const proof=await client.authenticate({challengeUrl:base+'/step-up/challenge',verifyUrl:base+'/step-up/verify'});
+      if(proof.code!=='success')throw new Error('Không thể xác thực thẻ nhân viên.');
+      if(options.signal?.aborted)throw new Error('Yêu cầu đã bị hủy.');
+      output=await send();
+    }
+    if(!output.response.ok||output.result.code!=='success')throw new Error(output.result.message||'Không thể cập nhật trạng thái thẻ.');
+    return output.result;
+  }
+  function bindStatus(){
+    const document=root.document,form=document.querySelector('[data-card-status-form]');if(!form)return;
+    const message=document.querySelector('[data-card-status-message]'),sync=document.querySelector('[data-card-sync]'),controls=Array.from(form.querySelectorAll('button,input'));
+    let busy=false,aborter;
+    const setBusy=value=>{busy=value;for(const control of controls)control.disabled=value;if(sync)sync.disabled=value;};
+    root.addEventListener('pagehide',()=>aborter?.abort());
+    form.addEventListener('submit',async event=>{
+      event.preventDefault();if(busy)return;
+      const action=event.submitter?.value;if(!['lock','unlock','revoke'].includes(action))return;
+      const reason=form.elements.reason.value.trim(),refunded=form.elements.refunded?.checked===true;
+      if(action==='revoke'&&!reason){message.textContent='Vui lòng nhập lý do thu hồi.';form.elements.reason.focus();return;}
+      if(action==='revoke'&&!root.confirm('Thu hồi thẻ là vĩnh viễn. Nếu chọn hoàn tiền, hãy bảo đảm đã hoàn tiền mặt cho chủ thẻ. Tiếp tục?'))return;
+      setBusy(true);aborter=new AbortController();message.textContent='Đang cập nhật trạng thái thẻ…';
+      try{
+        const result=await statusFlow({cardId:form.dataset.cardId,action,reason,...(action==='revoke'?{refunded}:{})},{base:form.dataset.cardBase,signal:aborter.signal,onStepUp:()=>{message.textContent='Hãy cắm thẻ nhân viên của tài khoản hiện tại, sau đó nhập PIN trong hộp thoại để xác thực lại.';}});
+        if(aborter.signal.aborted)return;
+        document.querySelector('[data-card-current-status]').textContent=({active:'Đang hoạt động',locked:'Đã khóa',revoked:'Đã thu hồi'})[result.status]||result.status;
+        message.textContent=result.message+' Nếu vừa xác thực lại, hãy cắm thẻ đang xem trước khi bấm Đồng bộ ngay.';
+        for(const button of form.querySelectorAll('button[name="action"]'))button.hidden=result.status==='revoked'||button.value==='lock'&&result.status!=='active'||button.value==='unlock'&&result.status!=='locked';
+      }catch(error){if(!aborter.signal.aborted)message.textContent=error.code==='PIN_CANCELLED'?'Đã hủy xác thực; trạng thái chưa được gửi lại.':error.message||'Không thể cập nhật trạng thái thẻ.';}
+      finally{setBusy(false);}
+    });
+    if(sync)sync.addEventListener('click',async()=>{
+      if(busy)return;setBusy(true);message.textContent='Đang đồng bộ; giữ nguyên thẻ đang xem trong đầu đọc…';
+      try{
+        const info=await root.cardClient.openSession({expectedCardId:form.dataset.cardId});
+        message.textContent=info.state===S.STATE.TERMINATED?'Thẻ đã bị thu hồi. Đã đồng bộ trạng thái 7F.':info.state===S.STATE.LOCKED?'Đã đồng bộ trạng thái khóa (03).':info.state===S.STATE.ACTIVE?'Đã đồng bộ trạng thái hoạt động (02).':'Thẻ chưa được phát hành hoàn tất; chưa thể đồng bộ trạng thái.';
+      }catch(error){message.textContent=error.message||'Không thể đồng bộ thẻ. Hãy kiểm tra Card Agent.';}finally{setBusy(false);}
+    });
+  }
   function bind(){
+    bindStatus();
     const document=root.document,form=document.querySelector('[data-card-issue]');if(!form)return;
     const status=document.querySelector('[data-card-status]'),preview=document.querySelector('[data-card-preview]'),pinDialog=document.querySelector('[data-card-pin-dialog]'),pin=document.querySelector('[data-card-pin]'),reset=document.querySelector('[data-card-reset]');
     let previewUrl=null,busy=false,aborter,pendingRequestId=null;
@@ -126,5 +187,5 @@
       }catch{status.textContent='Chưa xác nhận được reset thẻ ảo. Hãy kiểm tra Card Agent.';}
     });
   }
-  return {preparePhoto,issueFlow,resetSim,bind};
+  return {preparePhoto,issueFlow,resetSim,statusFlow,bind};
 }));

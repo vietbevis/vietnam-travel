@@ -667,15 +667,15 @@ test('nonce wrong purpose', async () => { /* nonce 'login-customer' dùng cho 'l
 - `POST /admin/card/status {cardId, action, reason, refunded?}`
 - Trang chi tiết có các vùng `[card-actions]` để Task 10 và 11 gắn nút
 
-- [ ] **Step 1: Viết `card-status.test.js`**
+- [x] **Step 1: Viết `card-status.test.js`**
 
 ```js
 test('transitions', () => { assert.equal(S.nextStatus('active','lock'), 'locked'); assert.equal(S.nextStatus('locked','unlock'), 'active'); assert.equal(S.nextStatus('revoked','unlock'), null); assert.equal(S.nextStatus('failed','revoke'), null); });
 ```
 
-- [ ] **Step 2: Chạy test, xác nhận fail. Cài đặt `nextStatus`. Chạy test, xác nhận pass.**
+- [x] **Step 2: Chạy test, xác nhận fail. Cài đặt `nextStatus`. Chạy test, xác nhận pass.**
 
-- [ ] **Step 3: Cài đặt `statusPost`**
+- [x] **Step 3: Cài đặt `statusPost`**
 
   - **Quyền:** lock/unlock cần `card-lock`; revoke cần `card-revoke` **và** `isFresh(req)`. Step-up hết hạn → `{code:'step-up-required'}`, JS tự chạy step-up rồi gửi lại request.
   - **Thu hồi:**
@@ -685,7 +685,7 @@ test('transitions', () => { assert.equal(S.nextStatus('active','lock'), 'locked'
     - đặt `isCurrent = false`.
   - **Nhật ký:** ghi CardLog. Response kèm gợi ý "Cắm thẻ để đồng bộ"; nút "Đồng bộ ngay" gọi `openSession()`.
 
-- [ ] **Step 4: Cài đặt `list`, `detail`, `log`**
+- [x] **Step 4: Cài đặt `list`, `detail`, `log`**
 
   - **`list`** (`card-view`): lọc `status` / `cardType` / từ khoá (tên chủ thẻ, cardId), 20 bản ghi mỗi trang theo pattern trang tour list.
   - **`detail`:**
@@ -696,7 +696,7 @@ test('transitions', () => { assert.equal(S.nextStatus('active','lock'), 'locked'
     - 50 log gần nhất.
   - **`log`** (`card-log-view`): lọc `cardId` / `action` / khoảng ngày, chỉ xem, không có nút xoá.
 
-- [ ] **Step 5: Kiểm thủ công**
+- [x] **Step 5: Kiểm thủ công**
 
   1. Khoá thẻ khi thẻ đang cắm → bấm "Đồng bộ ngay". Expected: `GET_PUBLIC_INFO` trả state `03`.
   2. Mở khoá rồi đồng bộ. Expected: state `02`.
@@ -704,9 +704,11 @@ test('transitions', () => { assert.equal(S.nextStatus('active','lock'), 'locked'
   4. Thu hồi thẻ đang cắm rồi đồng bộ. Expected: state `7F`; mọi thao tác sau đó báo "Thẻ đã bị thu hồi".
   5. Thu hồi thẻ nhân viên của một tài khoản khác. Expected: tài khoản đó bị đá ra ở request kế tiếp.
 
-- [ ] **Step 6: Commit** — `feat(card): card list, detail, lock/unlock/revoke and audit log`
+- [x] **Step 6: Commit** — `feat(card): card list, detail, lock/unlock/revoke and audit log`
 
 ---
+
+**Kết quả Task 9 (2026-11-10):** 147 unit + 5 E2E jCardSim + 145 Mongo/HTTP integration PASS; Edge thật 19 mục PASS, chip 03 → 02 → 7F. Review sau vòng sửa S9-SEC-01 và JWT ranh giới giây: Spec PASS / Quality Approved / SecurityApproved. Step-up stale dùng timestamp fixture, không đợi 5 phút thực; một Minor giao diện cần reload dữ liệu sau thu hồi được ghi nhận. Xem [báo cáo Task 9](../reports/2026-11-10-smartcard-03-task-9.md). Chỉ Task 9, dừng trước Task 10.
 
 ### Task 10: Reset PIN (A5) và nạp tiền mặt (A8)
 

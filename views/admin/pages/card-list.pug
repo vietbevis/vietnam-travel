@@ -1,0 +1,44 @@
+extends ../layouts/default.pug
+
+block main
+  h1.box-title Quản lý thẻ
+  form(method="get")
+    label(for="keyword") Tên chủ thẻ hoặc mã thẻ
+    input#keyword(name="keyword" value=filters.keyword maxlength="120")
+    label(for="status") Trạng thái
+    select#status(name="status")
+      option(value="") Tất cả
+      each label, value in statusNames
+        option(value=value selected=filters.status===value)= label
+    label(for="cardType") Loại thẻ
+    select#cardType(name="cardType")
+      option(value="") Tất cả
+      option(value="customer" selected=filters.cardType==='customer') Khách hàng
+      option(value="staff" selected=filters.cardType==='staff') Nhân viên
+    button(type="submit") Lọc
+  p Tổng #{pagination.total} thẻ · Trang #{pagination.page}/#{pagination.pages}
+  table.table
+    thead
+      tr
+        th Mã thẻ
+        th Chủ thẻ
+        th Loại thẻ
+        th Trạng thái
+        th Số dư server (đ)
+    tbody
+      each card in cards
+        tr(data-card-row)
+          td
+            a(href=`/${pathAdmin}/card/detail/${card.cardId}`)= card.cardId
+          td #{card.owner && (card.owner.fullName || card.owner.email) || 'Không còn thông tin chủ thẻ'}
+          td= card.cardType==='customer'?'Khách hàng':'Nhân viên'
+          td= statusNames[card.status]
+          td= card.balance.toLocaleString('vi-VN')
+      if !cards.length
+        tr
+          td(colspan="5") Không có thẻ phù hợp.
+  nav(aria-label="Phân trang thẻ")
+    if pagination.previous
+      a(href=pagination.previous) Trang trước
+    if pagination.next
+      a(href=pagination.next) Trang sau

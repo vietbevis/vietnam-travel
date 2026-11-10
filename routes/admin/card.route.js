@@ -11,4 +11,8 @@ router.post('/issue/finish',controller.issueFinish);
 router.post('/issue/cancel',controller.issueCancel);
 router.post('/op/sign',controller.opSign);
 router.post('/op/confirm',controller.opConfirm);
+router.get('/list',controller.list);
+router.get('/log',controller.log);
+router.get('/detail/:cardId',controller.detail);
+router.post('/status',controller.statusPost);
 module.exports=router;

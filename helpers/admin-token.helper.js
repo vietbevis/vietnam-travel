@@ -9,7 +9,7 @@ const flags={httpOnly:true,sameSite:'strict'};
 function issue(res,{account,cardId,stepUpAt,remember=false,expiresAt}) {
   const now=Math.floor(Date.now()/1000),exp=expiresAt===undefined?now+(remember?30:1)*86400:Math.floor(expiresAt);
   if(!Number.isFinite(exp)||exp<=now)throw new Error('AUTH_EXPIRED');
-  const payload={id:String(account._id||account.id),email:account.email,exp};
+  const payload={id:String(account._id||account.id),email:account.email,iat:now,exp};
   if(cardId)payload.cardId=cardId;
   if(stepUpAt!==undefined)payload.stepUpAt=new Date(stepUpAt).getTime();
   res.cookie('token',jwt.sign(payload,process.env.JWT_SECRET,{algorithm:'HS256'}),{...flags,maxAge:(exp-now)*1000});

@@ -1,0 +1,98 @@
+extends ../layouts/default.pug
+
+block main
+  h1.box-title Chi tiết thẻ
+  a(href=`/${pathAdmin}/card/list`) Danh sách thẻ
+  dl
+    dt Mã thẻ
+    dd= card.cardId
+    dt Loại thẻ
+    dd= card.cardType==='customer'?'Khách hàng':'Nhân viên'
+    dt Trạng thái server
+    dd(data-card-current-status)= statusNames[card.status]
+    dt Chủ thẻ
+    dd= card.owner && card.owner.fullName || 'Không còn thông tin chủ thẻ'
+    dt Email
+    dd= card.owner && card.owner.email || 'Chưa có'
+    dt Số điện thoại
+    dd= card.owner && card.owner.phone || 'Chưa có'
+    dt Số dư server (đ)
+    dd= card.balance.toLocaleString('vi-VN')
+    if card.revokedReason || card.lockedReason
+      dt Lý do khóa / thu hồi
+      dd= card.revokedReason || card.lockedReason
+  section(card-actions aria-label="Thao tác thẻ")
+    form(data-card-status-form data-card-id=card.cardId data-card-base=`/${pathAdmin}/card`)
+      if permissions.includes('card-lock') || permissions.includes('card-revoke')
+        p
+          label(for="reason") Lý do (bắt buộc khi thu hồi)
+          input#reason(name="reason" maxlength="500" disabled=card.status==='revoked')
+        if permissions.includes('card-revoke') && ['active','locked','issuing'].includes(card.status)
+          p
+            label
+              input(type="checkbox" name="refunded")
+              |  Tôi xác nhận đã hoàn tiền mặt cho chủ thẻ
+          p Thu hồi là vĩnh viễn. Giao dịch cần đối soát phải hoàn tất trước khi thu hồi.
+        if permissions.includes('card-lock')
+          button(type="submit" name="action" value="lock" hidden=card.status!=='active') Khóa thẻ
+          button(type="submit" name="action" value="unlock" hidden=card.status!=='locked') Mở khóa thẻ
+        if permissions.includes('card-revoke')
+          button(type="submit" name="action" value="revoke" hidden=!['active','locked','issuing'].includes(card.status)) Thu hồi thẻ
+      p(data-card-status-message role="status" aria-live="polite") Cắm thẻ đang xem để đồng bộ trạng thái từ server.
+      if permissions.includes('card-lock') || permissions.includes('card-revoke')
+        button(type="button" data-card-sync) Đồng bộ ngay
+  h2 Credit đang chờ
+  ul
+    each tx in pendingCredits
+      li #{tx.txRef}: #{tx.amount.toLocaleString('vi-VN')} đ — #{tx.status}
+    if !pendingCredits.length
+      li Không có credit đang chờ.
+  h2 Giao dịch (100 mục gần nhất, mới nhất trước)
+  table.table
+    thead
+      tr
+        th Thời gian
+        th Mã giao dịch
+        th Loại / nguồn
+        th Số tiền (đ)
+        th Trạng thái
+    tbody
+      each tx in transactions
+        tr
+          td= new Date(tx.createdAt).toLocaleString('vi-VN', {timeZone:'Asia/Ho_Chi_Minh'})
+          td= tx.txRef
+          td #{tx.type} / #{tx.source}
+          td= tx.amount.toLocaleString('vi-VN')
+          td= tx.status
+      if !transactions.length
+        tr
+          td(colspan="5") Chưa có giao dịch.
+  h2 Các vé của chủ thẻ
+  ul
+    each order in orders
+      each item in order.items
+        if ['pending','written','used','pending-delete','deleted'].includes(item.ticketStatus)
+          li #{order.orderCode || order._id} — #{item.title || item.tourName || item.tourId || 'Vé du lịch'} — #{item.ticketStatus}
+    if !orders.length
+      li Chưa có vé.
+  h2 50 nhật ký gần nhất
+  table.table
+    thead
+      tr
+        th Thời gian
+        th Thao tác
+        th Người thực hiện
+        th Kết quả
+        th Chi tiết
+    tbody
+      each entry in logs
+        tr(data-card-log-row)
+          td= new Date(entry.createdAt).toLocaleString('vi-VN', {timeZone:'Asia/Ho_Chi_Minh'})
+          td= entry.action
+          td #{entry.actorType} #{entry.actorId || ''}
+          td= entry.result
+          td= entry.detail ? JSON.stringify(entry.detail) : ''
+      if !logs.length
+        tr
+          td(colspan="5") Chưa có nhật ký.
+  script(src="/admin/assets/js/card-admin.js" defer)

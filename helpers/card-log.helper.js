@@ -13,11 +13,15 @@ function sanitize(value,seen=new WeakSet()) {
   }
   return clean;
 }
-async function write(input) {
+async function write(input,{session}={}) {
   try {
     const {action,cardId,actorType,actorId,result,detail,req}=input;
-    await CardLog.create({action:sanitize(action),cardId,actorType,actorId:sanitize(actorId),result,detail:sanitize(detail),ip:sanitize(req?.ip)});
-  } catch {
+    const entry={action:sanitize(action),cardId,actorType,actorId:sanitize(actorId),result,detail:sanitize(detail),ip:sanitize(req?.ip)};
+    if(session)await CardLog.create([entry],{session});
+    else await CardLog.create(entry);
+  } catch(error) {
+    // Audit trong transaction phải thành công cùng nghiệp vụ hoặc cùng rollback.
+    if(session)throw error;
     // Nhật ký không được làm gián đoạn nghiệp vụ; không in dữ liệu nhạy cảm khi lỗi.
   }
 }
