@@ -18,6 +18,8 @@ const schema = new mongoose.Schema({
   revokedAt:Date,
   revokedReason:String,
   replaceOf:{type:String,match:/^[a-fA-F0-9]{32}$/,uppercase:true},
+  // Chỉ đọc rõ metadata ở luồng phát hành; không đưa PIN hoặc APDU INIT vào dữ liệu công khai.
+  issuance:{type:new mongoose.Schema({pinCipher:String,expireAt:Date,profileOpId:String,photoOpId:String,requestId:String},{_id:false}),select:false},
   lastSeenAt:Date
 },{timestamps:true});
 schema.index({cardId:1},{unique:true});

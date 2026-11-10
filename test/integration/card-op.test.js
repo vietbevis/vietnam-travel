@@ -400,7 +400,7 @@ it('ticket payload and reported effects use persisted owner order item',async()=
 });
 it('commit write hashes bytes and protects issuance actor',async()=> {
   const{card}=await fixture();
-  await Card.updateOne({_id:card._id},{$set:{status:'issuing',issuedBy:'123456789012345678901234'}});
+  await Card.updateOne({_id:card._id},{$set:{status:'issuing',issuedBy:'123456789012345678901234',issuance:{expireAt:new Date(Date.now()+300000)}}});
   await assert.rejects(E.createOp({
     cardId,
     type:'credit',
@@ -414,6 +414,7 @@ it('commit write hashes bytes and protects issuance actor',async()=> {
     params:{target:1,dataHex:'010141'},
     ...admin
   });
+  await Card.updateOne({_id:card._id},{$set:{'issuance.profileOpId':op.id}});
   const {apdu}=await E.signOp({opId:op.id,challengeHex,...admin});
   assert.equal(apdu.slice(2,8),'430100');
   assert.equal(apdu.slice(74,78),'0003');
@@ -910,7 +911,7 @@ it('issuing issuer with only card-issue can sign and confirm both commits',async
   const role=await Role.create({permissions:['card-issue']});
   const admin=await Account.create({email:'issuer@example.invalid',role:role.id,status:'active'});
   const issuer={actorType:'admin',actorId:admin.id};
-  await Card.updateOne({_id:card._id},{$set:{status:'issuing',issuedBy:admin.id}});
+  await Card.updateOne({_id:card._id},{$set:{status:'issuing',issuedBy:admin.id,issuance:{expireAt:new Date(Date.now()+300000)}}});
   const headers={Cookie:'token='+jwt.sign({id:admin.id,email:admin.email},process.env.JWT_SECRET)};
   await http(async post=> {
     for(
@@ -922,6 +923,7 @@ it('issuing issuer with only card-issue can sign and confirm both commits',async
         params:{target,dataHex:'010141'},
         ...issuer
       });
+      await Card.updateOne({_id:card._id},{$set:{[target===1?'issuance.profileOpId':'issuance.photoOpId']:op.id}});
       assert.equal((await post('/op/sign',{opId:op.id,challenge:challengeHex},headers)).status,200);
       assert.equal((await post('/op/confirm',{opId:op.id,response:'',sw:'9000'},headers)).body.ok,true);
     }

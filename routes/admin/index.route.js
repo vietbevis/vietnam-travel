@@ -27,6 +27,7 @@ router.use('/contact', authMiddleware.verifyToken, contactRoutes)
 router.use('/setting', authMiddleware.verifyToken, settingRoutes)
 router.use('/profile', authMiddleware.verifyToken, profileRoutes)
 router.use('/upload', authMiddleware.verifyToken, uploadRoutes)
+router.use('/card', require('../../controllers/admin/card.controller').authenticate, authMiddleware.verifyToken, require('./card.route'))
 
 router.get('*', authMiddleware.verifyToken, (req, res) => {
   res.render("admin/pages/error-404", {

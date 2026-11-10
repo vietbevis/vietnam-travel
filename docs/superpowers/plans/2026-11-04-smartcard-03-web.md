@@ -527,7 +527,7 @@ test('agent down → friendly error', async () => { /* fetch reject → err.mess
     - `preparePhoto(file) → Promise<Uint8Array>`: canvas 160×200 cắt giữa, JPEG chất lượng 0.8 → 0.3 (bước 0.1) cho tới khi ≤ 10 080 byte; vẫn lớn thì báo lỗi
     - `issueFlow(formData)`
 
-- [ ] **Step 1: Cài đặt `issuePrepare`**
+- [x] **Step 1: Cài đặt `issuePrepare`**
 
   Quyền: `card-issue`. Các quy tắc phải kiểm:
   - **Khách:** email bắt buộc; không có `customerId` thì tạo Customer mới.
@@ -539,7 +539,7 @@ test('agent down → friendly error', async () => { /* fetch reject → err.mess
     - commit-write hồ sơ: `params: {target: 1, dataHex}`, `dataHex = encodeProfile`;
     - commit-write ảnh: `params: {target: 2, dataHex}`.
 
-- [ ] **Step 2: Cài đặt `issueInitConfirm`, `issueFinish`, `issueCancel`**
+- [x] **Step 2: Cài đặt `issueInitConfirm`, `issueFinish`, `issueCancel`**
 
   - `issueInitConfirm`: `sw == 9000` và response đúng 128 byte → lưu `publicKeyModulus`.
   - `issueFinish`:
@@ -550,7 +550,7 @@ test('agent down → friendly error', async () => { /* fetch reject → err.mess
     - ghi log `issue`.
   - `issueCancel`: Card → `failed`, `isCurrent: false`; ghi log.
 
-- [ ] **Step 3: Cài đặt `card-issue.pug` và `issueFlow`**
+- [x] **Step 3: Cài đặt `card-issue.pug` và `issueFlow`**
 
   Form có: chọn loại thẻ; với khách, chọn khách cũ hoặc nhập mới; với nhân viên, chọn tài khoản; ảnh có xem trước.
 
@@ -580,7 +580,9 @@ test('agent down → friendly error', async () => { /* fetch reject → err.mess
   4. Tắt agent giữa chừng. Expected: Card → `failed`; reset slot sim rồi phát hành lại được.
   5. Vào `/admin/user/list`. Expected: thấy khách và trạng thái thẻ.
 
-- [ ] **Step 5: Commit** — `feat(card): admin card issuance and customer list`
+- [x] **Step 5: Commit** — `feat(card): admin card issuance and customer list`
+
+**Kết quả 2026-11-10:** đã triển khai/review Task 7; 136 unit + 5 E2E jCardSim + 103 MongoDB integration PASS, Edge thật 19 mục PASS. Hai Important đã sửa (mất phản hồi prepare, bỏ replaceOf vượt kiểm tài sản); re-review Spec PASS / Quality Approved / SecurityApproved. Bổ sung optional requestId và model claim/tombstone để recovery/cancel an toàn, không lưu PIN rõ. Step 4 còn PARTIAL: UI/API/Mongo test/jCardSim đã chạy thật, upload Cloudinary và gửi SMTP chỉ MOCK, dịch vụ thật NOT_RUN; không tick kiểm tay gửi email thật. Xem [báo cáo Task 7](../reports/2026-11-10-smartcard-03-task-7.md). Chưa triển khai Task 8.
 
 ---
 

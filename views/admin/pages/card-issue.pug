@@ -1,0 +1,51 @@
+extends ../layouts/default.pug
+
+block main
+  h1.box-title Phát hành thẻ
+  p Cắm thẻ mới ở trạng thái CREATED. Giữ nguyên thẻ và trang này đến khi phát hành hoàn tất.
+  form(data-card-issue data-card-base=`/${pathAdmin}/card`)
+    p
+      label(for="ownerType") Loại thẻ
+      select#ownerType(name="ownerType")
+        option(value="customer") Khách hàng
+        option(value="staff") Nhân viên
+    fieldset(data-card-customer)
+      legend Khách hàng
+      label(for="customerId") Khách hàng hiện có
+      select#customerId(name="customerId")
+        option(value="") Tạo khách hàng mới
+        each customer in customers
+          option(value=customer._id) #{customer.fullName || customer.email} — #{customer.email} — #{customer.phone || ''}
+      div(data-card-new-customer)
+        each field in [{name:'fullName',label:'Họ tên',type:'text',max:60},{name:'email',label:'Email',type:'email',max:254},{name:'phone',label:'Số điện thoại',type:'tel',max:15},{name:'dob',label:'Ngày sinh',type:'date'},{name:'idNumber',label:'Số giấy tờ',type:'text',max:20},{name:'emergencyName',label:'Người liên hệ khẩn cấp',type:'text',max:60},{name:'emergencyPhone',label:'Số liên hệ khẩn cấp',type:'tel',max:15},{name:'bloodType',label:'Nhóm máu',type:'text',max:3},{name:'allergies',label:'Dị ứng',type:'text',max:120}]
+          p
+            label(for=field.name)= field.label
+            input(id=field.name name=field.name type=field.type maxlength=field.max)
+        p
+          label(for="gender") Giới tính
+          select#gender(name="gender")
+            option(value="") Chưa cung cấp
+            option(value="male") Nam
+            option(value="female") Nữ
+            option(value="other") Khác
+    fieldset(data-card-staff hidden)
+      legend Tài khoản nhân viên đang hoạt động
+      label(for="accountId") Nhân viên
+      select#accountId(name="accountId")
+        option(value="") Chọn nhân viên
+        each account in accounts
+          option(value=account._id) #{account.fullName || account.email} — #{account.email}
+    p
+      label(for="photo") Ảnh chân dung (cắt giữa 160 × 200)
+      input#photo(name="photo" type="file" accept="image/*" required)
+    img(data-card-preview width="160" height="200" alt="Ảnh chân dung đã chọn" style="object-fit:cover")
+    p
+      button(type="submit") Phát hành thẻ
+    p(data-card-status role="status" aria-live="polite")
+    button(type="button" data-card-reset hidden) Reset thẻ ảo
+  dialog(data-card-pin-dialog aria-labelledby="initial-pin-title")
+    h2#initial-pin-title PIN ban đầu — chỉ hiển thị một lần
+    p Giao PIN cho chủ thẻ và yêu cầu đổi PIN khi đăng nhập lần đầu.
+    p(data-card-pin)
+    button(type="button" data-card-pin-dismiss) Đã ghi nhận, đóng
+  script(src="/admin/assets/js/card-admin.js" defer)

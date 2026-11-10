@@ -12,8 +12,21 @@ nav.sider
     if (permissions.includes("order-view"))
       li
         a(href=`/${pathAdmin}/order/list`) <i class="fa-solid fa-list-check"></i> Quản lý đơn hàng
-    li
-      a(href=`/${pathAdmin}/user/list`) <i class="fa-solid fa-user"></i> Quản lý người dùng
+    if (permissions.includes("card-view") || permissions.includes("card-issue"))
+      li
+        a(href=`/${pathAdmin}/user/list`) <i class="fa-solid fa-user"></i> Quản lý khách hàng
+    if (permissions.includes("card-view"))
+      li
+        a(href=`/${pathAdmin}/card/list`) <i class="fa-solid fa-address-card"></i> Quản lý thẻ
+    if (permissions.includes("card-issue"))
+      li
+        a(href=`/${pathAdmin}/card/issue`) <i class="fa-solid fa-id-card"></i> Phát hành thẻ
+    if (permissions.includes("card-checkin"))
+      li
+        a(href=`/${pathAdmin}/card/checkin`) <i class="fa-solid fa-ticket"></i> Check-in tour
+    if (permissions.includes("card-log-view"))
+      li
+        a(href=`/${pathAdmin}/card/log`) <i class="fa-solid fa-clock-rotate-left"></i> Nhật ký thẻ
     li
       a(href=`/${pathAdmin}/contact/list`) <i class="fa-solid fa-user-group"></i> Thông tin liên hệ
   hr

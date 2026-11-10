@@ -1,0 +1,11 @@
+const router=require('express').Router();
+const controller=require('../../controllers/admin/card.controller');
+router.use(controller.authenticate);
+router.get('/issue',controller.issue);
+router.post('/issue/prepare',controller.issuePrepare);
+router.post('/issue/init-confirm',controller.issueInitConfirm);
+router.post('/issue/finish',controller.issueFinish);
+router.post('/issue/cancel',controller.issueCancel);
+router.post('/op/sign',controller.opSign);
+router.post('/op/confirm',controller.opConfirm);
+module.exports=router;

@@ -94,8 +94,10 @@ async function loadOp(opId,actor,session,status) {
   }
   return op;
 }
-async function policy(card,op,session) {
-  if(!card||card.isCurrent!==['issuing','active','locked'].includes(card.status)||!card.publicKeyModulus)
+async function policy(card,op,session,creating=false) {
+  // Cho tạo op nháp trước INIT; bước ký và xác nhận vẫn bắt buộc modulus.
+  const issuanceDraft=creating&&card?.status==='issuing'&&card.isCurrent&&op.type==='commit-write'&&op.actorType==='admin'&&op.actorId===card.issuedBy;
+  if(!card||card.isCurrent!==['issuing','active','locked'].includes(card.status)||!card.publicKeyModulus&&!issuanceDraft)
     fail('CARD_STATE');
   if(op.actorType==='system'&&!syncTypes.includes(op.type))
     fail('OP_FORBIDDEN');
@@ -108,6 +110,10 @@ async function policy(card,op,session) {
     return{};
   }
   const issuing=card.status==='issuing'&&op.type==='commit-write'&&op.actorType==='admin'&&op.actorId===card.issuedBy;
+  if(issuing){
+    const stored=await Card.findById(card._id).select('+issuance').session(session).lean();
+    if(!stored?.issuance||!(stored.issuance.expireAt>new Date())||!creating&&![stored.issuance.profileOpId,stored.issuance.photoOpId].includes(String(op._id)))fail('CARD_STATE');
+  }
   if(!issuing&&(card.status!=='active'||!card.isCurrent))
     fail('CARD_STATE');
   if(op.type==='credit'||op.type==='debit') {
@@ -248,7 +254,7 @@ async function createOp({cardId,type,params={},actorType,actorId}) {
       actorType,
       actorId
     };
-    await policy(card,candidate,session);
+    await policy(card,candidate,session,true);
     const [op]=await Op.create([candidate],{session});
     return op;
   });

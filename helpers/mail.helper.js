@@ -22,12 +22,6 @@ module.exports.sendMail = (email, subject, content) => {
     html: content
   };
 
-  // Send the email
-  transporter.sendMail(mailOptions, function(error, info){
-    if (error) {
-      console.log('Error:', error);
-    } else {
-      console.log('Email sent: ', info.response);
-    }
-  });
+  // Trả kết quả an toàn cho caller cũ lẫn mới, không ghi nội dung mail hoặc lỗi SMTP chứa dữ liệu riêng.
+  return transporter.sendMail(mailOptions).then(() => ({sent:true}), () => ({sent:false}));
 }
