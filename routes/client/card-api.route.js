@@ -1,0 +1,10 @@
+const router=require('express').Router();
+const controller=require('../../controllers/client/card-api.controller');
+router.post('/sync/next',controller.next);
+router.post('/sync/confirm',controller.syncConfirm);
+router.post('/sync/receipt',controller.receipt);
+router.post('/op/sign',controller.sign);
+router.post('/op/confirm',controller.confirm);
+router.use(controller.errorHandler);
+router.use((req,res)=>res.status(404).json({code:'error',errorCode:'NOT_FOUND',message:'Không tìm thấy API thẻ.'}));
+module.exports=router;

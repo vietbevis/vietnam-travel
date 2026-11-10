@@ -375,7 +375,9 @@ test('markOrderPaid only once', async () => { /* đơn unpaid có customerId, to
 
   `/sync/next` tự ký op luôn bằng `challenge` được gửi kèm.
 
-- [ ] **Step 1: Viết `card-sync.test.js` (thuần)**
+**Điều chỉnh đã review (2026-11-10):** CAS prepared→done và hiệu ứng trong cùng transaction để giữ enum spec; helper settlement dùng session chung; CardTransaction lưu signedOpId/signedAt để không cấp lại chữ ký sau TTL/SW giả. Public sync giữ state/recovery; ký credit/ghi/xóa vé cần đúng current owner/admin, operation bind actor. Anonymous next trả step:null và requiresAuth, phải sync lại sau đăng nhập. Có error boundary tại index.js chỉ cho /card-api. Xem [báo cáo Task 5](../reports/2026-11-10-smartcard-03-task-5.md).
+
+- [x] **Step 1: Viết `card-sync.test.js` (thuần)**
 
 ```js
 const card = { cardId:'11'.repeat(16), status:'active', cardType:'customer' };
@@ -389,7 +391,7 @@ test('staff card skips wallet/tickets', () => assert.equal(P.planNextSync({card:
 test('locked card gets no credit', () => assert.equal(P.planNextSync({card:{...card, status:'locked'}, cardState:3, pendingCredit:{txRef:'x'}}), null));
 ```
 
-- [ ] **Step 2: Viết `integration/card-op.test.js`**
+- [x] **Step 2: Viết `integration/card-op.test.js`**
 
   Thẻ giả: dùng `crypto.generateKeyPairSync` RSA-1024 làm khoá thẻ; lưu modulus vào `Card`; biên nhận ký bằng khoá này theo `M_rcpt`.
 
@@ -403,11 +405,11 @@ test('receiptRecoveryAppliesOnce', async () => { /* tx debit 'sent' cho đơn X 
 test('sw failure marks op failed', async () => { /* confirm sw 6F20 → op failed; credit tx quay lại 'pending-card' */ });
 ```
 
-- [ ] **Step 3: Chạy test, xác nhận fail**
+- [x] **Step 3: Chạy test, xác nhận fail**
 
   Run: `npm test` và `npm run test:integration`
 
-- [ ] **Step 4: Cài đặt engine, planner, controller và route**
+- [x] **Step 4: Cài đặt engine, planner, controller và route**
 
   Payload cho từng type:
   - `set-state`: rỗng
@@ -423,9 +425,9 @@ test('sw failure marks op failed', async () => { /* confirm sw 6F20 → op faile
 
   Endpoint `sync/next`: nếu `card` không tồn tại hoặc `status ∈ {issuing, failed}` → `step: null`.
 
-- [ ] **Step 5: Chạy test, xác nhận pass**
+- [x] **Step 5: Chạy test, xác nhận pass**
 
-- [ ] **Step 6: Commit** — `feat(card): signed card operation engine and sync planner`
+- [x] **Step 6: Commit** — `feat(card): signed card operation engine and sync planner`
 
 ---
 

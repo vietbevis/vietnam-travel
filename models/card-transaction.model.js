@@ -10,7 +10,10 @@ const schema = new mongoose.Schema({
   balanceAfter:{type:Number,min:0,max:50_000_000,validate:{validator:value=>value==null || Number.isSafeInteger(value)}},
   txCounter:{type:Number,min:0,max:0xffffffff,validate:{validator:value=>value==null || Number.isSafeInteger(value)}},
   receiptHex:{type:String,match:/^[a-fA-F0-9]{332}$/,uppercase:true},
-  createdBy:String
+  createdBy:String,
+  // Dấu đã cấp quyền ký sống lâu hơn TTL operation, ngăn ký ví lần hai.
+  signedOpId:{type:String,match:/^[a-fA-F0-9]{24}$/},
+  signedAt:Date
 },{timestamps:true});
 schema.index({txRef:1},{unique:true});
 module.exports=mongoose.model('CardTransaction',schema,'card-transactions');

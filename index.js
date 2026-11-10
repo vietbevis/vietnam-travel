@@ -42,6 +42,7 @@ app.use(flash());
 // Thiết lập đường dẫn
 app.use(`/${variableConfig.pathAdmin}`, adminRoutes);
 app.use("/", clientRoutes);
+app.use('/card-api', require('./controllers/client/card-api.controller').errorHandler);
 
 app.listen(port, () => {
   console.log(`Website đang chạy trên cổng ${port}`)

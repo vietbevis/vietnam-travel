@@ -10,6 +10,7 @@ const orderRoutes = require("./order.route");
 const settingMiddleware = require("../../middlewares/client/setting.middleware");
 const categoryMiddleware = require("../../middlewares/client/category.middleware");
 
+router.use('/card-api', require('./card-api.route'));
 router.use(settingMiddleware.websiteInfo);
 router.use(categoryMiddleware.list);
 
