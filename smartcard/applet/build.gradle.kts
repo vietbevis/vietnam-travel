@@ -59,3 +59,7 @@ tasks.register("cap") {
         }
     }
 }
+
+tasks.withType<JavaCompile>().configureEach {
+    options.encoding = "UTF-8"
+}
