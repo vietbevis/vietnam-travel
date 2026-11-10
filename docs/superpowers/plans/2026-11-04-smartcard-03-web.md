@@ -596,7 +596,7 @@ test('agent down → friendly error', async () => { /* fetch reject → err.mess
   - `middlewares/admin/auth.middleware.js`
   - `controllers/admin/card.controller.js`: `stepUpChallenge`, `stepUpVerify`
   - `routes/admin/card.route.js`
-  - `views/admin/pages/login.pug` và JS đăng nhập trong `public/admin/assets/js/script.js`: xử lý `code:'card-required'`
+  - `views/admin/pages/login.pug`, `views/admin/layouts/account.pug` và JS đăng nhập thực tế `public/admin/assets/js/account.js`: xử lý `code:'card-required'`
 - Test: `test/integration/admin-auth.test.js`
 
 **Interfaces — Produces:**
@@ -610,7 +610,7 @@ test('agent down → friendly error', async () => { /* fetch reject → err.mess
 - `req.stepUpAt` (Date | undefined)
 - `stepUp.isFresh(req) → bool`: ≤ 5 phút; đặt trong `admin-token.helper.js`
 
-- [ ] **Step 1: Viết `admin-auth.test.js`**
+- [x] **Step 1: Viết `admin-auth.test.js`**
 
   Gọi trực tiếp middleware với `req`/`res` giả, DB test.
 
@@ -622,9 +622,9 @@ test('nonce single use', async () => { /* verify 2 lần cùng nonce (chữ ký 
 test('nonce wrong purpose', async () => { /* nonce 'login-customer' dùng cho 'login-staff' → error */ });
 ```
 
-- [ ] **Step 2: Chạy test, xác nhận fail**
+- [x] **Step 2: Chạy test, xác nhận fail**
 
-- [ ] **Step 3: Cài đặt**
+- [x] **Step 3: Cài đặt**
 
   **`loginPost`**, sau khi kiểm mật khẩu và trạng thái:
   - `cardRequired` và **không** có Card staff `active` → `{code:'error', message:'Thẻ nhân viên đã bị khoá hoặc thu hồi. Liên hệ quản trị viên.'}`.
@@ -637,15 +637,17 @@ test('nonce wrong purpose', async () => { /* nonce 'login-customer' dùng cho 'l
   - thẻ phải là `staff` và `ownerId` = account;
   - `adminToken.issue({cardId, stepUpAt: now})`, xoá `preToken`.
 
-- [ ] **Step 4: Chạy test, xác nhận pass**
+- [x] **Step 4: Chạy test, xác nhận pass**
 
-- [ ] **Step 5: Kiểm thủ công**
+- [x] **Step 5: Kiểm thủ công**
 
   1. Phát hành thẻ nhân viên cho chính mình (Task 7) → đăng xuất → đăng nhập. Expected: hiện hộp nhập PIN; đúng PIN thì vào được dashboard.
   2. Nhập sai PIN. Expected: thông báo "còn x lần".
   3. Rút thẻ (`/v1/sim/slot` sang slot trống). Expected: báo lỗi rõ ràng.
 
-- [ ] **Step 6: Commit** — `feat(card): staff card login and step-up authentication`
+- [x] **Step 6: Commit** — `feat(card): staff card login and step-up authentication`
+
+**Nghiệm thu 2026-11-10:** Task 8 đã triển khai/kiểm thử/review; 140 unit + 5 E2E jCardSim + 130 MongoDB integration PASS, Edge thật 20 mục PASS. Đúng account layout/account.js; staff đổi PIN ban đầu trước AUTH, preToken 5 phút, nonce 60 giây atomic single-use, OTP cardRequired chỉ cấp resetToken hạn chế, middleware/alternate API reject staged hoặc revoked-card token. Step-up dùng verified context và giữ exp cũ. Review Spec PASS / Quality Approved / Security PASS, không Critical/Important; Minor định dạng và hai Minor Task 7 ghi nhận. Browser dùng account/Card fixture DB test, PIN/chữ ký jCardSim thật; mốc Step-up quá 5 phút dùng JWT fixture, không chờ thực 5 phút. Xem [báo cáo Task 8](../reports/2026-11-10-smartcard-03-task-8.md). Chưa triển khai Task 9.
 
 ---
 

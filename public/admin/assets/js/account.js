@@ -1,75 +1,62 @@
-// Login Form
-const loginForm = document.querySelector("#login-form");
-if(loginForm) {
-  const validation = new JustValidate('#login-form');
-
-  validation
-    .addField('#email', [
-      {
-        rule: 'required',
-        errorMessage: 'Vui lòng nhập email của bạn!',
-      },
-      {
-        rule: 'email',
-        errorMessage: 'Email không đúng định dạng!',
-      },
-    ])
-    .addField('#password', [
-      {
-        rule: 'required',
-        errorMessage: 'Vui lòng nhập mật khẩu!',
-      },
-      {
-        validator: (value) => value.length >= 8,
-        errorMessage: 'Mật khẩu phải chứa ít nhất 8 ký tự!',
-      },
-      {
-        validator: (value) => /[A-Z]/.test(value),
-        errorMessage: 'Mật khẩu phải chứa ít nhất một chữ cái in hoa!',
-      },
-      {
-        validator: (value) => /[a-z]/.test(value),
-        errorMessage: 'Mật khẩu phải chứa ít nhất một chữ cái thường!',
-      },
-      {
-        validator: (value) => /\d/.test(value),
-        errorMessage: 'Mật khẩu phải chứa ít nhất một chữ số!',
-      },
-      {
-        validator: (value) => /[@$!%*?&]/.test(value),
-        errorMessage: 'Mật khẩu phải chứa ít nhất một ký tự đặc biệt!',
-      },
-    ])
-    .onSuccess((event) => {
-      const email = event.target.email.value;
-      const password = event.target.password.value;
-      const rememberPassword = event.target.rememberPassword.checked;
-
-      const dataFinal = {
-        email: email,
-        password: password,
-        rememberPassword: rememberPassword
+// Đăng nhập vẫn dùng được HTML validation khi CDN tuỳ chọn không tải được.
+const loginForm = document.querySelector('#login-form');
+if (loginForm) {
+  const status = document.querySelector('[card-login-status]');
+  const button = loginForm.querySelector('button[type="submit"]');
+  let busy = false;
+  const message = text => { if (status) status.textContent = text; else alert(text); };
+  async function submitLogin(event) {
+    event.preventDefault();
+    if (busy) return;
+    if (!loginForm.checkValidity()) { loginForm.reportValidity(); return; }
+    busy = true; if (button) button.disabled = true; message('Đang xác thực…');
+    try {
+      const response = await fetch(`/${pathAdmin}/account/login`, {
+        method: 'POST', credentials: 'same-origin', cache: 'no-store', redirect: 'error',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({email:loginForm.email.value,password:loginForm.password.value,rememberPassword:loginForm.rememberPassword.checked})
+      });
+      loginForm.password.value = '';
+      const result = await response.json();
+      if (!response.ok || result.code === 'error') throw new Error(result.message || 'Không thể đăng nhập.');
+      if (result.code === 'card-required') {
+        const client = window.cardClient;
+        if (!client) throw new Error('Không kết nối được Card Agent.');
+        const info = await client.openSession();
+        if (info.state === 0) throw new Error('Thẻ chưa được phát hành. Hãy cắm thẻ nhân viên đã kích hoạt.');
+        if (info.state !== 2 || info.cardType !== 2) throw new Error('Thẻ nhân viên không hợp lệ hoặc đã bị khoá/thu hồi.');
+        let pin, newPin, confirmation;
+        try {
+          pin = await client.askPin(info.mustChangePin ? 'Nhập PIN ban đầu của thẻ nhân viên' : 'Nhập PIN thẻ nhân viên');
+          await client.verifyPin(pin);
+          if (info.mustChangePin) {
+            newPin = await client.askPin('Đặt PIN mới (không dùng mã yếu hoặc ngày sinh)');
+            confirmation = await client.askPin('Nhập lại PIN mới');
+            if (newPin !== confirmation) throw new Error('PIN xác nhận không khớp. Hãy thử đăng nhập lại.');
+            await client.changePin(pin, newPin);
+            await client.verifyPin(newPin);
+          }
+        } finally { pin = ''; newPin = ''; confirmation = ''; }
+        const verified = await client.authenticate({challengeUrl:`/${pathAdmin}/account/login-card/challenge`,verifyUrl:`/${pathAdmin}/account/login-card/verify`});
+        if (verified.code !== 'success') throw new Error(verified.message || 'Không thể xác thực thẻ nhân viên.');
+      } else if (result.code !== 'success') throw new Error('Phản hồi đăng nhập không hợp lệ.');
+      window.location.href = `/${pathAdmin}/dashboard`;
+    } catch (error) {
+      const fallback = {
+        PIN_CANCELLED:'Đã huỷ nhập PIN.',
+        WEAK_PIN:'PIN mới quá yếu. Hãy chọn mã khác rồi đăng nhập lại.',
+        CARD_AUTH_INVALID:'Thẻ không hợp lệ hoặc yêu cầu xác thực đã hết hạn. Hãy thử lại.',
+        AUTH_REQUIRED:'Phiên xác thực hết hạn. Hãy đăng nhập lại.',
+        AGENT_HTTP:'Card Agent chưa sẵn sàng hoặc khe đọc không có thẻ.',
+        CARD_RESPONSE:'Không đọc được thẻ. Hãy kiểm tra khe đọc.',
+        OP_FORBIDDEN:'Thẻ không được phép đăng nhập tài khoản này.'
       };
-
-      fetch(`/${pathAdmin}/account/login`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify(dataFinal)
-      })
-        .then(res => res.json())
-        .then(data => {
-          if(data.code == "error") {
-            alert(data.message);
-          }
-
-          if(data.code == "success") {
-            window.location.href = `/${pathAdmin}/dashboard`;
-          }
-        })
-    })
-  ;
+      message(fallback[error.code] || error.message || 'Không thể đăng nhập. Hãy kiểm tra Card Agent và thẻ.');
+    } finally {
+      loginForm.password.value = ''; busy = false; if (button) button.disabled = false;
+    }
+  }
+  loginForm.addEventListener('submit', submitLogin);
 }
 // End Login Form
 
@@ -326,7 +313,7 @@ if(resetPasswordForm) {
           }
 
           if(data.code == "success") {
-            window.location.href = `/${pathAdmin}/dashboard`;
+            window.location.href = data.requiresLogin ? `/${pathAdmin}/account/login` : `/${pathAdmin}/dashboard`;
           }
         })
     })

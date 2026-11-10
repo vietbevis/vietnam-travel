@@ -1,6 +1,9 @@
 const router=require('express').Router();
 const controller=require('../../controllers/admin/card.controller');
 router.use(controller.authenticate);
+const account=require('../../controllers/admin/account.controller');
+router.post('/step-up/challenge',account.cardInput('challenge'),controller.stepUpChallenge);
+router.post('/step-up/verify',account.cardInput('verify'),controller.stepUpVerify);
 router.get('/issue',controller.issue);
 router.post('/issue/prepare',controller.issuePrepare);
 router.post('/issue/init-confirm',controller.issueInitConfirm);

@@ -6,4 +6,5 @@ const schema = new mongoose.Schema({
   expireAt:{type:Date,required:true,expires:0,default:()=>new Date(Date.now()+60_000)},
   used:{type:Boolean,required:true,default:false}
 },{timestamps:true});
+schema.index({nonce:1},{unique:true});
 module.exports=mongoose.model('CardNonce',schema,'card-nonces');

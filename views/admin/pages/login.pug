@@ -13,6 +13,7 @@ block main
         ) Email
         input(
           type="email"
+          required
           name="email"
           id="email"
           placeholder="Ví dụ: levana@gmail.com"
@@ -25,6 +26,8 @@ block main
         ) Mật khẩu
         input(
           type="password"
+          required
+          minlength="8"
           name="password"
           id="password"
           class="inner-control"
@@ -45,7 +48,8 @@ block main
           href=`/${pathAdmin}/account/forgot-password` 
           class="inner-forgot-password"
         ) Quên mật khẩu?
-      button(class="inner-button") Đăng Nhập
+      p(card-login-status role="status" aria-live="polite")
+      button(type="submit" class="inner-button") Đăng Nhập
     
     .inner-more
       span Bạn chưa có tài khoản?

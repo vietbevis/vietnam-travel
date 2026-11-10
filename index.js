@@ -43,6 +43,7 @@ app.use(flash());
 app.use(`/${variableConfig.pathAdmin}`, adminRoutes);
 app.use("/", clientRoutes);
 app.use('/card-api', require('./controllers/client/card-api.controller').errorHandler);
+app.use('/'+variableConfig.pathAdmin+'/account', require('./controllers/client/card-api.controller').errorHandler);
 app.use(`/${variableConfig.pathAdmin}/card`, require('./controllers/client/card-api.controller').errorHandler);
 
 app.listen(port, () => {

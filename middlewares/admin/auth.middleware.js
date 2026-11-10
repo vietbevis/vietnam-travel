@@ -1,48 +1,10 @@
-const jwt = require('jsonwebtoken');
-const AccountAdmin = require('../../models/account-admin.model');
-const Role = require('../../models/role.model');
-
-module.exports.verifyToken = async (req, res, next) => {
-  try {
-    const token = req.cookies.token;
-
-    if(!token) {
-      res.redirect(`/${pathAdmin}/account/login`);
-      return;
-    }
-
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const { id, email } = decoded;
-
-    const existAccount = await AccountAdmin.findOne({
-      _id: id,
-      email: email,
-      status: "active"
-    })
-
-    if(!existAccount) {
-      res.clearCookie("token");
-      res.redirect(`/${pathAdmin}/account/login`);
-      return;
-    }
-
-    const role = await Role.findOne({
-      _id: existAccount.role
-    })
-
-    existAccount.roleName = role.name;
-
-    req.account = existAccount;
-
-    req.permissions = role.permissions;
-
-    res.locals.account = existAccount;
-
-    res.locals.permissions = role.permissions;
-
-    next();
-  } catch (error) {
-    res.clearCookie("token");
-    res.redirect(`/${pathAdmin}/account/login`);
-  }
-}
+const Account=require('../../models/account-admin.model');
+const token=require('../../helpers/admin-token.helper');
+function deny(res){res.clearCookie('token');return res.redirect('/'+pathAdmin+'/account/login');}
+module.exports.verifyToken=async(req,res,next)=>{
+  try{const ctx=await token.resolve(token.decode(req.cookies?.token));if(!ctx)return deny(res);token.attach(req,ctx);ctx.account.roleName=ctx.role.name;res.locals.account=ctx.account;res.locals.permissions=req.permissions;next();}catch{return deny(res);}
+};
+module.exports.verifyResetToken=async(req,res,next)=>{
+  if(!req.cookies?.resetToken)return module.exports.verifyToken(req,res,next);
+  try{const decoded=token.decode(req.cookies.resetToken);if(decoded.stage!=='reset-password'||!(/^[a-fA-F0-9]{24}$/).test(decoded.id))throw new Error();const account=await Account.findOne({_id:decoded.id,email:decoded.email,status:'active',deleted:false});if(!account||decoded.passwordTag!==token.resetTag(account))throw new Error();req.account=account;req.resetOnly=true;next();}catch{res.clearCookie('resetToken');return deny(res);}
+};

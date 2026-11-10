@@ -1,6 +1,8 @@
 const crypto=require('node:crypto');
 const mongoose=require('mongoose');
 const jwt=require('jsonwebtoken');
+const adminToken=require('../../helpers/admin-token.helper');
+const cardAuth=require('../../helpers/card-auth.helper');
 const Card=require('../../models/card.model');
 const Customer=require('../../models/customer.model');
 const Account=require('../../models/account-admin.model');
@@ -28,12 +30,11 @@ module.exports.authenticate=async(req,res,next)=>{
     if(req.headers.origin){let origin;try{origin=new URL(req.headers.origin).origin;}catch{fail('OP_FORBIDDEN',403);}if(origin!==req.protocol+'://'+req.get('host'))fail('OP_FORBIDDEN',403);}
     if(!req.cookies?.token)fail('AUTH_REQUIRED',401);
     let decoded;try{decoded=jwt.verify(req.cookies.token,process.env.JWT_SECRET,{algorithms:['HS256']});}catch{fail('AUTH_REQUIRED',401);}
-    if(!objectId(decoded.id)||typeof decoded.email!=='string')fail('AUTH_REQUIRED',401);
-    const account=await Account.findOne({_id:decoded.id,email:decoded.email,status:'active',deleted:false}).select('_id role cardRequired').lean();
-    if(!account||!objectId(account.role))fail('OP_FORBIDDEN',403);
-    const role=await Role.findOne({_id:account.role,deleted:false}).select('permissions').lean();
-    if(!role)fail('OP_FORBIDDEN',403);
-    if(account.cardRequired&&(!/^[a-fA-F0-9]{32}$/.test(decoded.cardId||'')||!await Card.exists({cardId:decoded.cardId,cardType:'staff',ownerId:decoded.id,status:'active',isCurrent:true})))fail('OP_FORBIDDEN',403);
+    if(decoded.stage!==undefined||!objectId(decoded.id)||typeof decoded.email!=='string')fail('AUTH_REQUIRED',401);
+    const ctx=await adminToken.resolve(decoded);
+    if(!ctx)fail('OP_FORBIDDEN',403);
+    adminToken.attach(req,ctx);
+    const account=ctx.account,role=ctx.role;
     req.cardActor={id:decoded.id,permissions:role.permissions||[]};next();
   }catch(error){problem(res,error);}
 };
@@ -196,3 +197,17 @@ async function forward(handler,req,res){
 }
 module.exports.opSign=(req,res)=>forward(api.sign,req,res);
 module.exports.opConfirm=(req,res)=>forward(api.confirm,req,res);
+
+module.exports.stepUpChallenge=async(req,res)=>{
+  try{const ctx=adminToken.context(req);if(!ctx)fail('AUTH_REQUIRED',401);if(!await Card.exists({ownerId:ctx.account.id,cardType:'staff',status:'active',isCurrent:true,...(ctx.decoded.cardId?{cardId:ctx.decoded.cardId}:{})}))fail('OP_FORBIDDEN',403);res.json({code:'success',nonce:await cardAuth.issueNonce({purpose:'step-up',accountId:ctx.account.id})});}catch(error){problem(res,error);}
+};
+module.exports.stepUpVerify=async(req,res)=>{
+  try{
+    const ctx=adminToken.context(req);if(!ctx||!Number.isFinite(ctx.decoded.exp))fail('AUTH_REQUIRED',401);
+    if(ctx.decoded.cardId&&ctx.decoded.cardId!==req.body.cardId.toUpperCase())fail('OP_FORBIDDEN',403);
+    const result=await cardAuth.verify({...req.body,purpose:'step-up',accountId:ctx.account.id});
+    if(result.error)fail('OP_FORBIDDEN',403);
+    const current=await adminToken.resolve({...ctx.decoded,cardId:result.card.cardId});if(!current)fail('OP_FORBIDDEN',403);
+    adminToken.issue(res,{account:current.account,cardId:result.card.cardId,stepUpAt:Date.now(),expiresAt:ctx.decoded.exp});res.json({code:'success'});
+  }catch(error){problem(res,error);}
+};

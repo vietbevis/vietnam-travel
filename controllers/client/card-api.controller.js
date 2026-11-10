@@ -1,5 +1,6 @@
 const Joi=require('joi');
 const jwt=require('jsonwebtoken');
+const adminTokenHelper=require('../../helpers/admin-token.helper');
 const Card=require('../../models/card.model');
 const Tx=require('../../models/card-transaction.model');
 const Op=require('../../models/card-operation.model');
@@ -87,19 +88,15 @@ async function actor(req,op) {
       deny();
     return{actorType:'customer',actorId:decoded.customerId};
   }
+  if(decoded.stage!==undefined)deny();
   if(op.actorType!=='admin')
     deny();
   if(typeof decoded.id!=='string'||!/^[a-fA-F0-9]{24}$/.test(decoded.id)||(op.actorId!==undefined&&decoded.id!==op.actorId))
     deny();
-  const account=await Account.findOne({
-    _id:decoded.id,
-    email:decoded.email,
-    status:'active',
-    deleted:false
-  }).lean();
-  if(!account||!/^[a-fA-F0-9]{24}$/.test(account.role))
-    deny();
-  const role=await Role.findOne({_id:account.role,deleted:false}).lean();
+  const verified=await adminTokenHelper.resolve(decoded);
+  if(!verified)deny();
+  adminTokenHelper.attach(req,verified);
+  const {account,role}=verified;
   let permission=op.type==='set-state'&&op.params.state===127?'card-revoke':permissions[op.type];
   if(op.type==='commit-write') {
     const card=await Card.findOne({cardId:op.cardId}).lean();
@@ -123,10 +120,7 @@ async function actor(req,op) {
   }
   const cash=op.type==='credit'&&await Tx.exists({txRef:op.params.txRef,source:'cash'});
   if(op.type==='reset-pin'||permission==='card-revoke'||cash) {
-    const at=decoded.stepUpAt;
-    const time=typeof at==='number'?at:Date.parse(at);
-    if(!Number.isFinite(time)||time>Date.now()||Date.now()-time>300000)
-      deny();
+    if(!adminTokenHelper.stepUp.isFresh(req))deny();
   }
   return{actorType:'admin',actorId:account._id.toString()};
 }

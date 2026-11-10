@@ -10,5 +10,11 @@ html
     .page-account
       block main
 
+    include ../partials/card-pin-modal.pug
+    div(card-agent-config hidden data-card-agent-url=cardAgentUrl)
+    script.
+      window.CARD_AGENT_URL = document.querySelector('[card-agent-config]').dataset.cardAgentUrl;
+    script(src="/assets/js/card/card-shared.js")
+    script(src="/assets/js/card/card-client.js")
     script(src="https://cdn.jsdelivr.net/npm/just-validate@4.3.0/dist/just-validate.production.min.js")
     script(src="/admin/assets/js/account.js")

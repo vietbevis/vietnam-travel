@@ -10,9 +10,13 @@ router.get('/login', accountController.login)
 
 router.post(
   '/login', 
+  accountController.cardInput(),
   accountValidate.loginPost, 
   accountController.loginPost
 )
+
+router.post('/login-card/challenge',accountController.cardInput('challenge'),accountController.loginCardChallenge);
+router.post('/login-card/verify',accountController.cardInput('verify'),accountController.loginCardVerify);
 
 router.get('/register', accountController.register)
 
@@ -30,11 +34,11 @@ router.post('/forgot-password', accountController.forgotPasswordPost)
 
 router.get('/otp-password', accountController.otpPassword)
 
-router.post('/otp-password', accountController.otpPasswordPost)
+router.post('/otp-password', accountController.cardInput(), accountController.otpPasswordPost)
 
 router.get('/reset-password', accountController.resetPassword)
 
-router.post('/reset-password', authMiddleware.verifyToken, accountController.resetPasswordPost)
+router.post('/reset-password', accountController.cardInput('reset'), authMiddleware.verifyResetToken, accountController.resetPasswordPost)
 
 router.post('/logout', accountController.logoutPost)
 

@@ -986,7 +986,9 @@ it('admin privileged sync rechecks cash step-up and role permissions before conf
   process.env.JWT_SECRET='fixture-task5-secret';
   const role=await Role.create({permissions:['card-topup']});
   const admin=await Account.create({email:'sync-admin@example.invalid',role:role.id,status:'active'});
-  const headers=claims=>({Cookie:'token='+jwt.sign({id:admin.id,email:admin.email,...claims},process.env.JWT_SECRET)});
+  const staffCardId='AA'.repeat(16);
+  await Card.create({cardId:staffCardId,ownerId:admin.id,cardType:'staff',status:'active'});
+  const headers=claims=>({Cookie:'token='+jwt.sign({id:admin.id,email:admin.email,cardId:staffCardId,...claims},process.env.JWT_SECRET)});
   await http(async post=> {
     let out=await post('/sync/next',{cardId,cardState:2,challenge:challengeHex},headers({}));
     assert.equal(out.status,403);
