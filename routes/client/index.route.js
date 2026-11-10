@@ -11,8 +11,10 @@ const settingMiddleware = require("../../middlewares/client/setting.middleware")
 const categoryMiddleware = require("../../middlewares/client/category.middleware");
 
 router.use('/card-api', require('./card-api.route'));
+router.use(require('../../middlewares/client/customer-auth.middleware').optional);
 router.use(settingMiddleware.websiteInfo);
 router.use(categoryMiddleware.list);
+router.use('/account',require('./account.route'));
 
 router.use('/', homeRoutes)
 router.use('/tour', tourRoutes)

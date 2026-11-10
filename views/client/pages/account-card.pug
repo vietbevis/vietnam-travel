@@ -1,0 +1,59 @@
+extends ../layouts/default
+block main
+  - const money = value => value.toLocaleString('vi-VN') + ' đ'
+  - const dob = accountCustomer.dob ? accountCustomer.dob.toISOString().slice(0,10).replace(/-/g,'') : ''
+  main.card-account(data-card-account data-card-id=card.cardId data-server-balance=card.balance data-dob=dob)
+    h1 Thẻ của tôi
+    p #{accountCustomer.fullName} · Hạng #{tier.label} · Giảm #{tier.percent}%
+    p Tổng chi tiêu: #{money(accountCustomer.totalSpent)}
+    p Số dư hệ thống:
+      strong(data-server-balance)= money(card.balance)
+    p Tổng credit đang chờ ghi thẻ: #{money(pendingCredit)}
+    p Mã thẻ: #{card.cardId}
+    section
+      h2 Lịch sử giao dịch trên hệ thống
+      .card-table-wrap
+        table
+          thead
+            tr
+              th Thời gian
+              th Mã giao dịch
+              th Loại
+              th Số tiền
+              th Trạng thái
+          tbody
+            each tx in transactions
+              tr
+                td= tx.createdAt.toLocaleString('vi-VN', {timeZone:'Asia/Ho_Chi_Minh'})
+                td= tx.txRef
+                td= tx.type === 'credit' ? 'Nạp' : 'Trừ'
+                td= money(tx.amount)
+                td= ({'awaiting-payment':'Chờ thanh toán','pending-card':'Chờ ghi thẻ',sent:'Đang đối soát',done:'Hoàn tất',failed:'Chưa hoàn tất'})[tx.status]
+            if !transactions.length
+              tr
+                td(colspan="5") Chưa có giao dịch.
+    section
+      h2 Dữ liệu trên thẻ
+      button(type="button" data-card-read) Đọc thẻ
+      button(type="button" data-card-change-pin) Đổi PIN
+      p(data-customer-status role="status" aria-live="polite")
+      p.card-warning(data-card-mismatch hidden) Số dư trên thẻ và hệ thống chưa khớp — đang đồng bộ
+      img.card-photo(data-card-photo alt="Ảnh trên thẻ")
+      pre(data-card-profile-read)
+      p(data-card-balance)
+      h3 Nhật ký giao dịch trên thẻ
+      pre(data-card-log)
+      h3 Vé trên thẻ
+      pre(data-card-tickets)
+    section
+      h2 Sửa thông tin liên hệ
+      p Hồ sơ chỉ cập nhật sau khi ghi thẻ thành công.
+      form(data-card-profile)
+        label(for="card-phone") Số điện thoại
+        input#card-phone(name="phone" maxlength="15" value=accountCustomer.phone || '')
+        label(for="card-emergency-name") Người liên hệ khẩn cấp
+        input#card-emergency-name(name="emergencyName" maxlength="60" value=accountCustomer.emergencyName || '')
+        label(for="card-emergency-phone") Điện thoại khẩn cấp
+        input#card-emergency-phone(name="emergencyPhone" maxlength="15" value=accountCustomer.emergencyPhone || '')
+        button(type="submit") Ghi thông tin vào thẻ
+    a(href="/account/card-lock") Báo mất và khóa thẻ

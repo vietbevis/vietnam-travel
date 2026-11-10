@@ -1,5 +1,12 @@
 const router=require('express').Router();
 const controller=require('../../controllers/client/card-api.controller');
+const customerAuth=require('../../middlewares/client/customer-auth.middleware');
+router.use((req,res,next)=>{res.set('Cache-Control','no-store');next();});
+router.use(customerAuth.optional);
+router.post('/login/challenge',controller.loginChallenge);
+router.post('/login/verify',controller.loginVerify);
+router.post('/logout',controller.logout);
+router.post('/profile/build',controller.profileBuild);
 router.post('/sync/next',controller.next);
 router.post('/sync/confirm',controller.syncConfirm);
 router.post('/sync/receipt',controller.receipt);

@@ -32,6 +32,7 @@ html(lang="vi")
       href="/assets/css/style.css" 
       rel="stylesheet"
       )
+    link(rel="stylesheet" href="/assets/css/card-customer.css")
   body
 
     - if (messages.success)
@@ -52,6 +53,7 @@ html(lang="vi")
       window.CARD_AGENT_URL = document.querySelector('[card-agent-config]').dataset.cardAgentUrl;
     script(src="/assets/js/card/card-shared.js")
     script(src="/assets/js/card/card-client.js")
+    script(src="/assets/js/card-customer.js")
 
     script(src="https://unpkg.com/aos@2.3.1/dist/aos.js")
     script(src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js")

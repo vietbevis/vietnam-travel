@@ -1,0 +1,8 @@
+extends ../layouts/default
+block main
+  main.card-account
+    h1 Đăng nhập bằng thẻ
+    p Mở Card Agent, cắm thẻ khách hàng rồi bấm đăng nhập. Thẻ mới phải đổi PIN trước khi sử dụng.
+    button(type="button" data-card-login) Đăng nhập bằng thẻ
+    p(data-customer-status role="status" aria-live="polite")
+    a(href="/account/card-lock") Mất thẻ? Khóa thẻ qua email

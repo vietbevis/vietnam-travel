@@ -49,6 +49,13 @@ header.header
             a(href="#") Liên hệ
         .inner-overlay
       // Cart
+      .card-session
+        if typeof customer !== 'undefined' && customer
+          span= customer.fullName
+          a(href="/account/card") Thẻ của tôi
+          button(type="button" data-card-logout) Đăng xuất
+        else
+          a(href="/account/login") Đăng nhập bằng thẻ
       .inner-cart
         a(href="/cart")
           img(

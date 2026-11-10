@@ -500,7 +500,7 @@ it('API JWT actor and fresh DB permissions control generic operations',async()=>
     params:{txRef},
     ...actor
   });
-  const token=jwt.sign({customerId:ownerId,cardId},process.env.JWT_SECRET);
+  const token=jwt.sign({customerId:ownerId,cardId},process.env.JWT_SECRET,{expiresIn:'1d'});
   await http(async post=> {
     assert.equal((await post('/op/sign',{opId:op.id,challenge:challengeHex},{Cookie:'customerToken='+token,Origin:'https://evil.invalid'})).status,403);
     assert.equal((await post('/op/sign',{opId:op.id,challenge:challengeHex},{Cookie:'customerToken='+token})).status,200);
@@ -772,7 +772,7 @@ it('API response envelope preserves success and error contract for sign confirm 
     params:{txRef},
     ...actor
   });
-  const cookie={Cookie:'customerToken='+jwt.sign({customerId:ownerId,cardId},process.env.JWT_SECRET)};
+  const cookie={Cookie:'customerToken='+jwt.sign({customerId:ownerId,cardId},process.env.JWT_SECRET,{expiresIn:'1d'})};
   await http(async post=> {
     let out=await post('/op/sign',{opId:op.id,challenge:challengeHex},cookie);
     assert.equal(out.body.code,'success');
@@ -816,7 +816,7 @@ it('anonymous fake challenge cannot consume wallet authorization or create opera
 it('privileged sync binds current owner and rejects another actor confirmation',async()=> {
   await fixture();
   process.env.JWT_SECRET='fixture-task5-secret';
-  const cookie=id=>({Cookie:'customerToken='+jwt.sign({customerId:id,cardId},process.env.JWT_SECRET)});
+  const cookie=id=>({Cookie:'customerToken='+jwt.sign({customerId:id,cardId},process.env.JWT_SECRET,{expiresIn:'1d'})});
   await http(async post=> {
     let out=await post('/sync/next',{cardId,cardState:2,challenge:challengeHex},cookie('987654321098765432109876'));
     assert.equal(out.status,403);

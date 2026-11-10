@@ -10,6 +10,10 @@ const Role=require('../../models/role.model');
 const E=require('../../helpers/card-op.helper');
 const P=require('../../helpers/card-sync.helper');
 const S=require('../../public/assets/js/card/card-shared');
+const customerAuth=require('../../middlewares/client/customer-auth.middleware');
+const cardAuth=require('../../helpers/card-auth.helper');
+const cardLog=require('../../helpers/card-log.helper');
+const customerValidation=require('../../validates/client/card.validate');
 const hex=n=>Joi.string().pattern(new RegExp(`^[a-fA-F0-9]{${n}}$`)).required();
 const response=Joi.string().allow('').pattern(/^([a-fA-F0-9]{2})*$/).max(332).required();
 const schemas={
@@ -75,16 +79,8 @@ async function actor(req,op) {
     deny();
   }
   if(op.actorType==='customer') {
-    if(typeof decoded.customerId!=='string'||!/^[a-fA-F0-9]{24}$/.test(decoded.customerId)||decoded.customerId!==op.actorId||decoded.cardId!==op.cardId)
-      deny();
-    const [customer,card]=await Promise.all([Customer.findOne({_id:decoded.customerId,status:'active',deleted:false}).lean(),Card.findOne({
-      cardId:op.cardId,
-      cardType:'customer',
-      ownerId:decoded.customerId,
-      status:'active',
-      isCurrent:true
-    }).lean()]);
-    if(!customer||!card)
+    const context=await customerAuth.resolve(token);
+    if(!context||String(context.customer._id)!==op.actorId||context.card.cardId!==op.cardId)
       deny();
     return{actorType:'customer',actorId:decoded.customerId};
   }
@@ -236,6 +232,52 @@ module.exports.receipt=handler('receipt',async(req,res,body)=> {
     result:null
   });
 });
+function customerHandler(schema,action,fn,required=false){
+  return async(req,res)=>{
+    res.set('Cache-Control','no-store');
+    try{
+      if(required&&(!req.customer||!req.card))throw new E.CardOpError('AUTH_REQUIRED');
+      if(!req.is('application/json')){const error=new E.CardOpError('INVALID_INPUT');error.httpStatus=415;throw error;}
+      if(req.headers.origin&&req.headers.origin!==req.protocol+'://'+req.get('host'))throw new E.CardOpError('OP_FORBIDDEN');
+      const {error,value}=schema.validate(req.body,{convert:false});
+      if(error){const invalid=new E.CardOpError('INVALID_INPUT');invalid.httpStatus=400;throw invalid;}
+      await fn(req,res,value);
+    }catch(error){
+      const errorCode=error instanceof E.CardOpError?error.code:'INTERNAL';
+      await cardLog.write({action,cardId:req.card?.cardId,actorType:'customer',actorId:req.customer?String(req.customer._id):undefined,result:'fail',detail:{errorCode},req});
+      problem(res,error.httpStatus||(['CARD_AUTH_INVALID','AUTH_REQUIRED'].includes(errorCode)?401:errorCode==='OP_FORBIDDEN'?403:errorCode==='INVALID_PROFILE'?400:errorCode==='INTERNAL'?500:409),errorCode);
+    }
+  };
+}
+module.exports.loginChallenge=customerHandler(customerValidation.empty,'customer-login',async(req,res)=>{
+  const nonce=await cardAuth.issueNonce({purpose:'login-customer'});
+  await cardLog.write({action:'customer-login-challenge',actorType:'customer',result:'success',detail:{},req});
+  res.json({code:'success',message:'Đã tạo yêu cầu xác thực thẻ.',nonce});
+});
+module.exports.loginVerify=customerHandler(customerValidation.login,'customer-login',async(req,res,body)=>{
+  const result=await cardAuth.verify({purpose:'login-customer',...body});
+  if(!result.card)throw new E.CardOpError('CARD_AUTH_INVALID');
+  const customer=await Customer.findOne({_id:result.card.ownerId,status:'active',deleted:false}).lean();
+  if(!customer)throw new E.CardOpError('CARD_AUTH_INVALID');
+  const current=await Card.findOneAndUpdate({_id:result.card._id,ownerId:String(customer._id),cardType:'customer',status:'active',isCurrent:true},[{$set:{activatedAt:{$ifNull:['$activatedAt','$$NOW']}}}],{new:true});
+  if(!current)throw new E.CardOpError('CARD_AUTH_INVALID');
+  res.cookie('customerToken',jwt.sign({customerId:String(customer._id),cardId:current.cardId},process.env.JWT_SECRET,{algorithm:'HS256',expiresIn:'1d'}),{...customerAuth.flags(),maxAge:86400000});
+  await cardLog.write({action:'customer-login',cardId:current.cardId,actorType:'customer',actorId:String(customer._id),result:'success',detail:{},req});
+  res.json({code:'success',message:'Đăng nhập thành công.'});
+});
+module.exports.logout=customerHandler(customerValidation.empty,'customer-logout',async(req,res)=>{
+  customerAuth.clear(res);
+  await cardLog.write({action:'customer-logout',cardId:req.card?.cardId,actorType:'customer',actorId:req.customer?String(req.customer._id):undefined,result:'success',detail:{},req});
+  res.json({code:'success',message:'Đã đăng xuất.'});
+});
+module.exports.profileBuild=customerHandler(customerValidation.profile,'customer-profile-build',async(req,res,body)=>{
+  const profile={...req.customer,...body};
+  if(profile.dob instanceof Date)profile.dob=profile.dob.toISOString().slice(0,10).replace(/-/g,'');
+  let profileHex;try{profileHex=Buffer.from(S.encodeProfile(profile)).toString('hex').toUpperCase();}catch{throw new E.CardOpError('INVALID_PROFILE');}
+  const op=await E.createOp({cardId:req.card.cardId,type:'commit-write',params:{target:1,dataHex:profileHex,customerUpdate:body},actorType:'customer',actorId:String(req.customer._id)});
+  await cardLog.write({action:'customer-profile-build',cardId:req.card.cardId,actorType:'customer',actorId:String(req.customer._id),result:'success',detail:{opId:op.id},req});
+  res.json({code:'success',message:'Đã chuẩn bị hồ sơ; dữ liệu chỉ đổi sau khi xác nhận ghi thẻ.',opId:op.id,profileHex});
+},true);
 // Mount trực tiếp tại app để bắt cả lỗi parser xảy ra trước router con.
 module.exports.errorHandler=(error,req,res,next)=> {
   if(res.headersSent)

@@ -814,7 +814,7 @@ test('profile update applies only on done', async () => { /* build với phone m
   - `POST /account/card-lock/otp {email}`
   - `POST /account/card-lock/confirm {email, otp}`
 
-- [ ] **Step 1: Cài đặt middleware, login và logout**
+- [x] **Step 1: Cài đặt middleware, login và logout**
 
   `account-login.pug`, trình tự:
   1. `openSession()`.
@@ -823,7 +823,7 @@ test('profile update applies only on done', async () => { /* build với phone m
   4. `authenticate({challengeUrl:'/card-api/login/challenge', verifyUrl:'/card-api/login/verify'})`.
   5. Chuyển hướng tới `/account/card`.
 
-- [ ] **Step 2: Cài đặt `account-card.pug` + `card-customer.js`**
+- [x] **Step 2: Cài đặt `account-card.pug` + `card-customer.js`**
 
   **Phần server (không cần thẻ):**
   - hạng thành viên (`tierOf`);
@@ -837,7 +837,7 @@ test('profile update applies only on done', async () => { /* build với phone m
   - đổi PIN;
   - sửa SĐT / liên hệ khẩn cấp: `profile/build` → `writeTarget` → `runSignedOp`.
 
-- [ ] **Step 3: Cài đặt khoá thẻ qua OTP**
+- [x] **Step 3: Cài đặt khoá thẻ qua OTP**
 
   - OTP 6 số, hiệu lực 5 phút, dùng `ForgotPassword` (`email`, `otp`, `expireAt`).
   - Email không tồn tại hoặc không có thẻ `active` vẫn trả **cùng thông điệp** "Nếu email hợp lệ, mã OTP đã được gửi", để không lộ thông tin tài khoản.
@@ -847,7 +847,7 @@ test('profile update applies only on done', async () => { /* build với phone m
     - ghi CardLog actor `customer`;
     - email thông báo.
 
-- [ ] **Step 4: Kiểm thủ công**
+- [x] **Step 4: Kiểm thủ công**
 
   1. Thẻ mới phát hành → đăng nhập. Expected: bị bắt đổi PIN; PIN `123456` bị từ chối; sau đó vào được trang thẻ.
   2. Đọc thẻ. Expected: hiện đúng ảnh và hồ sơ.
@@ -855,7 +855,7 @@ test('profile update applies only on done', async () => { /* build với phone m
   4. Khoá thẻ qua OTP. Expected: phiên hiện tại bị đăng xuất ở request kế tiếp; cắm thẻ và đăng nhập lại thì sync đẩy LOCK và báo "Thẻ đang bị khoá".
   5. OTP sai hoặc hết hạn. Expected: báo lỗi, thẻ không bị khoá.
 
-- [ ] **Step 5: Commit** — `feat(card): customer card login, card account page and OTP self-lock`
+- [x] **Step 5: Commit** — `feat(card): customer card login, card account page and OTP self-lock`
 
 ---
 

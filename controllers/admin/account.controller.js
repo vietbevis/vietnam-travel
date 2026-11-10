@@ -100,7 +100,8 @@ module.exports.forgotPasswordPost = async (req, res) => {
 
   // Kiểm tra email đã tồn tại trong ForgotPassword chưa
   const existEmailInForgotPassword = await ForgotPassword.findOne({
-    email: email
+    email: email,
+    $or:[{purpose:'admin-reset'},{purpose:{$exists:false}}]
   })
 
   if(existEmailInForgotPassword) {
@@ -117,6 +118,7 @@ module.exports.forgotPasswordPost = async (req, res) => {
   // Lưu vào database: email, otp. sau 5 phút sẽ tự động xóa bản ghi.
   const newRecord = new ForgotPassword({
     email: email,
+    purpose:'admin-reset',
     otp: otp,
     expireAt: Date.now() + 5*60*1000
   })
@@ -144,7 +146,7 @@ module.exports.otpPasswordPost=async(req,res)=>{
   if(typeof otp!=='string'||typeof email!=='string')return res.json({code:'error',message:'Mã OTP không chính xác!'});
   const account=await AccountAdmin.findOne({email,status:'active',deleted:false});
   if(!account)return res.json({code:'error',message:'Tài khoản không khả dụng.'});
-  const record=await ForgotPassword.findOneAndDelete({email,otp,expireAt:{$gt:new Date()}});
+  const record=await ForgotPassword.findOneAndDelete({email,otp,expireAt:{$gt:new Date()},$or:[{purpose:'admin-reset'},{purpose:{$exists:false}}]});
   if(!record)return res.json({code:'error',message:'Mã OTP không chính xác hoặc đã hết hạn!'});
   if(account.cardRequired){
     res.clearCookie('token');res.clearCookie('preToken');
