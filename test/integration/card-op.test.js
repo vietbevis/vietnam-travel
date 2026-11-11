@@ -1015,6 +1015,62 @@ it('admin privileged sync rechecks cash step-up and role permissions before conf
     assert.equal((await Card.findOne({cardId})).balance,0);
   });
 });
+// L8: /sync/next lặp lại (không đăng nhập, cardState giả) dùng lại op đồng bộ còn hạn: một op, một CardLog, __v chỉ tăng một lần.
+it('repeated anonymous sync with a false card state reuses one op without new logs or version bumps',async()=> {
+  await fixture();
+  await http(async post=> {
+    const challenges=['A1','B2','C3','D4'].map(byte=>byte.repeat(16));
+    const first=await post('/sync/next',{cardId,cardState:3,challenge:challenges[0]});
+    assert.equal(first.status,200);
+    assert.equal(first.body.step.kind,'op');
+    const opId=first.body.step.opId;
+    const version=(await Card.findOne({cardId})).__v;
+    const logs=await CardLog.countDocuments({action:'card-sync-op'});
+    assert.equal(logs,1);
+    const apdus=new Set([first.body.step.apdu]);
+    for(const challenge of challenges.slice(1)) {
+      const out=await post('/sync/next',{cardId,cardState:3,challenge});
+      assert.equal(out.status,200);
+      assert.equal(out.body.step.opId,opId);
+      apdus.add(out.body.step.apdu);
+    }
+    // Mỗi lần ký lại theo challenge mới của thẻ (chữ ký khác nhau), nhưng không ghi gì thêm.
+    assert.equal(apdus.size,challenges.length);
+    assert.equal(await Op.countDocuments(),1);
+    assert.equal(await CardLog.countDocuments({action:'card-sync-op'}),1);
+    assert.equal((await Card.findOne({cardId})).__v,version);
+    assert.equal((await Op.findById(opId)).status,'prepared');
+    // Op sắp hết hạn thì không dùng lại: tạo op mới như bình thường.
+    await Op.updateOne({_id:opId},{$set:{expireAt:new Date(Date.now()+5000)}});
+    const fresh=await post('/sync/next',{cardId,cardState:3,challenge:'E5'.repeat(16)});
+    assert.notEqual(fresh.body.step.opId,opId);
+    assert.equal(await Op.countDocuments(),2);
+  });
+});
+it('sync next throttles bursts per card and IP with a retry-later message',async()=> {
+  await fixture();
+  const controller=require('../../controllers/client/card-api.controller');
+  const saved=controller.syncThrottle.limit;
+  controller.syncThrottle.hits.clear();
+  controller.syncThrottle.limit=3;
+  try {
+    await http(async post=> {
+      for(let i=0;i<3;i++)
+        assert.equal((await post('/sync/next',{cardId,cardState:3,challenge:'A1'.repeat(16)})).status,200);
+      const limited=await post('/sync/next',{cardId,cardState:3,challenge:'A1'.repeat(16)});
+      assert.equal(limited.status,429);
+      assert.equal(limited.body.errorCode,'RATE_LIMITED');
+      assert.match(limited.body.message,/thử lại sau/);
+      assert.equal(await Op.countDocuments(),1);
+      // Thẻ khác từ cùng IP không bị chặn bởi bộ đếm của thẻ này.
+      const other=await post('/sync/next',{cardId:'22'.repeat(16),cardState:2,challenge:'A1'.repeat(16)});
+      assert.equal(other.status,200);
+    });
+  } finally {
+    controller.syncThrottle.limit=saved;
+    controller.syncThrottle.hits.clear();
+  }
+});
 it('bound system engine rejects unbound creation and different signer',async()=> {
   await fixture();
   await assert.rejects(E.createOp({

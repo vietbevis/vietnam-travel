@@ -344,6 +344,47 @@ async function signOpCore({opId,challengeHex,actorType,actorId},audit) {
     return{apdu};
   });
 }
+// /sync/next gọi lặp (kể cả không đăng nhập, cardState giả) dùng lại op đồng bộ còn hạn cùng loại, tham số và người ràng buộc
+// thay vì tạo op mới: không thêm CardLog, không tăng __v. Op nháp được ký như thường; op đã prepared (không phải tiền)
+// chỉ được ký lại theo challenge mới của thẻ, không ghi gì. Challenge mới ghi đè challenge cũ trên chip nên chỉ APDU mới nhất chạy được.
+const SYNC_REUSE_MARGIN_MS=30_000;
+async function reuseSyncOp({cardId,type,params,binding,challengeHex,req}) {
+  if(!syncTypes.includes(type)||!hex(cardId,32)||!hex(challengeHex,32)||!params||typeof params!=='object')
+    return null;
+  const filter={
+    cardId:cardId.toUpperCase(),
+    type,
+    actorType:'system',
+    actorId:binding?`${binding.actorType}:${binding.actorId}`:{$exists:false},
+    // Op tiền đã ký gắn với giao dịch 'sent': chỉ biên nhận mới kết thúc được, không bao giờ ký lại ở đây.
+    status:{$in:['credit','debit'].includes(type)?['draft']:['draft','prepared']},
+    expireAt:{$gt:new Date(Date.now()+SYNC_REUSE_MARGIN_MS)}
+  };
+  for(const [key,value] of Object.entries(params))
+    filter['params.'+key]=value;
+  const found=await Op.findOne(filter).sort({createdAt:-1,_id:-1}).lean();
+  if(!found)
+    return null;
+  const actor=binding||{actorType:'system'};
+  const args={opId:String(found._id),challengeHex,...actor,req};
+  if(found.status==='draft')
+    return{opId:args.opId,...await signOp(args)};
+  const audit={};
+  try {
+    return await transaction(async session=> {
+      const op=await loadOp(args.opId,actor,session,'prepared',audit);
+      const card=await Card.findOne({cardId:op.cardId}).session(session).lean();
+      const context=await policy(card,op,session);
+      if(context.tx)
+        fail('OP_STATE');
+      return{opId:args.opId,apdu:A.signedApdu({cardIdHex:card.cardId,challengeHex,...command(op,context)})};
+    });
+  }
+  catch(error) {
+    await auditFailure('card-op-sign',args,audit,error);
+    throw error;
+  }
+}
 async function receiptInSession({card,tx,responseHex},session) {
   card=await Card.findOne({cardId:card.cardId}).session(session).lean();
   tx=await Tx.findOne({txRef:tx.txRef,cardId:card?.cardId}).session(session).lean();
@@ -560,6 +601,7 @@ module.exports={
   opLogDetail,
   createOp,
   signOp,
+  reuseSyncOp,
   confirmOp,
   applyReceipt,
   markTopupPaid,

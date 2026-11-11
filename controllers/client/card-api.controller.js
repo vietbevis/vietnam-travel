@@ -173,7 +173,31 @@ async function owned(req,res,id,publicSync) {
   }
   return{op,actor:resolved};
 }
+// Bộ đếm trong bộ nhớ theo (thẻ, IP): chặn gọi /sync/next dồn dập. Mỗi phiên hợp lệ tối đa 10 vòng đồng bộ.
+const syncThrottle={limit:60,windowMs:60_000,hits:new Map()};
+function syncAllowed(cardId,ip) {
+  const now=Date.now(),key=cardId+'|'+(ip||'');
+  if(syncThrottle.hits.size>10_000)
+    for(const [stale,entry] of syncThrottle.hits)
+      if(now-entry.start>=syncThrottle.windowMs)
+        syncThrottle.hits.delete(stale);
+  let entry=syncThrottle.hits.get(key);
+  if(!entry||now-entry.start>=syncThrottle.windowMs) {
+    entry={start:now,count:0};
+    syncThrottle.hits.set(key,entry);
+  }
+  entry.count++;
+  return{allowed:entry.count<=syncThrottle.limit,first:entry.count===syncThrottle.limit+1};
+}
+module.exports.syncThrottle=syncThrottle;
 module.exports.next=handler('next',async(req,res,body)=> {
+  const throttle=syncAllowed(body.cardId.toUpperCase(),req.ip);
+  if(!throttle.allowed) {
+    // Chỉ ghi nhật ký lần đầu bị chặn trong mỗi cửa sổ để bản thân nhật ký không bị spam.
+    if(throttle.first)
+      await cardLog.write({action:'card-sync-op',cardId:body.cardId.toUpperCase(),actorType:'system',result:'fail',detail:{errorCode:'RATE_LIMITED'},req});
+    return problem(res,429,'RATE_LIMITED','Thao tác đồng bộ thẻ quá nhanh, vui lòng thử lại sau.');
+  }
   const card=await Card.findOne({cardId:body.cardId.toUpperCase()}).lean();
   if(!card||!['active','locked','revoked'].includes(card.status))
     return res.json({code:'success',message:'Không có bước đồng bộ.',step:null});
@@ -212,6 +236,9 @@ module.exports.next=handler('next',async(req,res,body)=> {
       });
     binding=resolved;
   }
+  const reused=await E.reuseSyncOp({cardId:card.cardId,type:step.type,params:step.params,binding,challengeHex:body.challenge,req});
+  if(reused)
+    return res.json({code:'success',message:'Đã chuẩn bị bước đồng bộ.',step:{kind:'op',opId:reused.opId,apdu:reused.apdu}});
   const op=await E.createOp({
     cardId:card.cardId,
     type:step.type,
