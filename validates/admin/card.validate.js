@@ -21,6 +21,8 @@ module.exports.schemas={
   }),
   init:Joi.object({cardId,response:Joi.string().hex().length(256).required(),sw:Joi.string().hex().length(4).required()}).unknown(false),
   card:Joi.object({cardId}).unknown(false),
+  checkinLookup:Joi.object({cardId,tourId:id.required()}).unknown(false),
+  checkinUse:Joi.object({cardId,orderId:id.required(),itemIndex:Joi.number().integer().min(0).max(1000).required()}).unknown(false),
   cancel:Joi.object({cardId:Joi.string().hex().length(32),requestId:Joi.string().hex().length(32)}).xor('cardId','requestId').unknown(false)
 };
 

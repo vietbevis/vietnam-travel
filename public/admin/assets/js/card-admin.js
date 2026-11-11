@@ -294,7 +294,62 @@
       }catch(error){message.textContent=error.message||'Không thể đồng bộ thẻ. Hãy kiểm tra Card Agent.';}finally{setBusy(false);}
     });
   }
+  // Check-in: quét thẻ khách (PIN do khách nhập), đọc ảnh/hồ sơ/vé, tra cứu vé theo tour trên server.
+  async function checkinScan(intent,options={}){
+    const client=options.client||root.cardClient;
+    if(!/^[a-fA-F0-9]{24}$/.test(intent.tourId||''))throw new Error('Hãy chọn tour cần check-in.');
+    const info=await client.openSession({sync:false});
+    if(info.state!==S.STATE.ACTIVE||info.cardType!==1)throw new Error('Hãy cắm thẻ khách hàng đang hoạt động.');
+    let pin;
+    try{pin=await client.askPin('Khách nhập PIN thẻ để check-in');await client.verifyPin(pin);}finally{pin='';}
+    const photoUrl=await client.readPhotoUrl(),profile=await client.readProfile(),tickets=await client.readTickets();
+    const lookup=await operationPost('/checkin/lookup',{cardId:info.cardId,tourId:intent.tourId},options);
+    // Vé hiển thị chỉ dùng được khi cả server (written) lẫn thẻ (VALID) cùng xác nhận.
+    const items=lookup.items.map(item=>({...item,onCard:tickets.find(t=>t.orderCode===item.orderCode&&t.tourId===intent.tourId)?.status===1}));
+    return {cardId:info.cardId,photoUrl,profile,tickets,customer:lookup.customer,items};
+  }
+  async function checkinUse(intent,options={}){
+    const client=options.client||root.cardClient,base=options.base||'/admin/card';
+    const prepared=await operationPost('/checkin/use',{cardId:intent.cardId,orderId:intent.orderId,itemIndex:intent.itemIndex},options);
+    options.onPrepared?.(prepared.opId);
+    const confirmed=await client.runSignedOp({opId:prepared.opId,signUrl:base+'/op/sign',confirmUrl:base+'/op/confirm'});
+    if(!confirmed.ok)throw new Error(confirmed.message||'Thẻ không xác nhận check-in; hãy kiểm tra lại vé.');
+    return confirmed;
+  }
+  function bindCheckin(){
+    const document=root.document,section=document.querySelector('[data-card-checkin]');
+    if(!section)return;
+    const message=section.querySelector('[data-checkin-message]'),scan=section.querySelector('[data-checkin-scan]'),result=section.querySelector('[data-checkin-result]'),confirmButton=section.querySelector('[data-checkin-confirm]'),photo=section.querySelector('[data-checkin-photo]');
+    let busy=false,current=null;
+    const options=()=>({base:section.dataset.cardBase});
+    scan.addEventListener('click',async()=>{
+      if(busy)return;busy=true;scan.disabled=true;confirmButton.hidden=true;message.textContent='Đang đọc thẻ, giữ nguyên thẻ trong đầu đọc…';
+      try{
+        current=await checkinScan({tourId:section.dataset.tourId},options());
+        photo.src=current.photoUrl;
+        section.querySelector('[data-checkin-name]').textContent=current.customer.fullName||current.profile.fullName||'';
+        section.querySelector('[data-checkin-blood]').textContent=current.customer.bloodType||current.profile.bloodType||'';
+        section.querySelector('[data-checkin-allergies]').textContent=current.customer.allergies||current.profile.allergies||'';
+        const list=section.querySelector('[data-checkin-items]');list.textContent='';
+        for(const item of current.items){const li=document.createElement('li');li.textContent=item.orderCode+' · '+item.pax+' khách · '+item.ticketStatus+(item.onCard?' · vé hợp lệ trên thẻ':' · chưa có vé hợp lệ trên thẻ');list.append(li);}
+        const ready=current.items.find(item=>item.ticketStatus==='written'&&item.onCard);
+        current.ready=ready||null;confirmButton.hidden=!ready;result.hidden=false;
+        message.textContent=ready?'Kiểm tra ảnh và thông tin rồi xác nhận check-in.':current.items.some(item=>item.ticketStatus==='used')?'Vé đã sử dụng.':'Không có vé sẵn sàng; nếu vé chờ ghi, hãy để khách đăng nhập bằng thẻ để đồng bộ trước.';
+      }catch(error){message.textContent=error.message||'Không thể đọc thẻ.';}
+      finally{busy=false;scan.disabled=false;}
+    });
+    confirmButton.addEventListener('click',async()=>{
+      if(busy||!current?.ready)return;busy=true;confirmButton.disabled=true;message.textContent='Đang check-in, giữ nguyên thẻ…';
+      try{
+        await checkinUse({cardId:current.cardId,orderId:current.ready.orderId,itemIndex:current.ready.itemIndex},options());
+        message.textContent='Đã check-in thành công.';confirmButton.hidden=true;
+        root.setTimeout(()=>root.location.reload(),1200);
+      }catch(error){message.textContent=error.message||'Không thể check-in.';}
+      finally{busy=false;confirmButton.disabled=false;}
+    });
+  }
   function bind(){
+    bindCheckin();
     bindStatus();
     bindOperations();
     bindProfileReplacement();
@@ -344,5 +399,5 @@
       }catch{status.textContent='Chưa xác nhận được reset thẻ ảo. Hãy kiểm tra Card Agent.';}
     });
   }
-  return {preparePhoto,issueFlow,resetSim,statusFlow,resetPinFlow,cashTopupFlow,profileFlow,replaceFlow,bind};
+  return {checkinScan,checkinUse,preparePhoto,issueFlow,resetSim,statusFlow,resetPinFlow,cashTopupFlow,profileFlow,replaceFlow,bind};
 }));

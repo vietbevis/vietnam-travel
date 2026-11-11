@@ -19,4 +19,8 @@ router.post('/reset-pin',controller.resetPinPost);
 router.post('/topup-cash',controller.topupCashPost);
 router.post('/profile/build',controller.profileBuildPost);
 router.post('/replace',controller.replacePost);
+const checkin=require('../../controllers/admin/card-checkin.controller');
+router.get('/checkin',checkin.page);
+router.post('/checkin/lookup',checkin.lookupPost);
+router.post('/checkin/use',checkin.usePost);
 module.exports=router;

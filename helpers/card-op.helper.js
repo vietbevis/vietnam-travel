@@ -283,6 +283,9 @@ async function signOp({opId,challengeHex,actorType,actorId}) {
       if(update.modifiedCount!==1)
         fail('OP_STATE');
     }
+    // Đánh dấu vé đã được ký lệnh ghi: từ đây thẻ có thể giữ vé dù confirm bị mất; huỷ đơn sẽ phải xoá vé khỏi thẻ.
+    if(op.type==='write-ticket')
+      await Order.updateOne({_id:context.order._id},{$set:{[`items.${op.params.itemIndex}.writeSignedAt`]:new Date()}},{session});
     const apdu=A.signedApdu({cardIdHex:card.cardId,challengeHex,...command(op,context)});
     // Cùng write-lock thẻ để ký hai giao dịch khác nhau không cùng thắng snapshot.
     await Card.updateOne({_id:card._id},{$inc:{__v:1},$set:{lastSeenAt:new Date()}},{session});
@@ -377,7 +380,9 @@ async function confirmOp({opId,responseHex='',sw,actorType,actorId,req}) {
       context=await policy(card,op,session);
     if(['credit','debit'].includes(op.type)&&!context.tx)
       fail('OP_STATE');
-    if(sw.toUpperCase()!=='9000') {
+    // Xoá vé đã không còn trên thẻ (6A88) cũng là kết quả mong muốn: tránh vòng lặp đồng bộ xoá mãi.
+    const deleteAlreadyGone=op.type==='delete-ticket'&&sw.toUpperCase()==='6A88';
+    if(sw.toUpperCase()!=='9000'&&!deleteAlreadyGone) {
       await Op.updateOne({_id:op._id,status:'prepared'},{$set:{status:'failed'},$unset:{'params.encryptedPin':1,'params.newPin':1}},{session});
       if(context.tx?.signedOpId===String(op._id)) {
         if(op.type==='credit')

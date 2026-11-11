@@ -1,0 +1,52 @@
+extends ../layouts/default.pug
+
+block main
+  h1.box-title Check-in tour
+  p Chỉ hiển thị tour có ngày khởi hành trong cửa sổ check-in: từ 00:00 một ngày trước đến hết ngày khởi hành (giờ Việt Nam).
+  if !tours.length
+    p(data-checkin-empty) Hiện không có tour nào trong cửa sổ check-in.
+  else
+    form(method="get")
+      label(for="tourId") Tour
+      select#tourId(name="tourId")
+        option(value="") Chọn tour
+        each tour in tours
+          option(value=tour.tourId selected=tour.tourId===selected) #{tour.name} — #{new Date(tour.departureDate).toLocaleDateString('vi-VN', {timeZone:'Asia/Ho_Chi_Minh'})}
+      button(type="submit") Xem khách đã đặt
+  if selected
+    table.table
+      thead
+        tr
+          th Mã đơn
+          th Khách hàng
+          th SĐT
+          th Số khách
+          th Trạng thái vé
+          th Giờ check-in
+      tbody
+        each booking in bookings
+          tr(data-checkin-row)
+            td= booking.orderCode
+            td= booking.fullName
+            td= booking.phone
+            td= booking.pax
+            td= booking.ticketStatus
+            td= booking.checkedInAt ? new Date(booking.checkedInAt).toLocaleString('vi-VN', {timeZone:'Asia/Ho_Chi_Minh'}) : ''
+        if !bookings.length
+          tr
+            td(colspan="6") Chưa có khách đã thanh toán cho tour này.
+    section(data-card-checkin data-tour-id=selected data-card-base=`/${pathAdmin}/card` aria-label="Quét thẻ check-in")
+      button(type="button" data-checkin-scan) Quét thẻ
+      p(data-checkin-message role="status" aria-live="polite")
+      div(data-checkin-result hidden)
+        img(data-checkin-photo width="240" height="300" alt="Ảnh chân dung trên thẻ" style="object-fit:cover")
+        dl
+          dt Họ tên
+          dd(data-checkin-name)
+          dt Nhóm máu
+          dd(data-checkin-blood)
+          dt Dị ứng
+          dd(data-checkin-allergies)
+        ul(data-checkin-items)
+        button(type="button" data-checkin-confirm hidden) Xác nhận check-in
+  script(src="/admin/assets/js/card-admin.js" defer)

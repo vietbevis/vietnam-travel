@@ -213,3 +213,35 @@ test('profile write+commit', options, async () => {
   assert.ok(readBack.equals(bytes), 'Profile read-back equals original TLV bytes');
   assert.deepEqual(S.decodeProfile(readBack), profile);
 });
+
+// Catches wrong ticket layout, USE state machine, delete slot reuse or idempotent write/delete semantics on the real applet.
+test('ticket write → read → use → delete', options, async () => {
+  await resetSlot();
+  await issue();
+  await changePin();
+  const ticket = { orderCode: 'OD0000000001', tourId: '0123456789abcdef01234567', departureDate: new Date('2026-12-15T00:00:00Z'), pax: 3 };
+  await signed(S.INS.WRITE_TICKET, 0, A.encodeTicket(ticket));
+  // Ghi lại cùng orderCode + tourId đang VALID coi như thành công.
+  await signed(S.INS.WRITE_TICKET, 0, A.encodeTicket(ticket));
+  await verifyPin();
+  let list = await transmit(command(S.INS.READ_TICKETS), 'READ_TICKETS valid');
+  assert.equal(list[0], 1);
+  assert.equal(list[1], 1, 'VALID');
+  assert.equal(list.subarray(2, 14).toString('ascii'), ticket.orderCode);
+  await signed(S.INS.USE_TICKET, 0, A.ticketKey(ticket));
+  await verifyPin();
+  list = await transmit(command(S.INS.READ_TICKETS), 'READ_TICKETS used');
+  assert.equal(list[1], 2, 'USED');
+  await signed(S.INS.DELETE_TICKET, 0, A.ticketKey(ticket));
+  await verifyPin();
+  list = await transmit(command(S.INS.READ_TICKETS), 'READ_TICKETS empty');
+  assert.equal(list[0], 0);
+});
+// Xoá vé không còn trên thẻ: ghi nhận SW thật để engine xử lý đúng (6A88 được coi là đã xoá).
+test('delete of an absent ticket returns 6A88', options, async () => {
+  await resetSlot();
+  await issue();
+  await changePin();
+  const challenge = await transmit(command(S.INS.GET_CHALLENGE), 'GET_CHALLENGE');
+  await transmit(A.signedApdu({ challengeHex: challenge.toString('hex'), cardIdHex: cardId, ins: S.INS.DELETE_TICKET, p1: 0, p2: 0, payload: A.ticketKey({ orderCode: 'OD0000000009', tourId: '0123456789abcdef01234567' }) }), 'DELETE absent', '6A88');
+});

@@ -2,6 +2,7 @@ const Order = require("../../models/order.model");
 const City = require("../../models/city.model");
 const variableConfig = require("../../config/variable");
 const moment = require("moment");
+const ticketHelper = require("../../helpers/ticket.helper");
 
 module.exports.list = async (req, res) => {
   const find = {
@@ -83,6 +84,11 @@ module.exports.editPatch = async (req, res) => {
       _id: id,
       deleted: false
     }, req.body);
+
+    // Huỷ đơn: dọn vé điện tử (written -> pending-delete, pending -> none); idempotent nên lưu lại lần nữa là an toàn.
+    if(req.body.status === "cancel") {
+      await ticketHelper.onOrderCancelled(order, req.account?.id);
+    }
 
     req.flash("success", "Cập nhật đơn hàng thành công!");
 
