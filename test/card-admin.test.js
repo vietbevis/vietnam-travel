@@ -72,17 +72,18 @@ test('a definitive duplicate-owner prepare refusal keeps the actionable server m
 });
 
 test('checkin scan reads photo profile tickets then looks up and flags tickets present on the card',async()=>{
-  const calls=[],tourId='0123456789abcdef01234567';
+  const calls=[],tourId='0123456789abcdef01234567',forbidden=false;
   const client={
-    openSession:async s=>{calls.push(['open',s.sync]);return {state:2,cardType:1,cardId:'11'.repeat(16).toUpperCase()};},
+    openSession:async s=>{calls.push(['open',s.sync]);return {state:2,cardType:1,cardId:'11'.repeat(16).toUpperCase(),...(forbidden?{requiresAuth:true}:{})};},
     askPin:async()=>'715043',verifyPin:async()=>calls.push(['pin']),
     readPhotoUrl:async()=>{calls.push(['photo']);return 'blob:x';},readProfile:async()=>({fullName:'A'}),
-    readTickets:async()=>[{status:1,orderCode:'OD0000000001',tourId,departure:'20261215',pax:3},{status:2,orderCode:'OD0000000002',tourId,departure:'20261215',pax:1}]
+    readTickets:async()=>[{status:1,orderCode:'OD0000000001',tourId:tourId.toUpperCase(),departure:'20261215',pax:3},{status:2,orderCode:'OD0000000002',tourId:tourId.toUpperCase(),departure:'20261215',pax:1}]
   };
   const fetch=async(url,request)=>{calls.push([url,JSON.parse(request.body)]);return {ok:true,json:async()=>({code:'success',customer:{fullName:'A'},items:[{orderId:'o1',itemIndex:0,orderCode:'OD0000000001',pax:3,ticketStatus:'written'},{orderId:'o2',itemIndex:0,orderCode:'OD0000000002',pax:1,ticketStatus:'written'}]})};};
   const result=await admin.checkinScan({tourId},{client,fetch});
   assert.deepEqual(calls.map(c=>c[0]),['open','pin','photo','/admin/card/checkin/lookup']);
-  assert.equal(calls[0][1],false);
+  assert.notEqual(calls[0][1],false,'scan phải đồng bộ theo spec A9');
+  assert.equal(result.syncNotice,undefined);
   assert.deepEqual(result.items.map(i=>i.onCard),[true,false]);
   await assert.rejects(admin.checkinScan({tourId:'x'},{client,fetch}),/tour/);
   await assert.rejects(admin.checkinScan({tourId},{client:{...client,openSession:async()=>({state:2,cardType:2})},fetch}),/thẻ khách/);
@@ -95,4 +96,11 @@ test('checkin use posts then runs the signed op against the admin op endpoints a
   assert.equal(seen[0],'/admin/card/checkin/use');
   assert.deepEqual(seen[1],{opId:'ab'.repeat(12),signUrl:'/admin/card/op/sign',confirmUrl:'/admin/card/op/confirm'});
   await assert.rejects(admin.checkinUse({cardId:'11'.repeat(16),orderId:'0123456789abcdef01234567',itemIndex:0},{client:{runSignedOp:async()=>({ok:false,message:'Thẻ báo lỗi'})},fetch}),/Thẻ báo lỗi/);
+});
+test('checkin scan keeps going and shows a notice when sync stops at a step the admin may not sign',async()=>{
+  const tourId='0123456789abcdef01234567';
+  const client={openSession:async()=>({state:2,cardType:1,cardId:'11'.repeat(16).toUpperCase(),requiresAuth:true}),askPin:async()=>'715043',verifyPin:async()=>{},readPhotoUrl:async()=>'blob:x',readProfile:async()=>({}),readTickets:async()=>[]};
+  const fetch=async()=>({ok:true,json:async()=>({code:'success',customer:{},items:[]})});
+  const result=await admin.checkinScan({tourId},{client,fetch});
+  assert.match(result.syncNotice,/đồng bộ ở quầy/);
 });

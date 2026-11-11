@@ -60,8 +60,11 @@ function handler(schema,fn) {
     }
   };
 }
-const deny=()=> {
-  throw new E.CardOpError('OP_FORBIDDEN');
+const deny=(missingPermission=false)=> {
+  const error=new E.CardOpError('OP_FORBIDDEN');
+  // Phân biệt thiếu quyền vai trò (đồng bộ dừng êm) với lỗi xác thực/Step-up (vẫn từ chối cứng).
+  error.missingPermission=missingPermission;
+  throw error;
 };
 const permissions={
   'set-state':'card-lock',
@@ -107,8 +110,11 @@ async function actor(req,op) {
       permission='card-issue';
     }
   }
-  if(!permission||!role?.permissions?.includes(permission))
-    deny();
+  // Người có card-checkin chỉ được ký write-ticket (nội dung vé do server dẫn xuất, loadItem vẫn kiểm đơn đã thanh toán, chưa huỷ);
+  // mọi loại thao tác khác giữ nguyên quyền cũ.
+  const accepted=op.type==='write-ticket'?['card-edit','card-checkin']:[permission];
+  if(!permission||!accepted.some(name=>role?.permissions?.includes(name)))
+    deny(true);
   if(account.cardRequired) {
     if(typeof decoded.cardId!=='string'||!await Card.exists({
       cardId:decoded.cardId,
@@ -166,13 +172,22 @@ module.exports.next=handler('next',async(req,res,body)=> {
     return res.json({code:'success',message:'Cần khôi phục biên nhận.',step:{...step,apdu:S.apdu(S.INS.GET_RECEIPT,0,0,Buffer.from(step.txRef,'hex'))}});
   let binding;
   if(step.type!=='set-state') {
-    const resolved=await actor(req,{
-      cardId:card.cardId,
-      type:step.type,
-      params:step.params,
-      actorType:req.cookies?.customerToken?'customer':'admin',
-      actorId:req.cookies?.customerToken?card.ownerId:undefined
-    });
+    let resolved;
+    try {
+      resolved=await actor(req,{
+        cardId:card.cardId,
+        type:step.type,
+        params:step.params,
+        actorType:req.cookies?.customerToken?'customer':'admin',
+        actorId:req.cookies?.customerToken?card.ownerId:undefined
+      });
+    }
+    catch(error) {
+      // Quản trị viên không đủ quyền ký bước này: dừng đồng bộ êm như chưa đăng nhập, không tạo op.
+      if(error.code!=='OP_FORBIDDEN'||error.missingPermission!==true||req.cookies?.customerToken)
+        throw error;
+      resolved=null;
+    }
     if(!resolved)
       return res.json({
         code:'success',

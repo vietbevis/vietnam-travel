@@ -62,8 +62,9 @@ async function bindingPolicy(card,op,session) {
   }
   else {
     const admin=await Account.findOne({_id:binding.actorId,status:'active',deleted:false}).session(session).lean();
-    const permission=op.type==='credit'?'card-topup':'card-edit';
-    if(!admin||!objectId(admin.role)||!await Role.exists({_id:admin.role,deleted:false,permissions:permission}).session(session))
+    // card-checkin chỉ thay được card-edit cho write-ticket (ghi vé trong lúc đồng bộ khi check-in).
+    const permission=op.type==='credit'?['card-topup']:op.type==='write-ticket'?['card-edit','card-checkin']:['card-edit'];
+    if(!admin||!objectId(admin.role)||!await Role.exists({_id:admin.role,deleted:false,permissions:{$in:permission}}).session(session))
       fail('OP_FORBIDDEN');
   }
 }

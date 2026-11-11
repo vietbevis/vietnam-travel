@@ -80,13 +80,30 @@ module.exports.editPatch = async (req, res) => {
       return;
     }
 
+    // Huỷ đơn là trạng thái cuối: vé đã được dọn khỏi thẻ, không cho mở lại.
+    if(order.status === "cancel" && req.body.status !== undefined && req.body.status !== "cancel") {
+      res.json({
+        code: "error",
+        message: "Đơn hàng đã huỷ, không thể đổi sang trạng thái khác!"
+      })
+      return;
+    }
+
+    // Chỉ ghi các trường form sửa đơn gửi lên; không nhận ticketStatus, orderCode, items... từ body.
+    const update = {};
+    for(const field of ["fullName", "phone", "note", "paymentMethod", "paymentStatus", "status"]) {
+      if(typeof req.body[field] === "string") {
+        update[field] = req.body[field];
+      }
+    }
+
     await Order.updateOne({
       _id: id,
       deleted: false
-    }, req.body);
+    }, update);
 
     // Huỷ đơn: dọn vé điện tử (written -> pending-delete, pending -> none); idempotent nên lưu lại lần nữa là an toàn.
-    if(req.body.status === "cancel") {
+    if(update.status === "cancel") {
       await ticketHelper.onOrderCancelled(order, req.account?.id);
     }
 

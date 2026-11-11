@@ -298,15 +298,16 @@
   async function checkinScan(intent,options={}){
     const client=options.client||root.cardClient;
     if(!/^[a-fA-F0-9]{24}$/.test(intent.tourId||''))throw new Error('Hãy chọn tour cần check-in.');
-    const info=await client.openSession({sync:false});
+    // Spec A9: đồng bộ trước để vé pending được ghi lên thẻ; bước admin không được ký thì dừng êm.
+    const info=await client.openSession({});
     if(info.state!==S.STATE.ACTIVE||info.cardType!==1)throw new Error('Hãy cắm thẻ khách hàng đang hoạt động.');
     let pin;
     try{pin=await client.askPin('Khách nhập PIN thẻ để check-in');await client.verifyPin(pin);}finally{pin='';}
     const photoUrl=await client.readPhotoUrl(),profile=await client.readProfile(),tickets=await client.readTickets();
     const lookup=await operationPost('/checkin/lookup',{cardId:info.cardId,tourId:intent.tourId},options);
     // Vé hiển thị chỉ dùng được khi cả server (written) lẫn thẻ (VALID) cùng xác nhận.
-    const items=lookup.items.map(item=>({...item,onCard:tickets.find(t=>t.orderCode===item.orderCode&&t.tourId===intent.tourId)?.status===1}));
-    return {cardId:info.cardId,photoUrl,profile,tickets,customer:lookup.customer,items};
+    const items=lookup.items.map(item=>({...item,onCard:tickets.find(t=>t.orderCode===item.orderCode&&String(t.tourId).toLowerCase()===intent.tourId.toLowerCase())?.status===1}));
+    return {cardId:info.cardId,photoUrl,profile,tickets,customer:lookup.customer,items,...(info.requiresAuth?{syncNotice:'Thẻ còn thao tác cần đồng bộ ở quầy hoặc tài khoản khách.'}:{})};
   }
   async function checkinUse(intent,options={}){
     const client=options.client||root.cardClient,base=options.base||'/admin/card';
@@ -332,9 +333,10 @@
         section.querySelector('[data-checkin-allergies]').textContent=current.customer.allergies||current.profile.allergies||'';
         const list=section.querySelector('[data-checkin-items]');list.textContent='';
         for(const item of current.items){const li=document.createElement('li');li.textContent=item.orderCode+' · '+item.pax+' khách · '+item.ticketStatus+(item.onCard?' · vé hợp lệ trên thẻ':' · chưa có vé hợp lệ trên thẻ');list.append(li);}
+        const notice=current.syncNotice?current.syncNotice+' ':'';
         const ready=current.items.find(item=>item.ticketStatus==='written'&&item.onCard);
         current.ready=ready||null;confirmButton.hidden=!ready;result.hidden=false;
-        message.textContent=ready?'Kiểm tra ảnh và thông tin rồi xác nhận check-in.':current.items.some(item=>item.ticketStatus==='used')?'Vé đã sử dụng.':'Không có vé sẵn sàng; nếu vé chờ ghi, hãy để khách đăng nhập bằng thẻ để đồng bộ trước.';
+        message.textContent=notice+(ready?'Kiểm tra ảnh và thông tin rồi xác nhận check-in.':current.items.some(item=>item.ticketStatus==='used')?'Vé đã sử dụng.':'Không có vé sẵn sàng; nếu vé chờ ghi, hãy để khách đăng nhập bằng thẻ để đồng bộ trước.');
       }catch(error){message.textContent=error.message||'Không thể đọc thẻ.';}
       finally{busy=false;scan.disabled=false;}
     });

@@ -13,6 +13,7 @@ const Role=require('../../models/role.model');
 const Op=require('../../models/card-operation.model');
 const Log=require('../../models/card-log.model');
 const Order=require('../../models/order.model');
+const Tx=require('../../models/card-transaction.model');
 const E=require('../../helpers/card-op.helper');
 const T=require('../../helpers/ticket.helper');
 const Sync=require('../../helpers/card-sync.helper');
@@ -29,7 +30,7 @@ before(async()=>{
   const app=express();app.set('view engine','pug');app.set('views',path.resolve('views'));app.locals.pathAdmin='admin';app.locals.messages={};app.use(express.json());app.use(cookies());
   // Kiểm cách order.controller huỷ đơn mà không cần toàn bộ middleware flash/permission của trang quản trị.
   app.patch('/order-edit/:id',(req,res)=>{req.flash=()=>{};req.account={id:String(admin.id)};require('../../controllers/admin/order.controller').editPatch(req,res);});
-  app.use('/admin',require('../../routes/admin/index.route'));
+  app.use('/admin',require('../../routes/admin/index.route'));app.use('/card-api',require('../../routes/client/card-api.route'));
   server=app.listen(0,'127.0.0.1');await new Promise(resolve=>server.once('listening',resolve));base='http://127.0.0.1:'+server.address().port;
 });
 beforeEach(async()=>{
@@ -157,4 +158,44 @@ it('cancel of a pending ticket that was never signed goes straight to none',asyn
   const o=await order({status:'cancel'},{ticketStatus:'pending'});
   await T.onOrderCancelled(o);
   assert.equal(await status(o),'none');
+});
+
+async function syncNext(cookie=token) {
+  const response=await fetch(base+'/card-api/sync/next',{method:'POST',headers:{'content-type':'application/json',cookie:'token='+cookie},body:JSON.stringify({cardId:customerCard.cardId,cardState:2,challenge})});
+  return{http:response.status,...await response.json()};
+}
+it('a card-checkin-only admin may sign write-ticket during sync but nothing else',async()=>{
+  await Role.updateOne({_id:admin.role},{$set:{permissions:['card-checkin']}});
+  const o=await order({},{ticketStatus:'pending'});
+  const r=await syncNext();
+  assert.equal(r.step?.kind,'op',JSON.stringify(r));
+  const op=await Op.findById(r.step.opId);assert.equal(op.type,'write-ticket');assert.deepEqual(op.params,{orderId:String(o._id),itemIndex:0});
+  // Điều kiện loadItem vẫn giữ: đơn chưa thanh toán thì không có vé để ghi.
+  await Op.deleteMany({});await Order.deleteMany({});await order({paymentStatus:'unpaid'},{ticketStatus:'pending'});
+  assert.equal((await syncNext()).step,null);
+  // Credit chờ thẻ vẫn cần card-topup: dừng êm với requiresAuth, không tạo op.
+  await Order.deleteMany({});await order({},{ticketStatus:'pending'});
+  await Tx.create({cardId:customerCard.cardId,txRef:'AB'.repeat(8),type:'credit',source:'cash',amount:20000,status:'pending-card'});
+  await Op.deleteMany({});
+  const blocked=await syncNext();
+  assert.equal(blocked.step,null);assert.equal(blocked.requiresAuth,true);assert.equal(await Op.countDocuments(),0);
+  // Xoá vé (delete-ticket) cũng vẫn cần card-edit.
+  await Tx.deleteMany({});await Order.deleteMany({});await order({status:'cancel'},{ticketStatus:'pending-delete'});
+  const del=await syncNext();assert.equal(del.step,null);assert.equal(del.requiresAuth,true);
+  const stored=await Role.findById(admin.role);assert.deepEqual(stored.permissions,['card-checkin']);
+});
+it('cancel is terminal and the admin order edit only writes the form fields',async()=>{
+  const o=await order({status:'cancel'},{ticketStatus:'pending-delete'});
+  const patch=async(id,body)=>{const response=await fetch(base+'/order-edit/'+id,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify(body)});return response.json();};
+  const refused=await patch(o._id,{status:'done',note:'đổi'});
+  assert.equal(refused.code,'error');assert.match(refused.message,/huỷ/);
+  const kept=await Order.findById(o._id);assert.equal(kept.status,'cancel');assert.notEqual(kept.note,'đổi');
+  const live=await order({},{ticketStatus:'written'});
+  const ok=await patch(live._id,{fullName:'Tên mới',phone:'0900000009',note:'ghi chú',status:'done',orderCode:'HACKED000000',items:[{ticketStatus:'used'}],customerId:'x',total:1});
+  assert.equal(ok.code,'success');
+  const after=await Order.findById(live._id);
+  assert.equal(after.fullName,'Tên mới');assert.equal(after.note,'ghi chú');assert.equal(after.status,'done');
+  assert.equal(after.orderCode,live.orderCode);assert.equal(after.items[0].ticketStatus,'written');assert.equal(after.customerId,owner.id);assert.notEqual(after.total,1);
+  // Cancel -> cancel (lưu lại) vẫn hợp lệ và idempotent.
+  assert.equal((await patch(o._id,{status:'cancel',note:'x'})).code,'success');
 });
