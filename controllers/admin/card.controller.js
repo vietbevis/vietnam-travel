@@ -357,8 +357,8 @@ module.exports.resetPinPost=async(req,res)=>{
     if(!card)fail('CARD_STATE',409,'Chỉ reset PIN thẻ đang hoạt động.');
     const owner=await (card.cardType==='customer'?Customer:Account).findOne({_id:card.ownerId,deleted:false}).lean();
     if(!owner)fail('CARD_STATE',409,'Không tìm thấy chủ thẻ hiện tại.');
-    const dob=owner.dob?new Date(owner.dob).toISOString().slice(0,10).replace(/-/g,''):undefined;
-    const op=await E.createOp({cardId:card.cardId,type:'reset-pin',params:{newPin:C.generatePin(dob)},actorType:'admin',actorId:req.cardActor.id});
+    // generatePin tự chuẩn hoá Date/ISO thành YYYYMMDD (giờ Việt Nam và UTC) để loại PIN trùng DDMMYY ngày sinh.
+    const op=await E.createOp({cardId:card.cardId,type:'reset-pin',params:{newPin:C.generatePin(owner.dob)},actorType:'admin',actorId:req.cardActor.id});
     res.json({code:'success',opId:op.id,message:'Đã chuẩn bị reset PIN; giữ đúng thẻ trong đầu đọc.'});
   }catch(error){problem(res,error);}
 };

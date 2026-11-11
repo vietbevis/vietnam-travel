@@ -57,9 +57,21 @@ function encryptResetPin(cardIdHex, pin) {
   return Buffer.concat([cipher.update(clear), cipher.final()]);
 }
 
+// Ngày sinh dạng YYYYMMDD cho kiểm tra PIN yếu (DDMMYY). Bên gọi có thể truyền Date, chuỗi ISO hoặc YYYYMMDD;
+// Date/ISO có giờ được đổi theo ngày Asia/Ho_Chi_Minh và cả ngày UTC (cách hồ sơ thẻ đang ghi), từ chối PIN trùng một trong hai.
+const VN_DAY = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit' });
+function dobDigits(dob) {
+  if (typeof dob === 'string' && /^\d{8}$/.test(dob)) return [dob];
+  if (typeof dob === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dob)) return [dob.replace(/-/g, '')];
+  if (!(dob instanceof Date) && typeof dob !== 'string') return [];
+  const date = new Date(dob);
+  if (!Number.isFinite(date.getTime())) return [];
+  return [...new Set([VN_DAY.format(date).replace(/-/g, ''), date.toISOString().slice(0, 10).replace(/-/g, '')])];
+}
 function generatePin(dob) {
+  const dates = dobDigits(dob);
   let pin;
-  do { pin = crypto.randomInt(0, 1000000).toString().padStart(6, '0'); } while (S.isWeakPin(pin, dob));
+  do { pin = crypto.randomInt(0, 1000000).toString().padStart(6, '0'); } while (S.isWeakPin(pin) || dates.some(date => S.isWeakPin(pin, date)));
   return pin;
 }
 
@@ -68,4 +80,4 @@ function randomHex(nBytes) {
   return crypto.randomBytes(nBytes).toString('hex').toUpperCase();
 }
 
-module.exports = { getServerModulusHex, signServer, verifyCardSignature, deriveEscrowKey, encryptResetPin, generatePin, randomHex };
+module.exports = { getServerModulusHex, signServer, verifyCardSignature, deriveEscrowKey, encryptResetPin, generatePin, dobDigits, randomHex };

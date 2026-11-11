@@ -75,6 +75,25 @@ test('generatePin never weak', () => {
     assert.ok(S.isPinFormat(p) && !S.isWeakPin(p, '20040215'));
   }
 });
+// Bên gọi thật truyền owner.dob dạng Date (khách có sẵn) hoặc chuỗi ISO 'YYYY-MM-DD' (khách mới), không phải YYYYMMDD.
+test('generatePin rejects the DDMMYY of a real Date or ISO date of birth', t => {
+  const cases = [
+    new Date('2000-01-01T00:00:00Z'),
+    new Date('1999-12-31T17:00:00Z'), // nửa đêm 01/01/2000 giờ Việt Nam
+    '2000-01-01',
+    '2000-01-01T00:00:00.000Z',
+    '20000101'
+  ];
+  for (const dob of cases) {
+    const draws = [10100, 482915];
+    t.mock.method(crypto, 'randomInt', () => draws.shift());
+    assert.ok(C.generatePin(dob) === '482915', 'DDMMYY 010100 phải bị coi là PIN yếu với ' + String(dob));
+    assert.equal(draws.length, 0);
+    crypto.randomInt.mock.restore();
+  }
+  // Không có ngày sinh hoặc ngày sinh hỏng vẫn sinh PIN hợp lệ, không ném lỗi.
+  for (const dob of [undefined, null, '', 'abc', new Date('invalid')]) assert.ok(S.isPinFormat(C.generatePin(dob)));
+});
 test('randomHex returns the requested byte length and rejects invalid lengths', () => {
   assert.match(C.randomHex(16), /^[0-9A-Fa-f]{32}$/);
   assert.equal(C.randomHex(0), '');
