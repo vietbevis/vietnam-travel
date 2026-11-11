@@ -214,6 +214,30 @@ module.exports.paymentCard = async (req, res) => {
   }
 }
 
+// Cổng đã thu tiền nhưng ghi nhận đơn bị lỗi: ghi log đủ để nhân viên đối soát (không ghi chữ ký, khoá hay payload cổng).
+function logPaymentFailure(gateway, info, error) {
+  console.error('[thanh-toan] Ghi nhận thanh toán thất bại, cần đối soát thủ công: ' + JSON.stringify({
+    gateway,
+    orderId: info.orderId,
+    orderCode: info.orderCode,
+    amount: info.amount,
+    reference: info.reference,
+    error: String(error?.message || error).slice(0, 300),
+    at: new Date().toISOString()
+  }));
+}
+
+// VNPay không gọi lại: khách đã trả tiền thì hiện trang "đang xử lý" thay vì im lặng chuyển về trang chủ.
+function paymentProcessing(res, gateway, info, error) {
+  logPaymentFailure(gateway, info, error);
+  return res.render("client/pages/order-payment-processing", {
+    pageTitle: "Đang xử lý thanh toán",
+    orderCode: info.orderCode || info.orderId,
+    amount: info.amount,
+    gatewayName: gateway === 'vnpay' ? 'VNPay' : 'ZaloPay'
+  });
+}
+
 module.exports.paymentZaloPay = async (req, res) => {
   try {
     const orderId = req.query.orderId;
@@ -237,16 +261,19 @@ module.exports.paymentZaloPay = async (req, res) => {
 }
 
 module.exports.paymentZaloPayResultPost = async (req, res) => {
+  let received;
   try {
     const verified = zalopayHelper.verifyCallback(req.body);
     if (!verified.valid) return res.json({return_code: -1, return_message: 'mac not equal'});
     const data = verified.data;
     if (!/^\+?\d{8,15}-[a-fA-F0-9]{24}$/.test(data.app_user)) return res.json({return_code: -1, return_message: 'invalid payment'});
     const [phone, orderId] = data.app_user.split('-');
+    received = {orderId, amount: data.amount, reference: data.app_trans_id};
     const reference = {
       _id: orderId, total: data.amount, paymentMethod: 'zalopay', deleted: false, status: {$ne: 'cancel'}
     };
     const found = await Order.findOne(reference);
+    if (found) received.orderCode = found.orderCode;
     // So khớp chặt: số trong app_user phải đúng bằng số điện thoại của đơn sau khi chuẩn hoá.
     if (!found || zalopayHelper.normalizePhone(found.phone) !== phone) return res.json({return_code: -1, return_message: 'invalid payment'});
     const identity = {...reference, phone: found.phone};
@@ -256,8 +283,9 @@ module.exports.paymentZaloPayResultPost = async (req, res) => {
     // Callback lặp chỉ được ACK khi cùng identity/amount vẫn là đơn paid hợp lệ.
     if (!changed && !await Order.findOne({...identity, paymentStatus: 'paid'})) return res.json({return_code: -1, return_message: 'invalid payment'});
     return res.json({return_code: 1, return_message: 'success'});
-  } catch {
-    // Không trả lỗi DB/provider chứa dữ liệu nhạy cảm ra ngoài hoặc ghi MAC vào log.
+  } catch (error) {
+    // Không trả lỗi DB/provider chứa dữ liệu nhạy cảm ra ngoài hoặc ghi MAC vào log; ZaloPay sẽ gọi lại.
+    if (received) logPaymentFailure('zalopay', received, error);
     return res.json({return_code: 0, return_message: 'processing failed'});
   }
 }
@@ -286,6 +314,8 @@ module.exports.paymentVNPay = async (req, res) => {
 }
 
 module.exports.paymentVNPayResult = async (req, res) => {
+  // Có giá trị khi VNPay đã xác nhận thanh toán thành công (chữ ký hợp lệ): lỗi sau đó không được im lặng.
+  let received;
   try {
     const verified = vnpayHelper.verifyReturn(req.query);
     if (!verified.valid || !verified.success) return res.redirect('/');
@@ -297,13 +327,16 @@ module.exports.paymentVNPayResult = async (req, res) => {
     if (!Number.isSafeInteger(scaled) || scaled % 100 !== 0) return res.redirect('/');
     const orderId = reference[1];
     const amount = scaled / 100;
+    received = {orderId, amount, reference: verified.txnRef};
     const identity = {_id: orderId, total: amount, paymentMethod: 'vnpay', deleted: false, status: {$ne: 'cancel'}};
     const order = await Order.findOne(identity);
     if (!order || !['unpaid', 'paid'].includes(order.paymentStatus)) return res.redirect('/');
+    received.orderCode = order.orderCode;
     const changed = await orderPaymentHelper.markOrderPaid({_id: orderId, phone: order.phone, deleted: false, total: amount}, 'vnpay');
     if (!changed && !await Order.findOne({...identity, phone: order.phone, paymentStatus: 'paid'})) return res.redirect('/');
-    return res.redirect(`${process.env.DOMAIN_WEBSITE}/order/success?orderId=${orderId}&phone=${order.phone}`);
-  } catch {
+    return res.redirect(`${process.env.DOMAIN_WEBSITE}/order/success?orderId=${orderId}&phone=${encodeURIComponent(order.phone)}`);
+  } catch (error) {
+    if (received) return paymentProcessing(res, 'vnpay', received, error);
     return res.redirect('/');
   }
 }

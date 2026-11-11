@@ -1,0 +1,12 @@
+extends ../layouts/default.pug
+
+block main
+  .container
+    .section-11(style="padding-top: 20px;")
+      .inner-wrap(data-payment-processing)
+        h4 Chúng tôi đã nhận thông tin thanh toán của quý khách và đang xử lý đơn hàng.
+        p Mã đơn hàng: #{orderCode}
+        p Số tiền: #{Number(amount).toLocaleString('vi-VN')} đ
+        p Cổng thanh toán: #{gatewayName}
+        p Trạng thái đơn hàng có thể chưa cập nhật ngay. Vui lòng không thanh toán lại; nếu sau ít phút đơn vẫn chưa được ghi nhận, hãy liên hệ bộ phận hỗ trợ và cung cấp mã đơn hàng để được đối soát.
+        a(href="/") Về trang chủ

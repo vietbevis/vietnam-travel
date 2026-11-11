@@ -2,6 +2,8 @@ const {test,before,after,beforeEach}=require('node:test');
 const assert=require('node:assert/strict');
 const crypto=require('node:crypto');
 const mongoose=require('mongoose');
+const path=require('node:path');
+const pug=require('pug');
 const axios=require('axios').default;
 const originalPost=axios.post;
 const db=require('../helpers/db');
@@ -23,6 +25,7 @@ after(async()=>{axios.post=originalPost;if(db.enabled) await db.close(); for(con
 const payment=()=>require('../../helpers/order-payment.helper');
 async function makeOrder(extra={}) {return Order.create({orderCode:'FIXTURE',phone:'0901234567',total:100000,paymentMethod:'zalopay',paymentStatus:'unpaid',status:'initial',deleted:false,items:[{name:'Tour thử',ticketStatus:'none'},{ticketStatus:'written'},{ticketStatus:'used'}],...extra});}
 async function customer(extra={}) {return Customer.create({email:'fixture@example.invalid',totalSpent:200000,...extra});}
+function pageResponse() {return {redirects:[],renders:[],statusCode:200,status(code){this.statusCode=code;return this;},redirect(url){this.redirects.push(url);},render(view,data){this.renders.push({view,data});}};}
 function response() {return {redirects:[],jsons:[],redirect(url){this.redirects.push(url);},json(data){this.jsons.push(data);},render(){assert.fail('Không được render view success không tồn tại');}};}
 function zaloBody(order,extra={}) {const data=JSON.stringify({app_id:1234,app_trans_id:'261110_123456',app_user:`${order.phone}-${order.id}`,amount:order.total,...extra});return {type:1,data,mac:crypto.createHmac('sha256',process.env.ZALOPAY_KEY2).update(data).digest('hex')};}
 function vnpQuery(order,extra={}) {
@@ -142,8 +145,19 @@ integration('VNPay reject cancel/deleted/wrong method và signed duplicate wrong
 integration('callback transaction lỗi trả generic failure và không ghi một phần',async()=> {
   const missingCustomer=new mongoose.Types.ObjectId().toString();
   const zalo=await makeOrder({customerId:missingCustomer}); const vnp=await makeOrder({customerId:missingCustomer,paymentMethod:'vnpay'});
-  const zaloRes=response(); await controller.paymentZaloPayResultPost({body:zaloBody(zalo)},zaloRes); assert.deepEqual(zaloRes.jsons,[{return_code:0,return_message:'processing failed'}]); await assertUnpaid(zalo);
-  const vnpRes=response(); await controller.paymentVNPayResult({query:vnpQuery(vnp)},vnpRes); assert.deepEqual(vnpRes.redirects,['/']); await assertUnpaid(vnp);
+  // L1: khách đã trả tiền ở VNPay (không retry) mà ghi nhận lỗi: không im lặng về "/", hiện trang "đang xử lý" và ghi log đối soát.
+  const errors=[]; const originalError=console.error; console.error=(...args)=>errors.push(args.map(String).join(' '));
+  try {
+    const zaloRes=response(); await controller.paymentZaloPayResultPost({body:zaloBody(zalo)},zaloRes); assert.deepEqual(zaloRes.jsons,[{return_code:0,return_message:'processing failed'}]); await assertUnpaid(zalo);
+    const vnpRes=pageResponse(); await controller.paymentVNPayResult({query:vnpQuery(vnp)},vnpRes); assert.deepEqual(vnpRes.redirects,[]); await assertUnpaid(vnp);
+    assert.equal(vnpRes.renders.length,1); assert.equal(vnpRes.renders[0].view,'client/pages/order-payment-processing');
+    assert.equal(vnpRes.renders[0].data.orderCode,'FIXTURE'); assert.equal(vnpRes.renders[0].data.amount,100000);
+    const html=pug.renderFile(path.resolve('views/client/pages/order-payment-processing.pug'),{...vnpRes.renders[0].data,messages:{},settingWebsiteInfo:{},categoryList:[],categoryTree:[],settingWebsite:{}});
+    assert.match(html,/đã nhận/i); assert.match(html,/liên hệ/i); assert.ok(html.includes('FIXTURE'));
+    const vnpLog=errors.find(line=>line.includes('vnpay')); assert.ok(vnpLog,'VNPay failure must be logged'); assert.ok(vnpLog.includes(vnp.id)&&vnpLog.includes('FIXTURE')&&vnpLog.includes('100000'));
+    const zaloLog=errors.find(line=>line.includes('zalopay')); assert.ok(zaloLog,'ZaloPay failure must be logged'); assert.ok(zaloLog.includes(zalo.id)&&zaloLog.includes('100000'));
+    for(const line of errors) {assert.ok(!line.includes(process.env.VNPAY_SECRET)&&!line.includes(process.env.ZALOPAY_KEY2)&&!/vnp_SecureHash|"mac"/.test(line));}
+  } finally {console.error=originalError;}
 });
 integration('entrypoint hợp lệ giữ Zalo URL và signed VNPay redirect, không đánh paid',async()=> {
   const zalo=await makeOrder(); const zaloRes=response(); await controller.paymentZaloPay({query:{orderId:zalo.id}},zaloRes); assert.deepEqual(zaloRes.redirects,['https://zalo.example.invalid/checkout']); await assertUnpaid(zalo);
