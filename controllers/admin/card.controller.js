@@ -181,7 +181,7 @@ module.exports.issue=async(req,res)=>{
     const [customers,accounts]=await Promise.all([Customer.find({deleted:false,status:'active'}).select('_id fullName email phone').sort({fullName:1}).limit(500).lean(),Account.find({deleted:false,status:'active'}).select('_id fullName email').sort({fullName:1}).limit(500).lean()]);
     if(sourceOwner){const list=replaceSource.cardType==='customer'?customers:accounts;if(!list.some(owner=>String(owner._id)===replaceSource.ownerId))list.push(sourceOwner);}
     res.render('admin/pages/card-issue',{pageTitle:'Phát hành thẻ',customers,accounts,replaceSource});
-  }catch(error){problem(res,error);}
+  }catch(error){pageProblem(res,error,'Phát hành thẻ');}
 };
 module.exports.issuePrepare=endpoint('prepare',async(req,res,body)=>{
   if(body.replaceOf)replacementPermission(req);
@@ -297,8 +297,14 @@ module.exports.stepUpVerify=async(req,res)=>{
   }catch(error){problem(res,error);}
 };
 
+const NOT_ALLOWED='Bạn không có quyền sử dụng tính năng này!';
 function requirePermission(req,permission){
-  if(!req.cardActor?.permissions.includes(permission))fail('OP_FORBIDDEN',403,'Bạn không có quyền thực hiện thao tác này.');
+  if(!req.cardActor?.permissions.includes(permission)){const error=new Error(NOT_ALLOWED);Object.assign(error,{code:'OP_FORBIDDEN',status:403,permissionDenied:true});throw error;}
+}
+// Trang GET thiếu quyền: vẫn hiển thị trong layout quản trị (như các trang quản trị khác ẩn nội dung), không trả JSON thô.
+function pageProblem(res,error,pageTitle){
+  if(error.permissionDenied)return res.status(403).render('admin/pages/no-permission',{pageTitle,message:NOT_ALLOWED});
+  problem(res,error);
 }
 function requireStepUp(req,res){
   if(adminToken.stepUp.isFresh(req))return true;
@@ -492,7 +498,7 @@ module.exports.list=async(req,res)=>{
     }
     const [cards,total]=await Promise.all([Card.find(query).select('cardId cardType ownerId status balance createdAt').sort({createdAt:-1,_id:-1}).skip((page-1)*20).limit(20).lean(),Card.countDocuments(query)]);
     res.render('admin/pages/card-list',{pageTitle:'Quản lý thẻ',cards:await owners(cards),statusNames,filters:{status,cardType,keyword},pagination:pagination(req,page,total)});
-  }catch(error){problem(res,error);}
+  }catch(error){pageProblem(res,error,'Quản lý thẻ');}
 };
 module.exports.detail=async(req,res)=>{
   try{
@@ -508,7 +514,7 @@ module.exports.detail=async(req,res)=>{
       Log.find({cardId:card.cardId}).select('action actorType actorId result detail ip createdAt').sort({createdAt:-1,_id:-1}).limit(50).lean()
     ]);
     res.render('admin/pages/card-detail',{pageTitle:'Chi tiết thẻ',card:(await owners([card]))[0],statusNames,transactions,pendingCredits,orders,logs});
-  }catch(error){problem(res,error);}
+  }catch(error){pageProblem(res,error,'Chi tiết thẻ');}
 };
 function dateFilter(query,key,end=false){
   const value=queryText(query,key,10);
@@ -527,5 +533,5 @@ module.exports.log=async(req,res)=>{
     const query={...(cardId?{cardId}:{}),...(action?{action}:{}),...(from||to?{createdAt:{...(from?{$gte:from}:{}),...(to?{$lt:to}:{})}}:{})};
     const [logs,total]=await Promise.all([Log.find(query).sort({createdAt:-1,_id:-1}).skip((page-1)*20).limit(20).lean(),Log.countDocuments(query)]);
     res.render('admin/pages/card-log',{pageTitle:'Nhật ký thẻ',logs,filters:{cardId,action,from:req.query.from||'',to:req.query.to||''},pagination:pagination(req,page,total)});
-  }catch(error){problem(res,error);}
+  }catch(error){pageProblem(res,error,'Nhật ký thẻ');}
 };

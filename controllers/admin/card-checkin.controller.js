@@ -63,7 +63,11 @@ module.exports.page=async(req,res)=>{
       }
     }
     res.render('admin/pages/card-checkin',{pageTitle:'Check-in tour',tours:[...tours.values()],selected,bookings});
-  }catch(error){reply(res,error);}
+  }catch(error){
+    // Trang GET thiếu quyền hiển thị trong layout quản trị, không trả JSON thô.
+    if(error.errorCode==='FORBIDDEN')return res.status(403).render('admin/pages/no-permission',{pageTitle:'Check-in tour',message:MSG.forbidden});
+    reply(res,error);
+  }
 };
 module.exports.lookupPost=async(req,res)=>{
   let cardId;

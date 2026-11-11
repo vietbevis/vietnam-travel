@@ -175,3 +175,15 @@ it('revoke never voids or refunds signed transactions',async()=>{
   assert.equal((await Tx.findById(signed.id)).status,'pending-card');assert.equal((await Tx.findById(unsigned.id)).status,'pending-card');
   assert.equal(await Tx.countDocuments({source:'refund'}),0);
 });
+// L4: thông báo thiếu quyền đúng nguyên văn; trang GET thiếu quyền render trang quản trị (layout) thay vì JSON thô.
+it('missing permission uses the exact message and GET pages render an admin page instead of raw JSON',async()=>{
+  const NOT_ALLOWED='Bạn không có quyền sử dụng tính năng này!';
+  const c=await card();
+  await Role.updateOne({_id:admin.role},{$set:{permissions:[]}});
+  const denied=await post({cardId:c.cardId,action:'lock',reason:'x'});assert.equal(denied.http,403);assert.equal(denied.code,'error');assert.equal(denied.message,NOT_ALLOWED);
+  for(const url of ['list','log','detail/'+c.cardId,'issue','checkin']){
+    const response=await fetch(base+'/admin/card/'+url,{headers:{cookie:'token='+token}});const html=await response.text();
+    assert.equal(response.status,403,url);assert.match(response.headers.get('content-type'),/text\/html/,url);
+    assert.ok(html.includes(NOT_ALLOWED),url);assert.ok(html.includes('<html'),url);assert.ok(!html.trim().startsWith('{'),url);
+  }
+});
