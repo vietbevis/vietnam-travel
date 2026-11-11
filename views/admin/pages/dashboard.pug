@@ -32,6 +32,53 @@ block main
           .inner-number #{overview.totalPrice.toLocaleString("vi-VN")}đ
     //- End Section 1
 
+    //- Thống kê thẻ thành viên (A11)
+    if cardStats
+      h2.inner-title Thẻ thành viên
+      .section-1
+        .inner-item
+          .inner-icon
+            img(src="/admin/assets/images/section-1-icon-2.svg")
+          .inner-content
+            .inner-title Thẻ hoạt động
+            .inner-number #{cardStats.byStatus.active.toLocaleString("vi-VN")}
+            .inner-text Đã khoá: #{cardStats.byStatus.locked.toLocaleString("vi-VN")} · Đã thu hồi: #{cardStats.byStatus.revoked.toLocaleString("vi-VN")}
+        .inner-item
+          .inner-icon
+            img(src="/admin/assets/images/section-1-icon-3.svg")
+          .inner-content
+            .inner-title Doanh thu ví thẻ (tháng này)
+            .inner-number #{cardStats.walletRevenueMonth.toLocaleString("vi-VN")}đ
+        .inner-item
+          .inner-icon
+            img(src="/admin/assets/images/section-1-icon-1.svg")
+          .inner-content
+            .inner-title Thẻ bị khoá / thu hồi
+            .inner-number #{(cardStats.byStatus.locked + cardStats.byStatus.revoked).toLocaleString("vi-VN")}
+      .section-3
+        h2.inner-title Tỉ lệ check-in (khởi hành trong ±7 ngày)
+        .table-1
+          table
+            thead
+              tr
+                th Tour
+                th Ngày khởi hành
+                th Tổng vé
+                th Vé trên thẻ (đã ghi hoặc đã dùng)
+                th Đã check-in
+            tbody
+              each row in cardStats.checkinRate
+                tr
+                  td #{row.tourName}
+                  td #{new Date(row.departureDate).toLocaleDateString("vi-VN", {timeZone: "Asia/Ho_Chi_Minh"})}
+                  td #{row.total}
+                  td #{row.written}
+                  td #{row.used}
+              else
+                tr
+                  td(colspan="5") Không có tour khởi hành trong khoảng này.
+    //- End thống kê thẻ
+
     //- Section 2
     .section-2
       .inner-head

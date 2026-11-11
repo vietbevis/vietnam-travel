@@ -1,5 +1,6 @@
 const AccountAdmin = require("../../models/account-admin.model");
 const Order = require("../../models/order.model");
+const cardStatsHelper = require("../../helpers/card-stats.helper");
 
 module.exports.dashboard = async (req, res) => {
   // Section 1
@@ -25,10 +26,17 @@ module.exports.dashboard = async (req, res) => {
   }, 0);
   // End Section 1
 
-  res.render("admin/pages/dashboard", {
+  const data = {
     pageTitle: "Tổng quan",
     overview: overview
-  })
+  };
+
+  // Thống kê thẻ (A11) chỉ tính và hiển thị cho tài khoản có quyền xem thẻ.
+  if (req.permissions?.includes("card-view")) {
+    data.cardStats = await cardStatsHelper.cardStats();
+  }
+
+  res.render("admin/pages/dashboard", data)
 }
 
 module.exports.revenueChartPost = async (req, res) => {

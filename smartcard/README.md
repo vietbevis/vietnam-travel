@@ -96,3 +96,33 @@ Agent chưa có timeout cho thẻ: thẻ treo sẽ chặn các yêu cầu khác 
 - `POST /card-api/topup` tạo giao dịch credit `awaiting-payment` rồi trả `redirectUrl` của cổng; sau khi cổng báo thành công, giao dịch chuyển `pending-card` đúng một lần và được ghi lên thẻ ở lần đồng bộ kế tiếp (`/account/card?topup=1`).
 - **ZaloPay chỉ gọi callback (`/card-api/topup-zalopay-result`) tới địa chỉ công khai.** Khi chạy local phải đặt `DOMAIN_WEBSITE` là URL công khai (ví dụ ngrok: `ngrok http 3000` rồi `DOMAIN_WEBSITE=https://<id>.ngrok-free.app`), nếu không callback không tới và tiền không được cộng.
 - VNPay quay về `/card-api/topup-vnpay-result` bằng trình duyệt nên chạy được với `localhost`; F5 trang này không cộng thêm lần nữa.
+
+## Chạy toàn hệ thống
+
+Hướng dẫn dựng toàn bộ hệ thống (web + MongoDB + Card Agent) để phát triển và nghiệm thu.
+
+1. **MongoDB phải là replica set.** Thanh toán bằng ví thẻ, phát hành và thay thẻ dùng transaction nên Mongo đơn lẻ (standalone) không đủ.
+   Ví dụ dev: chạy `mongod --replSet rs0` rồi `rs.initiate()` một lần. Chuỗi kết nối đặt ở `DATABASE` trong `.env`.
+2. **Sinh khoá server của thẻ:** `npm run card:keygen` (ghi vào `keys/`, thư mục này nằm trong `.gitignore`, không commit).
+3. **Tạo `.env`** từ `.env.example`, điền các biến `CARD_*`:
+   - `CARD_SERVER_KEY_PATH` — đường dẫn khoá riêng vừa sinh (mặc định `keys/card-server-private.pem`).
+   - `CARD_ESCROW_MASTER` — 64 ký tự hex (khoá escrow gốc).
+   - `CARD_AGENT_URL` — địa chỉ Card Agent (mặc định `http://127.0.0.1:31999`).
+4. **Chạy Card Agent giả lập:** `cd smartcard && ./gradlew :agent:run --args="--sim"` (4 slot jCardSim, cổng 31999).
+   Origin của web phải có trong `allowedOrigins` (`smartcard/agent/agent.properties`, so khớp chính xác), ví dụ `http://localhost:3000`; sai Origin agent trả 403.
+5. **Chạy web:** `npm start` (hoặc lệnh chạy dev của dự án) rồi vào trang quản trị.
+6. **Kiểm thử:**
+   - Unit: `AGENT_URL=http://127.0.0.1:31999 npm test` (`AGENT_URL` trỏ tới agent `--sim` đang chạy; thiếu thì các test cần agent bị bỏ qua).
+   - Integration: `TEST_DATABASE=mongodb://127.0.0.1:27018/vietnam-travel-smartcard-test npm run test:integration`.
+     Chỉ chấp nhận Mongo loopback, replica set và đúng database `vietnam-travel-smartcard-test`; không có `TEST_DATABASE` thì các test được `skip`.
+   - Applet và agent: `cd smartcard && sh ./gradlew test`.
+
+### Thống kê thẻ trên dashboard (A11)
+
+Chỉ hiển thị cho tài khoản có quyền `card-view`. Tháng hiện tại và các ngày tính theo giờ Việt Nam (UTC+7).
+Bảng tỉ lệ check-in: mỗi dòng là một (tour, ngày khởi hành) trong khoảng ±7 ngày của các đơn đã thanh toán, chưa huỷ;
+"Vé trên thẻ" = vé ở trạng thái `written` hoặc `used`; "Đã check-in" = vé `used`.
+
+### Kết quả nghiệm thu end-to-end
+
+_Chưa có. Mục này sẽ được điền sau khi chạy nghiệm thu end-to-end (Task 16, bước 3)._
