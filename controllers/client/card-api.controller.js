@@ -1,4 +1,5 @@
 const Joi=require('joi');
+const mongoose=require('mongoose');
 const jwt=require('jsonwebtoken');
 const crypto=require('node:crypto');
 const adminTokenHelper=require('../../helpers/admin-token.helper');
@@ -348,17 +349,38 @@ function topupVnpay(tx,req) {
 }
 module.exports.topupZaloPay=topupZaloPay;
 module.exports.topupVnpay=topupVnpay;
+const TOPUP_IN_PROGRESS_MESSAGE='Bạn còn một giao dịch nạp ví online chưa hoàn tất. Vui lòng hoàn tất hoặc chờ giao dịch hết hạn (khoảng 20 phút) rồi thử lại.';
 module.exports.topupPost=customerHandler(customerValidation.topup,'card-topup-prepare',async(req,res,body)=>{
   const customerId=String(req.customer._id);
-  // Khoản chờ ghi thẻ hoặc đang đối soát đều chiếm hạn mức (spec 5.4); awaiting-payment thì chưa.
-  const [pending]=await Tx.aggregate([{$match:{cardId:req.card.cardId,type:'credit',status:{$in:['pending-card','sent']}}},{$group:{_id:null,sum:{$sum:'$amount'}}}]);
-  const rule=checkOnlineTopup({balance:req.card.balance,pendingSum:pending?.sum||0,amount:body.amount});
-  if(rule) {
-    const error=refused('TOPUP_LIMIT',rule);
-    error.httpStatus=400;
-    throw error;
+  const fresh={$gt:new Date(Date.now()-E.TOPUP_STALE_MS)};
+  let tx;
+  const session=await mongoose.startSession();
+  try {
+    await session.withTransaction(async()=> {
+      // Khoá thẻ: hai tab nạp đồng thời xung đột ghi thay vì cùng lọt qua kiểm tra.
+      const card=await Card.findOneAndUpdate({cardId:req.card.cardId,cardType:'customer',status:'active',isCurrent:true},{$inc:{__v:1}},{session,new:true}).lean();
+      if(!card)
+        throw new E.CardOpError('AUTH_REQUIRED');
+      // Mỗi thẻ chỉ một khoản nạp online đang dở (Ruling 12): chip tự chặn vượt 50 000 000, khoản đã thu mà không ghi được sẽ kẹt thẻ.
+      if(await Tx.exists({cardId:card.cardId,type:'credit',source:{$in:['zalopay','vnpay']},$or:[{status:'awaiting-payment',createdAt:fresh},{status:{$in:['pending-card','sent']}}]}).session(session)) {
+        const error=refused('TOPUP_IN_PROGRESS',TOPUP_IN_PROGRESS_MESSAGE);
+        error.httpStatus=409;
+        throw error;
+      }
+      // Khoản chờ ghi thẻ, đang đối soát và khoản chờ cổng chưa hết hạn đều chiếm hạn mức (spec 5.4, Ruling 12).
+      const [pending]=await Tx.aggregate([{$match:{cardId:card.cardId,type:'credit',$or:[{status:{$in:['pending-card','sent']}},{status:'awaiting-payment',createdAt:fresh}]}},{$group:{_id:null,sum:{$sum:'$amount'}}}]).session(session);
+      const rule=checkOnlineTopup({balance:card.balance,pendingSum:pending?.sum||0,amount:body.amount});
+      if(rule) {
+        const error=refused('TOPUP_LIMIT',rule);
+        error.httpStatus=400;
+        throw error;
+      }
+      [tx]=await Tx.create([{txRef:crypto.randomBytes(8).toString('hex').toUpperCase(),cardId:card.cardId,type:'credit',source:body.method,amount:body.amount,status:'awaiting-payment',createdBy:customerId}],{session});
+    });
   }
-  const tx=await Tx.create({txRef:crypto.randomBytes(8).toString('hex').toUpperCase(),cardId:req.card.cardId,type:'credit',source:body.method,amount:body.amount,status:'awaiting-payment',createdBy:customerId});
+  finally {
+    await session.endSession();
+  }
   const redirectUrl=body.method==='zalopay'?await topupZaloPay(tx):topupVnpay(tx,req);
   if(!redirectUrl) {
     // Chưa có tiền nào đi qua cổng: bỏ giao dịch chờ để không để lại rác.

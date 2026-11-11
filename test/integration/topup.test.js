@@ -126,20 +126,67 @@ it('topup vnpay uses txRef as vnp_TxnRef and a separate return path',async()=> {
 });
 it('topup cap counts pending',async()=> {
   await Card.updateOne({cardId},{$set:{balance:49000000}});
-  await makeTx({amount:900000,status:'pending-card'});
+  // Nguồn tiền mặt: không phải khoản nạp online đang dở, chỉ kiểm hạn mức.
+  await makeTx({amount:900000,status:'pending-card',source:'cash'});
   const r=await post('/card-api/topup',{amount:200000,method:'zalopay'});
   assert.equal(r.code,'error');assert.equal(r.status,400);
   assert.equal(await Tx.countDocuments({status:'awaiting-payment'}),0);
   assert.equal((await post('/card-api/topup',{amount:100000,method:'zalopay'})).status,200);
 });
-it('topup cap counts sent credits but not awaiting-payment or debits or other cards',async()=> {
+it('topup cap counts sent credits but not stale awaiting-payment, debits or other cards',async()=> {
   await Card.updateOne({cardId},{$set:{balance:49000000}});
-  await makeTx({amount:900000,status:'sent'});
-  await makeTx({amount:5000000,status:'awaiting-payment'});
+  await makeTx({amount:900000,status:'sent',source:'cash'});
+  const stale=await makeTx({amount:5000000,status:'awaiting-payment'});await backdate(stale,21);
   await makeTx({amount:5000000,status:'pending-card',type:'debit',source:'order'});
   await makeTx({amount:5000000,status:'pending-card',cardId:otherCardId});
   assert.equal((await post('/card-api/topup',{amount:100001,method:'vnpay'})).status,400);
   assert.equal((await post('/card-api/topup',{amount:100000,method:'vnpay'})).status,200);
+});
+it('only one in-flight online top-up per card until it resolves or expires and unexpired awaiting amounts count',async()=> {
+  const first=await post('/card-api/topup',{amount:100000,method:'zalopay'});
+  assert.equal(first.status,200);
+  const second=await post('/card-api/topup',{amount:100000,method:'vnpay'});
+  assert.equal(second.status,409);assert.equal(second.errorCode,'TOPUP_IN_PROGRESS');assert.match(second.message,/chưa hoàn tất/);
+  assert.equal(await Tx.countDocuments({cardId}),1);
+  assert.ok(await CardLog.findOne({action:'card-topup-prepare',result:'fail','detail.errorCode':'TOPUP_IN_PROGRESS'}));
+  // Thẻ khác không bị ảnh hưởng.
+  assert.equal((await post('/card-api/topup',{amount:100000,method:'zalopay'},tokenB)).status,200);
+  // Đã thanh toán nhưng chưa ghi thẻ vẫn là khoản đang dở.
+  const tx=await Tx.findOne({cardId});
+  assert.equal(await E.markTopupPaid(tx.id,'zalopay'),true);
+  assert.equal((await post('/card-api/topup',{amount:100000,method:'zalopay'})).errorCode,'TOPUP_IN_PROGRESS');
+  await Tx.updateOne({_id:tx._id},{$set:{status:'sent',signedOpId:'11'.repeat(12)}});
+  assert.equal((await post('/card-api/topup',{amount:100000,method:'zalopay'})).errorCode,'TOPUP_IN_PROGRESS');
+  await Tx.updateOne({_id:tx._id},{$set:{status:'done'},$unset:{signedOpId:1}});
+  assert.equal((await post('/card-api/topup',{amount:100000,method:'zalopay'})).status,200);
+  // Khoản chờ cổng quá hạn (20 phút) thôi chặn.
+  await backdate(await Tx.findOne({cardId,status:'awaiting-payment'}),21);
+  assert.equal((await post('/card-api/topup',{amount:100000,method:'vnpay'})).status,200);
+});
+it('concurrent top-up starts on one card admit exactly one',async()=> {
+  const results=await Promise.all(Array.from({length:4},()=>post('/card-api/topup',{amount:100000,method:'zalopay'})));
+  assert.equal(results.filter(r=>r.status===200).length,1,JSON.stringify(results));
+  assert.ok(results.filter(r=>r.status!==200).every(r=>r.errorCode==='TOPUP_IN_PROGRESS'));
+  assert.equal(await Tx.countDocuments({cardId,status:'awaiting-payment'}),1);
+});
+it('sync never plans a credit that would push the chip over 50 000 000 and logs it once for manual reconciliation',async()=> {
+  await Card.updateOne({cardId},{$set:{balance:45000000}});
+  const big=await makeTx({amount:6000000,status:'pending-card'});
+  const small=await makeTx({amount:1000000,status:'pending-card',source:'cash'});
+  await Tx.collection.updateOne({_id:small._id},{$set:{createdAt:new Date(Date.now()+1000)}});
+  const card=await Card.findOne({cardId}).lean();
+  const context=await sync.loadSyncContext(card);
+  assert.equal(context.pendingCredit.txRef,small.txRef);
+  assert.deepEqual(sync.planNextSync({card,cardState:2,...context}),{kind:'op',type:'credit',params:{txRef:small.txRef}});
+  await sync.loadSyncContext(card);
+  const held=await CardLog.find({action:'card-sync-credit-held'}).lean();
+  assert.equal(held.length,1);assert.equal(held[0].cardId,cardId);assert.equal(held[0].result,'fail');
+  assert.equal(held[0].detail.txRef,big.txRef);assert.equal(held[0].detail.amount,6000000);
+  await Tx.deleteOne({_id:small._id});
+  assert.equal(sync.planNextSync({card,cardState:2,...await sync.loadSyncContext(card)}),null);
+  const stored=await Tx.findById(big.id).lean();
+  assert.equal(stored.status,'pending-card');assert.equal(stored.signedOpId,undefined);
+  assert.equal(await CardLog.countDocuments({action:'card-sync-credit-held'}),1);
 });
 it('gateway failure leaves no awaiting-payment transaction',async()=> {
   axios.post=async()=>({data:{return_code:2}});
@@ -215,6 +262,8 @@ const logs=(query={})=>CardLog.find({action:'card-topup-callback',result:'fail',
 it('gateway requests carry a 15 minute expiry for top-up only',async()=> {
   await post('/card-api/topup',{amount:100000,method:'zalopay'});
   assert.equal(zaloCalls[0].expire_duration_seconds,900);
+  // Mỗi thẻ chỉ một khoản nạp online đang dở: đóng khoản ZaloPay trước khi thử VNPay.
+  await Tx.updateMany({},{$set:{status:'failed',failReason:'gateway'}});
   const r=await post('/card-api/topup',{amount:100000,method:'vnpay'});
   const url=new URL(r.redirectUrl),pad=n=>String(n).padStart(2,'0');
   const parse=v=>Date.UTC(+v.slice(0,4),+v.slice(4,6)-1,+v.slice(6,8),+v.slice(8,10),+v.slice(10,12),+v.slice(12,14));

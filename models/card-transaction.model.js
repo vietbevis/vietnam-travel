@@ -20,7 +20,9 @@ const schema = new mongoose.Schema({
   signedOpId:{type:String,match:/^[a-fA-F0-9]{24}$/},
   signedAt:Date,
   // txRef của credit chưa ký mà giao dịch này thay thế (chuyển sang thẻ mới) hoặc hoàn tiền khi thu hồi.
-  movedFrom:{type:String,match:/^[a-fA-F0-9]{16}$/,uppercase:true}
+  movedFrom:{type:String,match:/^[a-fA-F0-9]{16}$/,uppercase:true},
+  // Đồng bộ phát hiện credit sẽ làm số dư chip vượt 50 000 000: giữ lại chờ đối soát thủ công (đã ghi nhật ký).
+  capHeldAt:Date
 },{timestamps:true});
 schema.index({txRef:1},{unique:true});
 schema.index({cashRequestId:1},{unique:true,partialFilterExpression:{cashRequestId:{$type:'string'}}});
