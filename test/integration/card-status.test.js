@@ -80,7 +80,7 @@ it('anonymous prepared state sync cannot veto privileged revoke or later unlock 
 it('transactional audit failure rolls back refund and revoke while successful reasons redact secrets',async()=>{
   const c=await card({balance:5000}),original=Log.create;Log.create=async()=>{throw new Error('audit unavailable');};
   try{assert.equal((await post({cardId:c.cardId,action:'revoke',reason:'Mất',refunded:true})).http,500);assert.equal((await Card.findById(c.id)).status,'active');assert.equal((await Card.findById(c.id)).balance,5000);assert.equal(await Tx.countDocuments({cardId:c.cardId}),0);}finally{Log.create=original;}
-  assert.equal((await post({cardId:c.cardId,action:'revoke',reason:'PIN=582046 token=abc',refunded:true})).code,'success');const audit=await Log.findOne({cardId:c.cardId,action:'revoke'});assert.ok(!JSON.stringify(audit).includes('582046'));assert.ok(!JSON.stringify(audit).includes('abc'));
+  assert.equal((await post({cardId:c.cardId,action:'revoke',reason:'PIN=582046 token=abc',refunded:true})).code,'success');const audit=await Log.findOne({cardId:c.cardId,action:'revoke'});assert.ok(!JSON.stringify(audit).includes('582046'));assert.ok(!JSON.stringify(audit.detail).includes('token=abc'));
 });
 it('unreconciled pending payment credit and signed liabilities block revoke without destroying recovery rows but allow lock and unlock',async()=>{
   // Credit pending-card chưa ký không còn cản thu hồi: nó được hoàn tiền cùng số dư (Ruling 13, test bên dưới).

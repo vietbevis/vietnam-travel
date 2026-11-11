@@ -134,7 +134,11 @@ Bảng tỉ lệ check-in: mỗi dòng là một (tour, ngày khởi hành) tron
 
 ### Kết quả nghiệm thu end-to-end
 
-Chạy ngày 11/11/2026, một lượt liên tục, kết quả **18/18 PASS**. Môi trường:
+Chạy ngày 11/11/2026, một lượt liên tục. Script nghiệm thu chấm **18/18 bước tự động PASS**; bảng dưới gộp lại thành
+16 dòng: **15 PASS, 1 NOT_RUN** (cổng thanh toán sandbox thật, không nằm trong 18 bước tự động).
+Ba bước của script không có dòng riêng: S0 (dựng dữ liệu, tài khoản, slot thẻ) là bước chuẩn bị; 5a (sửa `departureDate`
+của tour về hôm nay qua UI sửa tour, làm trước khi đặt vì item đơn lưu ngày khởi hành) gộp vào dòng 5; 4b (đơn thứ hai trả
+bằng ví để có vé cho bước cấp lại thẻ) gộp vào dòng 6. Môi trường:
 - Card Agent `--sim` (jCardSim, slot 0–3).
 - Web `node index.js` tại `http://localhost:3000`.
 - MongoDB replica set loopback, database kiểm thử `vietnam-travel-smartcard-test`.
@@ -174,4 +178,4 @@ Lỗi phát hiện khi nghiệm thu:
 Hạn chế đã biết:
 - Nút "Đọc thẻ" của khách chỉ đọc số dư, không ghi hoặc xoá vé đang chờ. Vé chờ được ghi khi thanh toán, khi đăng nhập bằng thẻ hoặc khi admin "Đồng bộ ngay".
 - F5 trang return nạp online hiện "Đang chờ cổng thanh toán xác nhận…" dù tiền đã vào thẻ.
-- Nhật ký `card-op-confirm` chỉ lưu `opId` và `sw`. Bản ghi op tự xoá sau 5 phút (TTL), nên về sau không tra được loại op.
+- (Đã khắc phục sau nghiệm thu) Nhật ký `card-op-confirm` nay ghi loại op, mã thẻ và tham số an toàn (txRef, đơn, item, trạng thái, số tiền); lỗi ném ra khi ký/xác nhận và mỗi bước đồng bộ (`card-sync-op`) cũng được ghi.
