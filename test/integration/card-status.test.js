@@ -61,7 +61,7 @@ it('status permissions same-origin strict input and canonical fresh step-up fail
 it('positive balance requires explicit refund and concurrent retries create one debit and one revoke audit',async()=>{
   const c=await card({balance:45000});assert.match((await post({cardId:c.cardId,action:'revoke',reason:'Mất'})).message,/Thẻ còn số dư, hãy xác nhận đã hoàn tiền hoặc dùng Cấp lại thẻ/);
   const body={cardId:c.cardId,action:'revoke',reason:'Mất',refunded:true};const results=await Promise.all([post(body),post(body)]);assert.equal(results.filter(r=>r.code==='success').length,1);
-  assert.equal((await post(body)).http,409);const refund=await Tx.find({cardId:c.cardId});assert.equal(refund.length,1);assert.equal(refund[0].type,'debit');assert.equal(refund[0].source,'refund');assert.equal(refund[0].status,'done');assert.equal(refund[0].amount,45000);assert.equal(refund[0].balanceAfter,0);assert.equal((await Card.findById(c.id)).balance,0);assert.equal(await Log.countDocuments({cardId:c.cardId,action:'revoke'}),1);
+  assert.equal((await post(body)).http,409);const refund=await Tx.find({cardId:c.cardId});assert.equal(refund.length,1);assert.equal(refund[0].type,'debit');assert.equal(refund[0].source,'refund');assert.equal(refund[0].status,'done');assert.equal(refund[0].amount,45000);assert.equal(refund[0].balanceAfter,0);assert.equal((await Card.findById(c.id)).balance,0);assert.equal(await Log.countDocuments({cardId:c.cardId,action:'revoke',result:'success'}),1);
 });
 it('zero balance revoke never creates a zero amount refund',async()=>{const c=await card();assert.equal((await post({cardId:c.cardId,action:'revoke',reason:'Mất',refunded:true})).code,'success');assert.equal(await Tx.countDocuments({cardId:c.cardId}),0);});
 it('anonymous prepared state sync cannot veto privileged revoke or later unlock the revoked card',async()=>{
@@ -80,7 +80,7 @@ it('anonymous prepared state sync cannot veto privileged revoke or later unlock 
 it('transactional audit failure rolls back refund and revoke while successful reasons redact secrets',async()=>{
   const c=await card({balance:5000}),original=Log.create;Log.create=async()=>{throw new Error('audit unavailable');};
   try{assert.equal((await post({cardId:c.cardId,action:'revoke',reason:'Mất',refunded:true})).http,500);assert.equal((await Card.findById(c.id)).status,'active');assert.equal((await Card.findById(c.id)).balance,5000);assert.equal(await Tx.countDocuments({cardId:c.cardId}),0);}finally{Log.create=original;}
-  assert.equal((await post({cardId:c.cardId,action:'revoke',reason:'PIN=582046 token=abc',refunded:true})).code,'success');const audit=await Log.findOne({cardId:c.cardId,action:'revoke'});assert.ok(!JSON.stringify(audit).includes('582046'));assert.ok(!JSON.stringify(audit.detail).includes('token=abc'));
+  assert.equal((await post({cardId:c.cardId,action:'revoke',reason:'PIN=582046 token=abc',refunded:true})).code,'success');const audit=await Log.findOne({cardId:c.cardId,action:'revoke',result:'success'});assert.ok(!JSON.stringify(audit).includes('582046'));assert.ok(!JSON.stringify(audit.detail).includes('token=abc'));
 });
 it('unreconciled pending payment credit and signed liabilities block revoke without destroying recovery rows but allow lock and unlock',async()=>{
   // Credit pending-card chưa ký không còn cản thu hồi: nó được hoàn tiền cùng số dư (Ruling 13, test bên dưới).
@@ -160,7 +160,7 @@ it('revoke voids unsigned debits and refunds unsigned pending credits together w
   const refunds=await Tx.find({cardId:c.cardId,source:'refund'}).lean();
   assert.equal(refunds.reduce((sum,tx)=>sum+tx.amount,0),52000);assert.ok(refunds.every(tx=>tx.type==='debit'&&tx.status==='done'));
   const stored=await Card.findById(c.id);assert.equal(stored.status,'revoked');assert.equal(stored.balance,0);
-  const audit=await Log.findOne({cardId:c.cardId,action:'revoke'}).lean();assert.equal(audit.detail.refunded,true);
+  const audit=await Log.findOne({cardId:c.cardId,action:'revoke',result:'success'}).lean();assert.equal(audit.detail.refunded,true);
   // Thẻ số dư 0 nhưng còn credit chờ ghi vẫn phải xác nhận hoàn tiền.
   const z=await card();await Tx.create({cardId:z.cardId,txRef:'C3'.repeat(8),type:'credit',source:'cash',amount:10000,status:'pending-card'});
   assert.equal((await post({cardId:z.cardId,action:'revoke',reason:'Mất'})).errorCode,'REFUND_REQUIRED');
@@ -186,4 +186,23 @@ it('missing permission uses the exact message and GET pages render an admin page
     assert.equal(response.status,403,url);assert.match(response.headers.get('content-type'),/text\/html/,url);
     assert.ok(html.includes(NOT_ALLOWED),url);assert.ok(html.includes('<html'),url);assert.ok(!html.trim().startsWith('{'),url);
   }
+});
+// L3: yêu cầu đổi trạng thái bị từ chối cũng phải có CardLog thất bại.
+it('rejected status requests are audit-logged with the requested action and error code',async()=>{
+  const c=await card({balance:5000});
+  await Role.updateOne({_id:admin.role},{$set:{permissions:['card-view']}});
+  assert.equal((await post({cardId:c.cardId,action:'lock',reason:'x'})).http,403);
+  await Role.updateOne({_id:admin.role},{$set:{permissions}});
+  assert.equal((await post({cardId:c.cardId,action:'revoke'})).http,400);
+  assert.equal((await post({cardId:c.cardId,action:'revoke',reason:'Mất'},makeToken({stepUpAt:Date.now()-300001}))).code,'step-up-required');
+  assert.equal((await post({cardId:c.cardId,action:'revoke',reason:'Mất'})).http,409);
+  assert.equal((await post({cardId:c.cardId,action:'unlock'})).http,409);
+  assert.equal((await post({cardId:'zz',action:'explode'})).http,400);
+  const logs=await Log.find({result:'fail'}).sort({_id:1}).lean();
+  assert.deepEqual(logs.map(log=>[log.action,log.detail.errorCode,log.cardId||null]),[
+    ['lock','OP_FORBIDDEN',c.cardId],['revoke','INVALID_INPUT',c.cardId],['revoke','STEP_UP_REQUIRED',c.cardId],
+    ['revoke','REFUND_REQUIRED',c.cardId],['unlock','CARD_STATE',c.cardId],['status','INVALID_INPUT',null]
+  ]);
+  for(const log of logs)assert.equal(log.actorId,admin.id);
+  assert.equal((await Card.findById(c.id)).status,'active');
 });

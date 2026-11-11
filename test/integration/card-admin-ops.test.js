@@ -178,3 +178,23 @@ it('detail gates reset and customer cash controls by permission and active state
   await Card.updateOne({_id:c.id},{$set:{status:'locked'}});output=await html(c.cardId);assert.ok(!output.includes('data-card-reset-pin-form'));assert.ok(!output.includes('data-card-topup-cash-form'));
   await Role.updateOne({_id:admin.role},{$set:{permissions:['card-view']}});output=await html(staff.cardId);assert.ok(!output.includes('data-card-reset-pin-form'));assert.ok(!output.includes('data-card-new-pin-dialog'));
 });
+// L3: yêu cầu reset PIN / nạp tiền mặt bị từ chối (quyền, dữ liệu, Step-up, hạn mức, trạng thái) đều có CardLog thất bại, không chứa PIN.
+it('rejected reset-pin and cash requests are audit-logged with an error code and no PIN',async()=>{
+  const c=await card();
+  await Role.updateOne({_id:admin.role},{$set:{permissions:['card-view']}});
+  assert.equal((await reset({cardId:c.cardId})).http,403);assert.equal((await cash({cardId:c.cardId,amount:10000})).http,403);
+  await Role.updateOne({_id:admin.role},{$set:{permissions}});
+  assert.equal((await reset({cardId:'zz'})).http,400);
+  assert.equal((await cash({cardId:c.cardId,amount:10000},{cookie:makeToken({stepUpAt:Date.now()-300001})})).code,'step-up-required');
+  assert.equal((await cash({cardId:c.cardId,amount:5000})).http,400);
+  await row(c,20000000);assert.equal((await cash({cardId:c.cardId,amount:10000})).http,409);
+  const locked=await card({status:'revoked',isCurrent:false});assert.equal((await reset({cardId:locked.cardId})).http,409);
+  const logs=await Log.find({result:'fail',action:{$in:['reset-pin','topup-cash']}}).sort({_id:1}).lean();
+  assert.deepEqual(logs.map(log=>[log.action,log.detail.errorCode,log.cardId||null]),[
+    ['reset-pin','OP_FORBIDDEN',c.cardId.toUpperCase()],['topup-cash','OP_FORBIDDEN',c.cardId.toUpperCase()],
+    ['reset-pin','INVALID_INPUT',null],['topup-cash','STEP_UP_REQUIRED',c.cardId.toUpperCase()],
+    ['topup-cash','INVALID_INPUT',c.cardId.toUpperCase()],['topup-cash','TOPUP_LIMIT',c.cardId.toUpperCase()],
+    ['reset-pin','CARD_STATE',locked.cardId.toUpperCase()]
+  ]);
+  for(const log of logs){assert.equal(log.actorId,admin.id);assert.ok(!/\b\d{6}\b/.test(JSON.stringify(log.detail)));}
+});
