@@ -17,9 +17,12 @@ module.exports.login = async (req, res) => {
 }
 
 module.exports.loginPost=async(req,res)=>{
-  const {email,password,rememberPassword}=req.body;
+  const {email,password,rememberPassword}=req.body||{};
+  const invalid=()=>res.json({code:'error',message:'Email, mật khẩu không đúng hoặc tài khoản chưa được kích hoạt.'});
+  // Chỉ nhận chuỗi: object toán tử ({"$ne":null}) không được chọn tài khoản, mật khẩu không phải chuỗi không làm bcrypt ném lỗi.
+  if(typeof email!=='string'||typeof password!=='string'||!email||!password)return invalid();
   const account=await AccountAdmin.findOne({email,deleted:false});
-  if(!account||!await bcrypt.compare(password,account.password)||account.status!=='active')return res.json({code:'error',message:'Email, mật khẩu không đúng hoặc tài khoản chưa được kích hoạt.'});
+  if(!account||typeof account.password!=='string'||!await bcrypt.compare(password,account.password)||account.status!=='active')return invalid();
   if(account.cardRequired){
     if(!await Card.exists({ownerId:account.id,cardType:'staff',status:'active',isCurrent:true}))return res.json({code:'error',message:'Thẻ nhân viên đã bị khoá hoặc thu hồi. Liên hệ quản trị viên.'});
     res.clearCookie('token');res.clearCookie('resetToken');
