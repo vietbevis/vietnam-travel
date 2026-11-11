@@ -46,3 +46,14 @@ test('login fails closed on profile read errors other than known initial 6985 an
   for(const initial of [false,true]){let authenticated=false;const f=fixture({openSession:async()=>({cardId:id,cardType:1,state:2,mustChangePin:initial}),readProfile:async()=>{throw Object.assign(new Error('thẻ không đọc được'),{sw:'6F00'});},authenticate:async()=>{authenticated=true;}});await assert.rejects(UI.loginFlow({client:f.client}));assert.equal(authenticated,false);}
   let authenticated=false;const f=fixture({readProfile:async()=>({fullName:'Không ngày sinh'}),authenticate:async()=>{authenticated=true;return{code:'success'};}});await UI.loginFlow({client:f.client});assert.equal(authenticated,true);
 });
+test('topup=1 return page syncs when a card is present and otherwise asks to insert the card',async()=>{
+  for(const present of [true,false]){
+    const f=fixture({openSession:async opts=>{f.calls.push(['open',opts]);if(!present)throw new Error('no card');return{cardId:id,cardType:1,state:2,mustChangePin:false};}});
+    const browser=browserFixture(f.client);browser.window.location.search='?topup=1';browser.mount();
+    await new Promise(r=>setImmediate(r));
+    assert.equal(browser.status.textContent,present?'Đã đồng bộ thẻ, tiền nạp đã được ghi vào thẻ.':'Cắm thẻ để nhận tiền');
+    assert.equal(f.calls.filter(call=>call[0]==='open').length,1);
+  }
+  const f=fixture(),browser=browserFixture(f.client);browser.mount();await new Promise(r=>setImmediate(r));
+  assert.equal(f.calls.length,0);
+});

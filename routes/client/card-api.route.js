@@ -11,6 +11,10 @@ router.post('/sync/next',controller.next);
 router.post('/sync/confirm',controller.syncConfirm);
 router.post('/sync/receipt',controller.receipt);
 router.post('/pay/prepare',controller.payPrepare);
+router.post('/topup',controller.topupPost);
+// Callback/return của cổng thanh toán, tách khỏi /order/* để không va chạm với thanh toán đơn hàng.
+router.post('/topup-zalopay-result',controller.topupZaloPayResult);
+router.get('/topup-vnpay-result',controller.topupVnpayResult);
 router.post('/op/sign',controller.sign);
 router.post('/op/confirm',controller.confirm);
 router.use(controller.errorHandler);

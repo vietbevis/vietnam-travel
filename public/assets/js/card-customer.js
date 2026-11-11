@@ -149,6 +149,21 @@
       text('[data-card-tickets]',result.tickets.length?result.tickets.map(ticket=>`${ticket.orderCode} · Tour ${ticket.tourId} · ${ticket.departure} · ${ticket.pax} khách · ${ticket.status===1?'Chưa dùng':'Đã dùng'}`).join('\n'):'Chưa có vé trên thẻ.');
       if(status)status.textContent=result.mismatch?'Số dư chưa khớp. Vui lòng liên hệ nhân viên để đối soát.':'Đã đọc thẻ.';
     }));
+    const topup=document.querySelector('form[data-card-topup]');
+    if(topup)topup.addEventListener('submit',event=>{event.preventDefault();run(topup.querySelector('button'),async()=>{
+      const form=Object.fromEntries(new root.FormData(topup));
+      const result=await post(root.fetch.bind(root),'/card-api/topup',{amount:Number(form.amount),method:form.method});
+      if(!stale&&typeof result.redirectUrl==='string')root.location.assign(result.redirectUrl);
+    });});
+    // Quay lại từ cổng thanh toán: có thẻ cắm thì đồng bộ ngay để ghi tiền vào thẻ.
+    if(account&&/(^|[?&])topup=1(&|$)/.test(root.location?.search||''))run(null,async()=>{
+      try{
+        identity(await client.openSession({expectedCardId:account.dataset.cardId}),account.dataset.cardId);
+        if(!stale&&status)status.textContent='Đã đồng bộ thẻ, tiền nạp đã được ghi vào thẻ.';
+      }catch{
+        if(!stale&&status)status.textContent='Cắm thẻ để nhận tiền';
+      }
+    });
     const changeButton=document.querySelector('[data-card-change-pin]');if(changeButton)changeButton.addEventListener('click',()=>run(changeButton,async()=>{identity(await client.openSession({expectedCardId:account.dataset.cardId,sync:false}),account.dataset.cardId);await change(client,account.dataset.dob);if(!stale&&status)status.textContent='Đã đổi PIN.';}));
     const profile=document.querySelector('form[data-card-profile]');if(profile)profile.addEventListener('submit',event=>{event.preventDefault();run(profile.querySelector('button'),async()=>{const fields=Object.fromEntries(new root.FormData(profile));await profileFlow({client,cardId:account.dataset.cardId,fields});if(!stale)root.location.reload();});});
     for(const [selector,url] of [['form[data-card-lock-send]','/account/card-lock/otp'],['form[data-card-lock-confirm]','/account/card-lock/confirm']]){

@@ -5,6 +5,7 @@ module.exports={
   login:Joi.object({cardId:Joi.string().pattern(/^[a-f0-9]{32}$/i).required(),nonce:Joi.string().pattern(/^[a-f0-9]{32}$/i).required(),counter:Joi.number().integer().min(0).max(0xffffffff).required(),signature:Joi.string().pattern(/^[a-f0-9]{256}$/i).required()}).unknown(false).required(),
   profile:Joi.object({phone:text(15),emergencyName:text(60),emergencyPhone:text(15)}).unknown(false).required(),
   payPrepare:Joi.object({orderId:Joi.string().pattern(/^[a-fA-F0-9]{24}$/).required()}).unknown(false).required(),
+  topup:Joi.object({amount:Joi.number().integer().min(1).max(50000000).required(),method:Joi.string().valid('zalopay','vnpay').required()}).unknown(false).required(),
   email:Joi.object({email:Joi.string().email({tlds:{allow:false}}).max(254).required()}).unknown(false).required(),
   otp:Joi.object({email:Joi.string().email({tlds:{allow:false}}).max(254).required(),otp:Joi.string().pattern(/^\d{6}$/).required()}).unknown(false).required()
 };

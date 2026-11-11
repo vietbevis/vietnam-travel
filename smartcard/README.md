@@ -90,3 +90,9 @@ Kết quả chạy thử chế độ sim: `/v1/status` trả `cardPresent:true, 
 
 Lưu ý: rút/cắm đầu đọc (nhất là đầu đọc cuối cùng) có thể làm dịch vụ PC/SC dừng, khi đó cần khởi động lại agent.
 Agent chưa có timeout cho thẻ: thẻ treo sẽ chặn các yêu cầu khác cho đến khi thẻ phản hồi.
+
+## Nạp ví online (ZaloPay / VNPay)
+
+- `POST /card-api/topup` tạo giao dịch credit `awaiting-payment` rồi trả `redirectUrl` của cổng; sau khi cổng báo thành công, giao dịch chuyển `pending-card` đúng một lần và được ghi lên thẻ ở lần đồng bộ kế tiếp (`/account/card?topup=1`).
+- **ZaloPay chỉ gọi callback (`/card-api/topup-zalopay-result`) tới địa chỉ công khai.** Khi chạy local phải đặt `DOMAIN_WEBSITE` là URL công khai (ví dụ ngrok: `ngrok http 3000` rồi `DOMAIN_WEBSITE=https://<id>.ngrok-free.app`), nếu không callback không tới và tiền không được cộng.
+- VNPay quay về `/card-api/topup-vnpay-result` bằng trình duyệt nên chạy được với `localhost`; F5 trang này không cộng thêm lần nữa.

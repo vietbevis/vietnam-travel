@@ -1,0 +1,209 @@
+const {test,before,beforeEach,after}=require('node:test');
+const assert=require('node:assert/strict');
+const crypto=require('node:crypto');
+const path=require('node:path');
+const express=require('express');
+const cookies=require('cookie-parser');
+const jwt=require('jsonwebtoken');
+const axios=require('axios').default;
+const db=require('../helpers/db');
+const Card=require('../../models/card.model');
+const Customer=require('../../models/customer.model');
+const Order=require('../../models/order.model');
+const Tx=require('../../models/card-transaction.model');
+const CardLog=require('../../models/card-log.model');
+const E=require('../../helpers/card-op.helper');
+const sync=require('../../helpers/card-sync.helper');
+const it=(name,fn)=>test(name,{skip:!db.enabled},fn);
+const originalPost=axios.post;
+const savedEnv={...process.env};
+const cardId='A1'.repeat(16),otherCardId='B1'.repeat(16);
+let server,base,A,B,cardA,tokenA,tokenB,zaloCalls;
+before(async()=> {
+  Object.assign(process.env,{JWT_SECRET:'task14-fixture-secret',ZALOPAY_APPID:'1234',ZALOPAY_KEY1:'fixture-request',ZALOPAY_KEY2:'fixture-callback',ZALOPAY_DOMAIN:'https://zalo.example.invalid',VNPAY_CODE:'FIXTURE01',VNPAY_SECRET:'fixture-vnp-secret',VNPAY_URL:'https://vnp.example.invalid/pay',DOMAIN_WEBSITE:'https://shop.example.invalid'});
+  if(db.enabled)await db.connect();
+  if(db.enabled)await Promise.all([Card,Customer,Order,Tx,CardLog].map(m=>m.init()));
+  // Chỉ thay HTTP ra ngoài; controller, chữ ký, helper và Mongo đều thật.
+  axios.post=async(url,body,options)=>{zaloCalls.push(options.params);return{data:{return_code:1,order_url:'https://zalo.example.invalid/checkout'}};};
+  const app=express();
+  app.set('trust proxy',true);
+  app.use(express.json());
+  app.use(cookies());
+  app.use('/card-api',require('../../routes/client/card-api.route'));
+  app.use('/order',require('../../middlewares/client/customer-auth.middleware').optional,require('../../routes/client/order.route'));
+  server=app.listen(0,'127.0.0.1');
+  await new Promise(r=>server.once('listening',r));
+  base='http://127.0.0.1:'+server.address().port;
+});
+beforeEach(async()=> {
+  zaloCalls=[];
+  if(!db.enabled)return;
+  await db.reset();
+  A=await Customer.create({fullName:'Khách A',email:'a@example.com',phone:'0901111111'});
+  B=await Customer.create({fullName:'Khách B',email:'b@example.com',phone:'0902222222'});
+  cardA=await Card.create({cardId,cardType:'customer',ownerId:A.id,status:'active',publicKeyModulus:'AB'.repeat(128),balance:1000000});
+  await Card.create({cardId:otherCardId,cardType:'customer',ownerId:B.id,status:'active',publicKeyModulus:'AB'.repeat(128),balance:0});
+  tokenA=jwt.sign({customerId:A.id,cardId},process.env.JWT_SECRET,{expiresIn:'1d'});
+  tokenB=jwt.sign({customerId:B.id,cardId:otherCardId},process.env.JWT_SECRET,{expiresIn:'1d'});
+});
+after(async()=> {
+  axios.post=originalPost;
+  if(server)await new Promise(r=>server.close(r));
+  if(db.enabled)await db.close();
+  for(const key of Object.keys(process.env))if(!(key in savedEnv))delete process.env[key];
+  Object.assign(process.env,savedEnv);
+});
+async function post(url,body,token=tokenA) {
+  const r=await fetch(base+url,{method:'POST',redirect:'manual',headers:{'content-type':'application/json',...(token?{cookie:'customerToken='+token}:{})},body:JSON.stringify(body)});
+  let json={};try{json=await r.json();}catch{}
+  return{status:r.status,...json};
+}
+async function get(url) {
+  const r=await fetch(base+url,{redirect:'manual'});
+  return{status:r.status,location:r.headers.get('location')};
+}
+const txRef=()=>crypto.randomBytes(8).toString('hex').toUpperCase();
+const makeTx=(extra={})=>Tx.create({txRef:txRef(),cardId,type:'credit',source:'zalopay',amount:100000,status:'awaiting-payment',createdBy:A.id,...extra});
+function zaloBody(tx,extra={},appUser='topup-'+tx.id) {
+  const data=JSON.stringify({app_id:1234,app_trans_id:'261110_123456',app_user:appUser,amount:tx.amount,...extra});
+  return{type:1,data,mac:crypto.createHmac('sha256',process.env.ZALOPAY_KEY2).update(data).digest('hex')};
+}
+function vnpQuery(tx,extra={}) {
+  const query={vnp_TmnCode:'FIXTURE01',vnp_TxnRef:tx.txRef,vnp_Amount:String(tx.amount*100),vnp_ResponseCode:'00',vnp_TransactionStatus:'00',...extra};
+  const raw=Object.keys(query).sort().map(key=>`${encodeURIComponent(key)}=${encodeURIComponent(query[key]).replace(/%20/g,'+')}`).join('&');
+  return new URLSearchParams({...query,vnp_SecureHash:crypto.createHmac('sha512',process.env.VNPAY_SECRET).update(raw).digest('hex')}).toString();
+}
+const status=async tx=>(await Tx.findById(tx.id).lean()).status;
+
+it('paidTwiceCreditsOnce',async()=> {
+  const tx=await makeTx();
+  assert.equal(await E.markTopupPaid(tx.id,'zalopay'),true);
+  assert.equal(await E.markTopupPaid(tx.id,'zalopay'),false);
+  assert.equal(await Tx.countDocuments({status:'pending-card'}),1);
+});
+it('markTopupPaid rejects wrong source, debit, unknown or malformed id and concurrent calls win once',async()=> {
+  const tx=await makeTx();
+  assert.equal(await E.markTopupPaid(tx.id,'vnpay'),false);
+  assert.equal(await E.markTopupPaid('xyz','zalopay'),false);
+  assert.equal(await E.markTopupPaid(new (require('mongoose').Types.ObjectId)().toString(),'zalopay'),false);
+  const debit=await makeTx({type:'debit',source:'order'});
+  assert.equal(await E.markTopupPaid(debit.id,'order'),false);
+  assert.equal(await status(tx),'awaiting-payment');
+  const results=await Promise.all(Array.from({length:8},()=>E.markTopupPaid(tx.id,'zalopay')));
+  assert.equal(results.filter(Boolean).length,1);
+});
+it('topup requires a logged-in customer with an active current card and valid input',async()=> {
+  assert.equal((await post('/card-api/topup',{amount:100000,method:'zalopay'},null)).status,401);
+  assert.equal((await post('/card-api/topup',{amount:100000,method:'zalopay'},'garbage')).status,401);
+  await Card.updateOne({cardId},{$set:{status:'locked'}});
+  assert.equal((await post('/card-api/topup',{amount:100000,method:'zalopay'})).status,401);
+  await Card.updateOne({cardId},{$set:{status:'active'}});
+  for(const body of [{amount:9999,method:'zalopay'},{amount:'100000',method:'zalopay'},{amount:100000.5,method:'vnpay'},{amount:100000,method:'cash'},{amount:100000},{amount:100000,method:'vnpay',cardId:otherCardId}]) {
+    const r=await post('/card-api/topup',body);
+    assert.equal(r.code,'error');assert.ok(r.status>=400&&r.status<500);
+  }
+  assert.equal(await Tx.countDocuments(),0);
+});
+it('topup zalopay creates awaiting-payment credit on the caller card with topup- appUser and distinct callback',async()=> {
+  const r=await post('/card-api/topup',{amount:100000,method:'zalopay'});
+  assert.equal(r.status,200);assert.equal(r.code,'success');assert.equal(r.redirectUrl,'https://zalo.example.invalid/checkout');
+  const tx=await Tx.findOne().lean();
+  assert.deepEqual([tx.cardId,tx.type,tx.source,tx.amount,tx.status,tx.createdBy],[cardId,'credit','zalopay',100000,'awaiting-payment',A.id]);
+  assert.equal(zaloCalls[0].app_user,'topup-'+tx._id);
+  assert.equal(zaloCalls[0].amount,100000);
+  assert.equal(zaloCalls[0].callback_url,'https://shop.example.invalid/card-api/topup-zalopay-result');
+  assert.equal(JSON.parse(zaloCalls[0].embed_data).redirecturl,'https://shop.example.invalid/account/card?topup=1');
+  assert.ok(await CardLog.findOne({action:'card-topup-prepare',result:'success'}));
+});
+it('topup vnpay uses txRef as vnp_TxnRef and a separate return path',async()=> {
+  const r=await post('/card-api/topup',{amount:150000,method:'vnpay'});
+  assert.equal(r.status,200);
+  const tx=await Tx.findOne().lean(),url=new URL(r.redirectUrl);
+  assert.equal(tx.source,'vnpay');assert.equal(tx.status,'awaiting-payment');
+  assert.equal(url.searchParams.get('vnp_TxnRef'),tx.txRef);
+  assert.equal(url.searchParams.get('vnp_Amount'),'15000000');
+  assert.equal(url.searchParams.get('vnp_ReturnUrl'),'https://shop.example.invalid/card-api/topup-vnpay-result');
+});
+it('topup cap counts pending',async()=> {
+  await Card.updateOne({cardId},{$set:{balance:49000000}});
+  await makeTx({amount:900000,status:'pending-card'});
+  const r=await post('/card-api/topup',{amount:200000,method:'zalopay'});
+  assert.equal(r.code,'error');assert.equal(r.status,400);
+  assert.equal(await Tx.countDocuments({status:'awaiting-payment'}),0);
+  assert.equal((await post('/card-api/topup',{amount:100000,method:'zalopay'})).status,200);
+});
+it('topup cap counts sent credits but not awaiting-payment or debits or other cards',async()=> {
+  await Card.updateOne({cardId},{$set:{balance:49000000}});
+  await makeTx({amount:900000,status:'sent'});
+  await makeTx({amount:5000000,status:'awaiting-payment'});
+  await makeTx({amount:5000000,status:'pending-card',type:'debit',source:'order'});
+  await makeTx({amount:5000000,status:'pending-card',cardId:otherCardId});
+  assert.equal((await post('/card-api/topup',{amount:100001,method:'vnpay'})).status,400);
+  assert.equal((await post('/card-api/topup',{amount:100000,method:'vnpay'})).status,200);
+});
+it('gateway failure leaves no awaiting-payment transaction',async()=> {
+  axios.post=async()=>({data:{return_code:2}});
+  try {
+    const r=await post('/card-api/topup',{amount:100000,method:'zalopay'});
+    assert.equal(r.code,'error');
+    assert.equal(await Tx.countDocuments(),0);
+  } finally {
+    axios.post=async(url,body,options)=>{zaloCalls.push(options.params);return{data:{return_code:1,order_url:'https://zalo.example.invalid/checkout'}};};
+  }
+});
+it('zalopay callback credits once and retries are acknowledged without a second credit',async()=> {
+  const tx=await makeTx();
+  const body=zaloBody(tx);
+  const first=await post('/card-api/topup-zalopay-result',body,null);
+  assert.equal(first.return_code,1);assert.equal(await status(tx),'pending-card');
+  const second=await post('/card-api/topup-zalopay-result',body,null);
+  assert.equal(second.return_code,1);
+  assert.equal(await Tx.countDocuments({status:'pending-card'}),1);
+  assert.equal((await Card.findOne({cardId})).balance,1000000);
+  // Sync lập kế hoạch đúng một lệnh CREDIT cho khoản này.
+  const context=await sync.loadSyncContext(await Card.findOne({cardId}).lean());
+  assert.equal(context.pendingCredit.txRef,tx.txRef);
+});
+it('zalopay callback rejects bad mac, wrong amount, unknown tx, wrong source and foreign app_user; tx unchanged',async()=> {
+  const tx=await makeTx(),vn=await makeTx({source:'vnpay'}),debit=await makeTx({type:'debit',source:'order'});
+  const bad=zaloBody(tx);bad.mac='0'.repeat(64);
+  const ghost=zaloBody(tx,{},'topup-'+new (require('mongoose').Types.ObjectId)());
+  for(const body of [bad,zaloBody(tx,{amount:tx.amount+1}),ghost,zaloBody(vn),zaloBody(debit),zaloBody(tx,{},'0901111111-'+tx.id),zaloBody(tx,{},'topup-nothex'),{}]) {
+    const r=await post('/card-api/topup-zalopay-result',body,null);
+    assert.notEqual(r.return_code,1);
+  }
+  for(const item of [tx,vn,debit])assert.equal(await status(item),'awaiting-payment');
+});
+it('order zalopay callback cannot settle a topup and topup tx is not an order',async()=> {
+  const tx=await makeTx();
+  const r=await post('/order/payment-zalopay-result',zaloBody(tx),null);
+  assert.notEqual(r.return_code,1);
+  assert.equal(await status(tx),'awaiting-payment');
+});
+it('vnpay return credits once; F5 redirects again without a second credit',async()=> {
+  const tx=await makeTx({source:'vnpay'});
+  const query=vnpQuery(tx);
+  const first=await get('/card-api/topup-vnpay-result?'+query);
+  assert.equal(first.status,302);assert.equal(first.location,'/account/card?topup=1');
+  assert.equal(await status(tx),'pending-card');
+  const second=await get('/card-api/topup-vnpay-result?'+query);
+  assert.equal(second.location,'/account/card?topup=1');
+  assert.equal(await Tx.countDocuments({status:'pending-card'}),1);
+  assert.equal((await Tx.findById(tx.id)).signedOpId,undefined);
+});
+it('vnpay return rejects bad hash, failed payment, wrong amount, wrong merchant, wrong source and unknown tx',async()=> {
+  const tx=await makeTx({source:'vnpay'}),zl=await makeTx({source:'zalopay'});
+  const tampered=vnpQuery(tx).replace('vnp_Amount=','vnp_Amount=1');
+  const unknown={...tx.toObject(),txRef:txRef()};
+  const urls=[tampered,vnpQuery(tx,{vnp_ResponseCode:'24'}),vnpQuery(tx,{vnp_TransactionStatus:'02'}),vnpQuery(tx,{vnp_Amount:String((tx.amount+1)*100)}),vnpQuery(tx,{vnp_TmnCode:'OTHER'}),vnpQuery(tx,{vnp_Amount:'12345'}),vnpQuery(zl),vnpQuery(unknown),'vnp_TxnRef='+tx.txRef,''];
+  for(const query of urls) {
+    const r=await get('/card-api/topup-vnpay-result?'+query);
+    assert.equal(r.status,302);assert.notEqual(r.location,'/account/card?topup=1');
+  }
+  assert.equal(await status(tx),'awaiting-payment');assert.equal(await status(zl),'awaiting-payment');
+});
+it('order vnpay return does not settle a topup reference',async()=> {
+  const tx=await makeTx({source:'vnpay'});
+  const r=await get('/order/payment-vnpay-result?'+vnpQuery(tx));
+  assert.equal(r.status,302);assert.equal(await status(tx),'awaiting-payment');
+});

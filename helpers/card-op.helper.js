@@ -438,6 +438,14 @@ async function confirmOp({opId,responseHex='',sw,actorType,actorId,req}) {
   }
   return output;
 }
+// Chuyển khoản nạp online đã thanh toán từ chờ thanh toán sang chờ ghi thẻ.
+// CAS nguyên tử: chỉ lần chuyển đầu tiên trả true, callback/return lặp không cộng thêm.
+async function markTopupPaid(txId,source) {
+  if(!mongoose.isValidObjectId(txId)||!['zalopay','vnpay'].includes(source))
+    return false;
+  const result=await Tx.updateOne({_id:txId,type:'credit',source,status:'awaiting-payment'},{$set:{status:'pending-card'}});
+  return result.modifiedCount===1;
+}
 module.exports={
   cardStatus:{nextStatus(current,action){
     if(action==='lock'&&current==='active')return 'locked';
@@ -449,5 +457,6 @@ module.exports={
   createOp,
   signOp,
   confirmOp,
-  applyReceipt
+  applyReceipt,
+  markTopupPaid
 };

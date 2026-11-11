@@ -15,6 +15,9 @@ const S=require('../../public/assets/js/card/card-shared');
 const customerAuth=require('../../middlewares/client/customer-auth.middleware');
 const cardAuth=require('../../helpers/card-auth.helper');
 const cardLog=require('../../helpers/card-log.helper');
+const zalopayHelper=require('../../helpers/zalopay.helper');
+const vnpayHelper=require('../../helpers/vnpay.helper');
+const {checkOnlineTopup}=require('../../helpers/wallet-rule.helper');
 const customerValidation=require('../../validates/client/card.validate');
 const hex=n=>Joi.string().pattern(new RegExp(`^[a-fA-F0-9]{${n}}$`)).required();
 const response=Joi.string().allow('').pattern(/^([a-fA-F0-9]{2})*$/).max(332).required();
@@ -303,6 +306,97 @@ module.exports.payPrepare=customerHandler(customerValidation.payPrepare,'card-pa
   await cardLog.write({action:'card-pay-prepare',cardId:req.card.cardId,actorType:'customer',actorId:customerId,result:'success',detail:{opId:op.id,orderId:String(order._id),txRef:tx.txRef,amount:order.total},req});
   res.json({code:'success',message:'Đã chuẩn bị thanh toán bằng ví thẻ.',opId:op.id,amount:order.total});
 },true);
+// U5 nạp online: tạo giao dịch credit chờ thanh toán rồi chuyển khách sang cổng.
+const TOPUP_RETURN_PATH='/account/card?topup=1';
+async function topupZaloPay(tx) {
+  return zalopayHelper.createOrder({
+    appUser:'topup-'+tx.id,
+    amount:tx.amount,
+    description:`Nạp ví thẻ ${tx.txRef}`,
+    redirectUrl:`${process.env.DOMAIN_WEBSITE}${TOPUP_RETURN_PATH}`,
+    callbackPath:'/card-api/topup-zalopay-result'
+  });
+}
+function topupVnpay(tx,req) {
+  const ipAddr=req.headers['x-forwarded-for']||req.socket?.remoteAddress||req.ip;
+  try {
+    return vnpayHelper.buildPaymentUrl({txnRef:tx.txRef,amount:tx.amount,orderInfo:'Nap vi the '+tx.txRef,returnPath:'/card-api/topup-vnpay-result',ipAddr});
+  }
+  catch {
+    return null;
+  }
+}
+module.exports.topupZaloPay=topupZaloPay;
+module.exports.topupVnpay=topupVnpay;
+module.exports.topupPost=customerHandler(customerValidation.topup,'card-topup-prepare',async(req,res,body)=>{
+  const customerId=String(req.customer._id);
+  // Khoản chờ ghi thẻ hoặc đang đối soát đều chiếm hạn mức (spec 5.4); awaiting-payment thì chưa.
+  const [pending]=await Tx.aggregate([{$match:{cardId:req.card.cardId,type:'credit',status:{$in:['pending-card','sent']}}},{$group:{_id:null,sum:{$sum:'$amount'}}}]);
+  const rule=checkOnlineTopup({balance:req.card.balance,pendingSum:pending?.sum||0,amount:body.amount});
+  if(rule) {
+    const error=refused('TOPUP_LIMIT',rule);
+    error.httpStatus=400;
+    throw error;
+  }
+  const tx=await Tx.create({txRef:crypto.randomBytes(8).toString('hex').toUpperCase(),cardId:req.card.cardId,type:'credit',source:body.method,amount:body.amount,status:'awaiting-payment',createdBy:customerId});
+  const redirectUrl=body.method==='zalopay'?await topupZaloPay(tx):topupVnpay(tx,req);
+  if(!redirectUrl) {
+    // Chưa có tiền nào đi qua cổng: bỏ giao dịch chờ để không để lại rác.
+    await Tx.deleteOne({_id:tx._id,status:'awaiting-payment'});
+    throw refused('GATEWAY_UNAVAILABLE','Không thể kết nối cổng thanh toán, vui lòng thử lại sau.');
+  }
+  await cardLog.write({action:'card-topup-prepare',cardId:req.card.cardId,actorType:'customer',actorId:customerId,result:'success',detail:{txRef:tx.txRef,amount:tx.amount,method:body.method},req});
+  res.json({code:'success',message:'Đã tạo yêu cầu nạp ví.',redirectUrl});
+},true);
+// Ghi nhật ký khi khoản nạp chuyển sang chờ ghi thẻ (chỉ lần chuyển đầu tiên).
+const topupPaidLog=(tx,source,req)=>cardLog.write({action:'card-topup-paid',cardId:tx.cardId,actorType:'system',result:'success',detail:{txRef:tx.txRef,amount:tx.amount,source},req});
+const PAID_STATES=['pending-card','sent','done'];
+module.exports.topupZaloPayResult=async(req,res)=> {
+  try {
+    const verified=zalopayHelper.verifyCallback(req.body);
+    if(!verified.valid)
+      return res.json({return_code:-1,return_message:'mac not equal'});
+    const match=/^topup-([a-fA-F0-9]{24})$/.exec(verified.data.app_user);
+    if(!match)
+      return res.json({return_code:-1,return_message:'invalid payment'});
+    const identity={_id:match[1],type:'credit',source:'zalopay',amount:verified.data.amount};
+    const tx=await Tx.findOne(identity).lean();
+    if(!tx||!['awaiting-payment',...PAID_STATES].includes(tx.status))
+      return res.json({return_code:-1,return_message:'invalid payment'});
+    if(await E.markTopupPaid(tx._id,'zalopay'))
+      await topupPaidLog(tx,'zalopay',req);
+    // Callback lặp chỉ được ACK khi cùng identity/amount đã ở trạng thái đã thanh toán.
+    else if(!await Tx.exists({...identity,status:{$in:PAID_STATES}}))
+      return res.json({return_code:-1,return_message:'invalid payment'});
+    return res.json({return_code:1,return_message:'success'});
+  }
+  catch {
+    return res.json({return_code:0,return_message:'processing failed'});
+  }
+};
+module.exports.topupVnpayResult=async(req,res)=> {
+  try {
+    const verified=vnpayHelper.verifyReturn(req.query);
+    const rawAmount=req.query.vnp_Amount;
+    if(!verified.valid||!verified.success||!process.env.VNPAY_CODE||req.query.vnp_TmnCode!==process.env.VNPAY_CODE||!/^[a-fA-F0-9]{16}$/.test(verified.txnRef)||typeof rawAmount!=='string'||!/^[1-9][0-9]*$/.test(rawAmount))
+      return res.redirect('/account/card');
+    const scaled=Number(rawAmount);
+    if(!Number.isSafeInteger(scaled)||scaled%100!==0)
+      return res.redirect('/account/card');
+    const identity={txRef:verified.txnRef.toUpperCase(),type:'credit',source:'vnpay',amount:scaled/100};
+    const tx=await Tx.findOne(identity).lean();
+    if(!tx||!['awaiting-payment',...PAID_STATES].includes(tx.status))
+      return res.redirect('/account/card');
+    if(await E.markTopupPaid(tx._id,'vnpay'))
+      await topupPaidLog(tx,'vnpay',req);
+    else if(!await Tx.exists({...identity,status:{$in:PAID_STATES}}))
+      return res.redirect('/account/card');
+    return res.redirect(TOPUP_RETURN_PATH);
+  }
+  catch {
+    return res.redirect('/account/card');
+  }
+};
 // Mount trực tiếp tại app để bắt cả lỗi parser xảy ra trước router con.
 module.exports.errorHandler=(error,req,res,next)=> {
   if(res.headersSent)

@@ -11,6 +11,17 @@ block main
     p Tổng credit đang chờ ghi thẻ: #{money(pendingCredit)}
     p Mã thẻ: #{card.cardId}
     section
+      h2 Nạp tiền vào ví
+      p Tối thiểu 10.000 đ; số dư cộng khoản đang chờ ghi thẻ không vượt quá 50.000.000 đ. Sau khi thanh toán, cắm thẻ để nhận tiền.
+      form(data-card-topup)
+        label(for="card-topup-amount") Số tiền (đ)
+        input#card-topup-amount(name="amount" type="number" min="10000" max="50000000" step="1000" required)
+        label(for="card-topup-method") Cổng thanh toán
+        select#card-topup-method(name="method")
+          option(value="vnpay") VNPay
+          option(value="zalopay") ZaloPay
+        button(type="submit") Nạp tiền
+    section
       h2 Lịch sử giao dịch trên hệ thống
       .card-table-wrap
         table
