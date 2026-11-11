@@ -305,6 +305,10 @@ module.exports.payPrepare=customerHandler(customerValidation.payPrepare,'card-pa
   const customerId=String(req.customer._id);
   const order=await Order.findOne({_id:body.orderId,customerId,deleted:false,paymentMethod:'card',paymentStatus:'unpaid',status:{$ne:'cancel'}}).lean();
   if(!order||!Number.isSafeInteger(order.total)||order.total<1)throw refused('OP_STATE','Đơn hàng không hợp lệ hoặc đã được thanh toán.');
+  // Đơn đã từng được trừ ví thành công (dù trạng thái đơn bị sửa về unpaid) không bao giờ được trừ lần hai.
+  if(await Tx.exists({orderId:String(order._id),type:'debit',status:'done'}))throw refused('OP_STATE','Đơn hàng không hợp lệ hoặc đã được thanh toán.');
+  // Thẻ còn giao dịch đã ký/đã gửi chưa đối soát (của bất kỳ đơn nào): phải khôi phục biên nhận trước, không tạo debit mồ côi.
+  if(await Tx.exists(E.unresolvedFilter({cardId:req.card.cardId})))throw refused('OP_STATE',PAY_SYNC_MESSAGE);
   const open=await Tx.find({orderId:String(order._id),type:'debit',status:{$ne:'done'}}).lean();
   // Giao dịch đã ký (sent, hoặc pending-card/failed còn dấu signedOpId) cần khôi phục biên nhận trước.
   if(open.some(tx=>tx.status==='sent'||tx.signedOpId))throw refused('OP_STATE',PAY_SYNC_MESSAGE);

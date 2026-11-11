@@ -1,12 +1,15 @@
 const mongoose = require('mongoose');
 const Order = require('../models/order.model');
 const Customer = require('../models/customer.model');
+const variableConfig = require('../config/variable');
+// Mọi phương thức trong cấu hình (cổng, ví thẻ, và admin xác nhận tiền mặt/chuyển khoản); filter luôn ghim đúng phương thức của đơn.
+const METHODS = variableConfig.paymentMethod.map(item=>item.value);
 const validAmount = value => Number.isSafeInteger(value) && value > 0;
 const objectId = value => typeof value === 'string' && /^[a-fA-F0-9]{24}$/.test(value);
 function safeFilter(filter,method) {
   if (!filter || typeof filter !== 'object' || Array.isArray(filter) || ![Object.prototype,null].includes(Object.getPrototypeOf(filter)))
     return null;
-  if (!['zalopay','vnpay','card'].includes(method))
+  if (!METHODS.includes(method))
     return null;
   if (Object.keys(filter).some(key=>!['_id','phone','deleted','total'].includes(key)))
     return null;

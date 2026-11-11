@@ -283,6 +283,9 @@ async function signOp({opId,challengeHex,actorType,actorId}) {
       const update=await Tx.updateOne({_id:context.tx._id,status:'pending-card',signedOpId:{$exists:false}},{$set:{status:'sent',signedOpId:String(op._id),signedAt:new Date()}},{session});
       if(update.modifiedCount!==1)
         fail('OP_STATE');
+      // Ghi vào đơn trong cùng transaction: admin sửa/huỷ đơn đồng thời sẽ xung đột thay vì lọt qua kiểm tra debit đang ký.
+      if(context.tx.type==='debit')
+        await Order.updateOne({_id:context.tx.orderId},{$inc:{__v:1}},{session});
     }
     // Đánh dấu vé đã được ký lệnh ghi: từ đây thẻ có thể giữ vé dù confirm bị mất; huỷ đơn sẽ phải xoá vé khỏi thẻ.
     if(op.type==='write-ticket')
@@ -444,6 +447,20 @@ async function confirmOp({opId,responseHex='',sw,actorType,actorId,req}) {
   }
   return output;
 }
+// Giao dịch đã ký (signedOpId) hoặc đã gửi xuống thẻ mà chưa done: chỉ biên nhận của thẻ mới kết thúc được, không bao giờ huỷ hay ký lại.
+const unresolvedFilter=extra=>({...extra,status:{$ne:'done'},$or:[{status:'sent'},{signedOpId:{$exists:true}}]});
+// Debit chưa từng ký (không có signedOpId) chắc chắn chưa tới chip: đóng (failed 'voided') bằng CAS để không còn là nghĩa vụ của thẻ.
+// CAS cùng điều kiện với signOp nên một debit không thể vừa được ký vừa bị huỷ.
+async function voidUnsignedDebits(filter,session) {
+  const rows=await Tx.find({...filter,type:'debit',status:'pending-card',signedOpId:{$exists:false}}).select('txRef cardId orderId amount').session(session||null).lean();
+  const voided=[];
+  for(const row of rows) {
+    const result=await Tx.updateOne({_id:row._id,status:'pending-card',signedOpId:{$exists:false}},{$set:{status:'failed',failReason:'voided'}},session?{session}:{});
+    if(result.modifiedCount===1)
+      voided.push({txRef:row.txRef,cardId:row.cardId,orderId:row.orderId,amount:row.amount});
+  }
+  return voided;
+}
 // Hạn cổng 15 phút + 5 phút châu chấu: quá mức này khoản chờ thanh toán không còn là nghĩa vụ.
 const TOPUP_EXPIRE_MINUTES=15;
 const TOPUP_STALE_MS=(TOPUP_EXPIRE_MINUTES+5)*60000;
@@ -489,5 +506,8 @@ module.exports={
   markTopupPaid,
   markTopupFailed,
   expireStaleTopups,
-  TOPUP_EXPIRE_MINUTES
+  voidUnsignedDebits,
+  unresolvedFilter,
+  TOPUP_EXPIRE_MINUTES,
+  TOPUP_STALE_MS
 };

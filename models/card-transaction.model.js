@@ -7,8 +7,9 @@ const schema = new mongoose.Schema({
   amount:{type:Number,required:true,min:1,max:50_000_000,validate:Number.isSafeInteger},
   orderId:String,
   status:{type:String,required:true,enum:['awaiting-payment','pending-card','sent','done','failed'],default:'pending-card'},
-  // Lý do giao dịch nạp online bị đóng: hết hạn chờ thanh toán hay cổng báo thất bại.
-  failReason:{type:String,enum:['expired','gateway']},
+  // Lý do giao dịch bị đóng: nạp online hết hạn/cổng báo thất bại; giao dịch chưa ký bị huỷ (voided),
+  // chuyển sang thẻ mới khi cấp lại (moved) hoặc đã hoàn tiền mặt khi thu hồi (refunded).
+  failReason:{type:String,enum:['expired','gateway','voided','moved','refunded']},
   balanceAfter:{type:Number,min:0,max:50_000_000,validate:{validator:value=>value==null || Number.isSafeInteger(value)}},
   txCounter:{type:Number,min:0,max:0xffffffff,validate:{validator:value=>value==null || Number.isSafeInteger(value)}},
   receiptHex:{type:String,match:/^[a-fA-F0-9]{332}$/,uppercase:true},

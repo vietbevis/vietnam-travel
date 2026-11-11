@@ -39,6 +39,8 @@ before(async()=> {
   app.use(cookies());
   app.use('/card-api',require('../../routes/client/card-api.route'));
   app.use('/order',require('../../middlewares/client/customer-auth.middleware').optional,require('../../routes/client/order.route'));
+  // Sửa đơn quản trị (editPatch) không qua middleware flash/permission của trang admin.
+  app.patch('/order-edit/:id',(req,res)=>{req.flash=()=>{};req.account={id:'0123456789abcdef0123abcd'};require('../../controllers/admin/order.controller').editPatch(req,res);});
   server=app.listen(0,'127.0.0.1');
   await new Promise(r=>server.once('listening',r));
   base='http://127.0.0.1:'+server.address().port;
@@ -108,6 +110,9 @@ it('payOtherCustomersOrderRejected',async()=> {
   const order=await makeOrder(B);
   const r=await request('/card-api/pay/prepare',{orderId:order.id});
   assert.equal(r.code,'error');
+  // Lệch kế hoạch có chủ đích: trả OP_STATE như đơn không tồn tại để không lộ đơn của khách khác.
+  assert.equal(r.errorCode,'OP_STATE');
+  assert.equal(r.status,409);
   assert.equal(await Tx.countDocuments(),0);
   assert.equal(await Op.countDocuments(),0);
   assert.equal((await Order.findById(order.id)).cardTxRef,undefined);
@@ -273,4 +278,112 @@ it('createPost always prices from the server tour and ignores client priceNew va
   assert.equal(order.items[0].priceNewAdult,1000000);
   assert.equal(order.subTotal,1000000);
   assert.equal(order.total,950000);
+});
+
+async function patchOrder(id,body) {
+  const r=await fetch(base+'/order-edit/'+id,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+  return r.json();
+}
+const IN_FLIGHT=/giao dịch ví thẻ chưa đối soát/;
+async function signedDebit(order) {
+  const prepared=await request('/card-api/pay/prepare',{orderId:order.id});
+  assert.equal(prepared.code,'success',prepared.text);
+  const signed=await request('/card-api/op/sign',{opId:prepared.opId,challenge});
+  assert.equal(signed.code,'success',signed.text);
+  return Tx.findOne({orderId:order.id}).lean();
+}
+it('admin cannot cancel or change payment fields of an order with an in-flight debit and the receipt still recovers',async()=> {
+  const order=await makeOrder(A);
+  const tx=await signedDebit(order);
+  assert.equal(tx.status,'sent');
+  for(const body of [{status:'cancel'},{paymentStatus:'paid'},{paymentMethod:'money'},{status:'done',note:'x'}]) {
+    const r=await patchOrder(order.id,body);
+    assert.equal(r.code,'error',JSON.stringify(r));
+    assert.match(r.message,IN_FLIGHT);
+  }
+  const kept=await Order.findById(order.id).lean();
+  assert.deepEqual([kept.status,kept.paymentStatus,kept.paymentMethod,kept.note],['initial','unpaid','card',undefined]);
+  // Form sửa đơn luôn gửi lại đủ trường: giữ nguyên giá trị thì vẫn sửa được thông tin liên hệ.
+  const same=await patchOrder(order.id,{fullName:'Tên mới',status:'initial',paymentStatus:'unpaid',paymentMethod:'card'});
+  assert.equal(same.code,'success',JSON.stringify(same));
+  assert.equal((await Order.findById(order.id)).fullName,'Tên mới');
+  const body={cardId,txRef:tx.txRef,response:receipt({txRef:tx.txRef,balance:500000,amount:1500000}),sw:'9000'};
+  assert.equal((await request('/card-api/sync/receipt',body,'')).ok,true);
+  const paid=await Order.findById(order.id).lean();
+  assert.equal(paid.paymentStatus,'paid');
+  assert.equal((await Card.findOne({cardId})).balance,500000);
+});
+it('a signed debit that fell back to pending-card or failed still blocks admin cancel',async()=> {
+  for(const status of ['pending-card','failed']) {
+    await Tx.deleteMany({});await Order.deleteMany({});
+    const order=await makeOrder(A,{cardTxRef:'AB'.repeat(8)});
+    await Tx.create({cardId,txRef:'AB'.repeat(8),type:'debit',source:'order',amount:1500000,orderId:order.id,status,signedOpId:'0123456789abcdef01234567'});
+    const r=await patchOrder(order.id,{status:'cancel'});
+    assert.equal(r.code,'error');assert.match(r.message,IN_FLIGHT);
+    assert.equal((await Order.findById(order.id)).status,'initial');
+  }
+});
+it('admin cancel voids the order unsigned debit so it never blocks the card',async()=> {
+  const order=await makeOrder(A);
+  const prepared=await request('/card-api/pay/prepare',{orderId:order.id});
+  assert.equal(prepared.code,'success');
+  const r=await patchOrder(order.id,{status:'cancel'});
+  assert.equal(r.code,'success',JSON.stringify(r));
+  const tx=await Tx.findOne({orderId:order.id}).lean();
+  assert.deepEqual([tx.status,tx.failReason,tx.signedOpId],['failed','voided',undefined]);
+  // Op nháp còn sót lại không thể ký tiền cho đơn đã huỷ.
+  const signed=await request('/card-api/op/sign',{opId:prepared.opId,challenge});
+  assert.equal(signed.code,'error');
+  assert.equal((await Tx.findById(tx._id)).status,'failed');
+});
+it('admin marking an unpaid order paid settles it so tickets and spend follow',async()=> {
+  const order=await makeOrder(A,{paymentMethod:'bank'});
+  const r=await patchOrder(order.id,{paymentStatus:'paid',paymentMethod:'bank',status:'initial'});
+  assert.equal(r.code,'success',JSON.stringify(r));
+  const paid=await Order.findById(order.id).lean();
+  assert.equal(paid.paymentStatus,'paid');
+  assert.deepEqual(paid.items.map(i=>i.ticketStatus),['pending']);
+  assert.equal((await Customer.findById(A.id)).totalSpent,31500000);
+  // Lưu lại form (đã paid) không cộng chi tiêu lần nữa.
+  assert.equal((await patchOrder(order.id,{paymentStatus:'paid',note:'đã nhận'})).code,'success');
+  assert.equal((await Customer.findById(A.id)).totalSpent,31500000);
+  // Đơn khách vãng lai (không customerId) vẫn chuyển paid như trước.
+  const guest=await Order.create({orderCode:'OD2',fullName:'Khách lẻ',phone:'0903333333',subTotal:1000000,discount:0,total:1000000,paymentMethod:'money',paymentStatus:'unpaid',status:'initial',items:[{tourId:tour.id,quantityAdult:1,ticketStatus:'none'}]});
+  assert.equal((await patchOrder(guest.id,{paymentStatus:'paid'})).code,'success');
+  assert.equal((await Order.findById(guest.id)).paymentStatus,'paid');
+});
+it('admin cannot move a card-paid order back to unpaid and pay prepare refuses an order with a done debit',async()=> {
+  const order=await makeOrder(A);
+  const tx=await signedDebit(order);
+  const confirmed=await request('/card-api/op/confirm',{opId:(await Op.findOne({type:'debit'})).id,response:receipt({txRef:tx.txRef,balance:500000,amount:1500000}),sw:'9000'});
+  assert.equal(confirmed.code,'success',confirmed.text);
+  const r=await patchOrder(order.id,{paymentStatus:'unpaid'});
+  assert.equal(r.code,'error');
+  assert.match(r.message,/ví thẻ/);
+  assert.equal((await Order.findById(order.id)).paymentStatus,'paid');
+  // Dữ liệu cũ đã lỡ về unpaid: ví vẫn không được trừ lần hai.
+  await Order.updateOne({_id:order.id},{$set:{paymentStatus:'unpaid'}});
+  const again=await request('/card-api/pay/prepare',{orderId:order.id});
+  assert.equal(again.code,'error');assert.equal(again.errorCode,'OP_STATE');
+  assert.equal(await Tx.countDocuments(),1);
+  assert.equal(await Op.countDocuments({status:'draft'}),0);
+});
+it('admin order edit rejects status and payment values outside the configured lists',async()=> {
+  const order=await makeOrder(A);
+  for(const body of [{status:'bogus'},{paymentStatus:'refunded'},{paymentMethod:'bitcoin'}]) {
+    const r=await patchOrder(order.id,body);
+    assert.equal(r.code,'error',JSON.stringify(body));
+  }
+  const kept=await Order.findById(order.id).lean();
+  assert.deepEqual([kept.status,kept.paymentStatus,kept.paymentMethod],['initial','unpaid','card']);
+});
+it('pay prepare refuses up front while the card has another unresolved transaction',async()=> {
+  const first=await makeOrder(A,{orderCode:'OD1'});
+  await signedDebit(first);
+  const second=await makeOrder(A,{orderCode:'OD3',total:100000});
+  const r=await request('/card-api/pay/prepare',{orderId:second.id});
+  assert.equal(r.code,'error');
+  assert.equal(r.message,'Giao dịch trước chưa hoàn tất, vui lòng cắm thẻ để đồng bộ');
+  assert.equal(await Tx.countDocuments({orderId:second.id}),0);
+  assert.equal((await Order.findById(second.id)).cardTxRef,undefined);
 });
