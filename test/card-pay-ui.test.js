@@ -15,11 +15,32 @@ const okFetch=calls=>async(url,options)=>{calls.push(['fetch',url,JSON.parse(opt
 test('payFlow syncs first then PIN then prepares then signs and confirms through server routes',async()=> {
   const calls=[];
   await UI.payFlow({client:client(calls),cardId:id,orderId:'b'.repeat(24),fetch:okFetch(calls)});
-  assert.deepEqual(calls.map(c=>c[0]),['open','verify','fetch','signed']);
+  assert.deepEqual(calls.map(c=>c[0]),['open','verify','fetch','signed','open']);
   assert.equal(calls[0][1].sync,undefined);
   assert.equal(calls[0][1].expectedCardId,id);
   assert.deepEqual(calls[2].slice(1),['/card-api/pay/prepare',{orderId:'b'.repeat(24)}]);
   assert.deepEqual(calls[3][1],{opId:'a'.repeat(24),signUrl:'/card-api/op/sign',confirmUrl:'/card-api/op/confirm'});
+});
+test('payFlow syncs again after a confirmed debit so the paid order ticket is written to the card (spec U5 step 6)',async()=> {
+  const calls=[];
+  await UI.payFlow({client:client(calls),cardId:id,orderId:'b'.repeat(24),fetch:okFetch(calls)});
+  const signed=calls.findIndex(c=>c[0]==='signed');
+  const after=calls.slice(signed+1).find(c=>c[0]==='open');
+  assert.ok(after,'openSession (sync) must run after the debit is confirmed');
+  assert.equal(after[1].sync,undefined);
+  assert.equal(after[1].expectedCardId,id);
+});
+test('payFlow keeps a confirmed payment successful when the follow-up ticket sync fails',async()=> {
+  const calls=[];let opens=0;
+  const flaky=client(calls,{openSession:async opts=>{calls.push(['open',opts]);if(++opens>1)throw new Error('Không kết nối được Card Agent');return{cardId:id,cardType:1,state:2,mustChangePin:false};}});
+  const result=await UI.payFlow({client:flaky,cardId:id,orderId:'b'.repeat(24),fetch:okFetch(calls)});
+  assert.equal(result.ok,true);
+  assert.equal(opens,2);
+});
+test('payFlow does not sync again when the debit is not confirmed',async()=> {
+  const calls=[];
+  await assert.rejects(UI.payFlow({client:client(calls,{runSignedOp:async()=>({ok:false})}),cardId:id,orderId:'b'.repeat(24),fetch:okFetch(calls)}),/đối soát/);
+  assert.equal(calls.filter(c=>c[0]==='open').length,1);
 });
 test('payFlow stops before any server call on wrong card and shows server refusal without signing',async()=> {
   const calls=[];

@@ -112,6 +112,9 @@
     const prepared=await post(fetcher,'/card-api/pay/prepare',{orderId});
     const result=await client.runSignedOp({opId:prepared.opId,signUrl:'/card-api/op/sign',confirmUrl:'/card-api/op/confirm'});
     if(!result.ok)invalid('Chưa xác nhận thanh toán. Vui lòng cắm lại thẻ để hệ thống đối soát, không thanh toán lại.');
+    // Spec U5 bước 6: đơn đã paid → sync ghi vé lên thẻ ngay. Lỗi sync không làm hỏng giao dịch đã xác nhận;
+    // vé còn pending sẽ được ghi ở lần đồng bộ sau.
+    try{await client.openSession({expectedCardId:cardId});}catch{}
     return result;
   }
   // U4: chỉ đọc họ tên và số điện thoại từ thẻ (cần PIN), không gửi gì lên máy chủ.
