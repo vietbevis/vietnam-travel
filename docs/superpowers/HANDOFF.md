@@ -1,5 +1,7 @@
 # Bàn giao: Thẻ Thành viên Du lịch (Java Card)
 
+> **Audit cuối 11/11/2026 trên `fix/smartcard-final-review`:** đã sửa oversell/rollback trong `createPost`, chặn admin tự ghi paid ví và ghi nhận callback muộn an toàn bằng trạng thái `reconciliation`. Mọi đặt đơn mới cần Mongo replica set. Xem [báo cáo audit cuối](reports/2026-11-11-smartcard-final-review.md) trước khi tiếp tục; các quyết định callback cũ được cập nhật theo báo cáo này. Unit + E2E jCardSim 200 PASS, Mongo integration 305 PASS, applet 266 + agent 30 PASS; review độc lập Spec/Quality/Security PASS. Chưa có UI xử lý/hoàn tiền đối soát, chưa kiểm cổng thật hoặc thẻ vật lý. Không merge/push trong lượt audit.
+
 Tài liệu này dành cho thành viên nhận tiếp phần còn lại của dự án. Ngày lập: 2026-11-06, cập nhật 2026-11-11. Nhánh làm việc: `feature/smartcard` (tách từ `main`).
 
 Dự án là web du lịch Node/Express + Mongo + Pug (thanh toán ZaloPay/VNPay), được bổ sung tính năng thẻ thành viên Java Card. Đây là bài tập lớn: **chỉ cần thẻ ảo (jCardSim), không cần thẻ thật.**

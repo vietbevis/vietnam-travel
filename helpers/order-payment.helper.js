@@ -1,6 +1,10 @@
 const mongoose = require('mongoose');
 const Order = require('../models/order.model');
 const Customer = require('../models/customer.model');
+const Card = require('../models/card.model');
+const Tx = require('../models/card-transaction.model');
+const apdu = require('./card-apdu.helper');
+const crypto = require('./card-crypto.helper');
 const variableConfig = require('../config/variable');
 // Mọi phương thức trong cấu hình (cổng, ví thẻ, và admin xác nhận tiền mặt/chuyển khoản); filter luôn ghim đúng phương thức của đơn.
 const METHODS = variableConfig.paymentMethod.map(item=>item.value);
@@ -73,6 +77,16 @@ async function settleLinked(compare,session) {
   const current=await Order.findOne(compare).session(session).lean();
   if (!current || !validAmount(current.total))
     return false;
+  if (compare.paymentMethod === 'card') {
+    const tx=await Tx.findOne({txRef:current.cardTxRef,orderId:String(current._id),source:'order',type:'debit',status:'done',amount:current.total}).session(session).lean();
+    if (!tx?.signedOpId || !tx.receiptHex) return false;
+    const card=await Card.findOne({cardId:tx.cardId,ownerId:current.customerId,cardType:'customer'}).session(session).lean();
+    const receipt=apdu.parseReceipt(tx.receiptHex);
+    if (!card || !receipt || !crypto.verifyCardSignature(card.publicKeyModulus,receipt.message,receipt.signature) ||
+        receipt.cardId!==card.cardId || receipt.txRef!==tx.txRef || receipt.type!=='debit' || receipt.amount!==current.total ||
+        receipt.balanceAfter!==tx.balanceAfter || receipt.txCounter!==tx.txCounter ||
+        receipt.balanceAfter!==card.balance || receipt.txCounter!==card.txCounter) return false;
+  }
   if (!objectId(current.customerId))
     throw new Error('Khách hàng thanh toán không hợp lệ.');
   const owner=await Customer.findOne({_id:current.customerId,deleted:false}).session(session).lean();
@@ -88,6 +102,8 @@ async function settleLinked(compare,session) {
 }
 module.exports.markOrderPaidInSession=markOrderPaidInSession;
 module.exports.markOrderPaid = async (filter,method) => {
+  // Ví thẻ chỉ đi qua receiptInSession: wrapper chung không có chứng cứ thẻ và transaction của engine.
+  if (method === 'card') return false;
   const base = safeFilter(filter,method);
   if (!base)
     return false;

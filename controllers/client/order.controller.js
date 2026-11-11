@@ -9,8 +9,10 @@ const vnpayHelper = require("../../helpers/vnpay.helper");
 const orderPaymentHelper = require("../../helpers/order-payment.helper");
 const tierHelper = require("../../helpers/tier.helper");
 const moment = require("moment");
+const mongoose = require("mongoose");
 
 module.exports.createPost = async (req, res) => {
+  let session;
   try {
     // Danh tính khách chỉ lấy từ phiên đăng nhập, không tin dữ liệu client gửi lên.
     for (const field of ["customerId", "cardTxRef", "deleted", "deletedBy", "deletedAt", "updatedBy"]) {
@@ -43,6 +45,10 @@ module.exports.createPost = async (req, res) => {
           break;
         }
         totalQuantity += item.quantityAdult + item.quantityChildren + item.quantityBaby;
+        if (!Number.isSafeInteger(totalQuantity)) {
+          itemsValid = false;
+          break;
+        }
       }
     }
     if (!itemsValid || totalQuantity < 1) {
@@ -55,76 +61,79 @@ module.exports.createPost = async (req, res) => {
 
     req.body.orderCode = "OD" + gererateHelper.generateRandomNumber(10);
 
-    // Danh sách tour
-    for (const item of req.body.items) {
-      // Trạng thái vé do hệ thống quản lý, không nhận từ client
-      item.ticketStatus = "none";
-      delete item.checkedInAt;
-      delete item.checkedInBy;
+    session = await mongoose.startSession();
+    let newRecord;
+    // Giữ chỗ và lưu đơn cùng commit: lỗi ở bất kỳ tour/bước lưu nào đều hoàn kho bằng rollback.
+    // Không hoàn kho bằng phép gán từ snapshot cũ vì có thể ghi đè lượt đặt khác.
+    await session.withTransaction(async () => {
+      // Danh sách tour
+      for (const item of req.body.items) {
+        // Trạng thái vé do hệ thống quản lý, không nhận từ client
+        item.ticketStatus = "none";
+        delete item.checkedInAt;
+        delete item.checkedInBy;
 
-      const infoTour = await Tour.findOne({
-        _id: item.tourId,
-        status: "active",
-        deleted: false
-      })
+        const infoTour = await Tour.findOneAndUpdate({
+          _id: item.tourId,
+          status: "active",
+          deleted: false,
+          stockAdult: {$gte: item.quantityAdult},
+          stockChildren: {$gte: item.quantityChildren},
+          stockBaby: {$gte: item.quantityBaby}
+        }, {$inc: {
+          stockAdult: -item.quantityAdult,
+          stockChildren: -item.quantityChildren,
+          stockBaby: -item.quantityBaby
+        }}, {session, new: true});
 
-      if(infoTour) {
-        // Thêm giá
-        item.priceNewAdult = infoTour.priceNewAdult;
-        item.priceNewChildren = infoTour.priceNewChildren;
-        item.priceNewBaby = infoTour.priceNewBaby;
+        if (!infoTour) throw new Error("Tour không còn đủ chỗ hoặc đã ngừng hoạt động");
 
-        // Ngày khởi hành
-        item.departureDate = infoTour.departureDate;
+        if(infoTour) {
+          // Thêm giá
+          item.priceNewAdult = infoTour.priceNewAdult;
+          item.priceNewChildren = infoTour.priceNewChildren;
+          item.priceNewBaby = infoTour.priceNewBaby;
 
-        // Ảnh
-        item.avatar = infoTour.avatar;
+          // Ngày khởi hành
+          item.departureDate = infoTour.departureDate;
 
-        // Tiêu đề
-        item.name = infoTour.name;
+          // Ảnh
+          item.avatar = infoTour.avatar;
 
-        // Cập nhật lại số lượng còn lại của tour
-        if(infoTour.stockAdult < item.quantityAdult || infoTour.stockChildren < item.quantityChildren || infoTour.stockBaby < item.quantityBaby) {
-          res.json({
-            code: "error",
-            message: `Số lượng chỗ của tour ${item.name} đã hết, vui lòng chọn lại`
-          })
-          return;
+          // Tiêu đề
+          item.name = infoTour.name;
+
+          if (![item.priceNewAdult, item.priceNewChildren, item.priceNewBaby].every(value => Number.isSafeInteger(value) && value >= 0))
+            throw new Error("Giá tour không hợp lệ");
         }
-
-        await Tour.updateOne({
-          _id: item.tourId
-        }, {
-          stockAdult: infoTour.stockAdult - item.quantityAdult,
-          stockChildren: infoTour.stockChildren - item.quantityChildren,
-          stockBaby: infoTour.stockBaby - item.quantityBaby,
-        })
       }
-    }
 
-    // Thanh toán
-    // Tạm tính
-    req.body.subTotal = req.body.items.reduce((sum, item) => {
-      return sum + ((item.priceNewAdult * item.quantityAdult) + (item.priceNewChildren * item.quantityChildren) + (item.priceNewBaby * item.quantityBaby));
-    }, 0);
+      // Thanh toán
+      // Tạm tính
+      req.body.subTotal = req.body.items.reduce((sum, item) => {
+        return sum + ((item.priceNewAdult * item.quantityAdult) + (item.priceNewChildren * item.quantityChildren) + (item.priceNewBaby * item.quantityBaby));
+      }, 0);
+      if (!Number.isSafeInteger(req.body.subTotal) || req.body.subTotal < 0)
+        throw new Error("Tổng giá trị đơn không hợp lệ");
 
-    // Giảm theo hạng thành viên (chỉ khi đã đăng nhập)
-    req.body.discount = 0;
-    if (req.customer && Number.isSafeInteger(req.body.subTotal) && req.body.subTotal >= 0) {
-      req.body.discount = tierHelper.discountFor(req.customer.totalSpent || 0, req.body.subTotal);
-    }
+      // Giảm theo hạng thành viên (chỉ khi đã đăng nhập)
+      req.body.discount = 0;
+      if (req.customer && Number.isSafeInteger(req.body.subTotal) && req.body.subTotal >= 0) {
+        req.body.discount = tierHelper.discountFor(req.customer.totalSpent || 0, req.body.subTotal);
+      }
 
-    // Thanh toán
-    req.body.total = req.body.subTotal - req.body.discount;
+      // Thanh toán
+      req.body.total = req.body.subTotal - req.body.discount;
 
-    // Trạng thái thanh toán
-    req.body.paymentStatus = "unpaid"; // unpaid: chưa thánh toán, paid: đã thanh toán
+      // Trạng thái thanh toán
+      req.body.paymentStatus = "unpaid"; // unpaid: chưa thánh toán, paid: đã thanh toán
 
-    // Trạng thái đơn hàng
-    req.body.status = "initial"; // initial: khởi tạo, done: hoàn thành, cancel: hủy
+      // Trạng thái đơn hàng
+      req.body.status = "initial"; // initial: khởi tạo, done: hoàn thành, cancel: hủy
 
-    const newRecord = new Order(req.body);
-    await newRecord.save();
+      newRecord = new Order(req.body);
+      await newRecord.save({session});
+    });
 
     res.json({
       code: "success",
@@ -138,6 +147,8 @@ module.exports.createPost = async (req, res) => {
       code: "error",
       message: "Đặt hàng không thành công!"
     })
+  } finally {
+    if (session) await session.endSession();
   }
 }
 

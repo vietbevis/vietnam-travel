@@ -284,7 +284,62 @@ async function patchOrder(id,body) {
   const r=await fetch(base+'/order-edit/'+id,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
   return r.json();
 }
+it('createPost concurrent last-seat requests admit exactly one order',async()=> {
+  await Tour.updateOne({_id:tour.id},{$set:{stockAdult:1}});
+  const results=await Promise.all(Array.from({length:6},()=>request('/order/create',orderBody({items:[item()]}))));
+  assert.equal(results.filter(r=>r.code==='success').length,1);
+  assert.equal(await Order.countDocuments(),1);
+  assert.equal((await Tour.findById(tour.id)).stockAdult,0);
+});
+it('createPost duplicate tour lines cannot oversell or leak a partial reservation',async()=> {
+  await Tour.updateOne({_id:tour.id},{$set:{stockAdult:1}});
+  await rejected([item(),item()]);
+});
+it('createPost rolls back earlier tour reservations when a later tour is sold out',async()=> {
+  const sold=await Tour.create({name:'Tour hết chỗ',status:'active',stockAdult:0,stockChildren:0,stockBaby:0,priceNewAdult:1,priceNewChildren:1,priceNewBaby:0});
+  await rejected([item(),item({tourId:sold.id})]);
+});
+it('createPost rolls back every stock change when persisting the order fails',async t=> {
+  t.mock.method(Order.prototype,'save',async()=>{throw new Error('Lỗi lưu đơn fixture');});
+  await rejected([item()]);
+});
+it('createPost rejects overflow quantities without touching stock',async()=> {
+  await rejected([item({quantityAdult:Number.MAX_SAFE_INTEGER,quantityChildren:1})]);
+});
 const IN_FLIGHT=/giao dịch ví thẻ chưa đối soát/;
+it('admin cannot mark a card order paid without a verified debit receipt',async()=> {
+  const order=await makeOrder(A);
+  assert.equal((await patchOrder(order.id,{paymentStatus:'paid'})).code,'error');
+  assert.equal((await Order.findById(order.id)).paymentStatus,'unpaid');
+  assert.equal((await Customer.findById(A.id)).totalSpent,30000000);
+});
+it('admin cannot relabel another payment as card even if the order is already paid',async()=> {
+  for(const paymentStatus of ['paid','unpaid']) {
+    const order=await makeOrder(A,{paymentMethod:'bank',paymentStatus});
+    const r=await patchOrder(order.id,{paymentMethod:'card',paymentStatus:'paid'});
+    assert.equal(r.code,'error');
+    assert.equal((await Order.findById(order.id)).paymentMethod,'bank');
+  }
+});
+it('generic settlement cannot mark a card order paid without the receipt engine',async()=> {
+  const order=await makeOrder(A);
+  assert.equal(await require('../../helpers/order-payment.helper').markOrderPaid({_id:order.id},'card'),false);
+  assert.equal((await Order.findById(order.id)).paymentStatus,'unpaid');
+});
+it('in-session card settlement rejects missing or forged receipt evidence',async()=> {
+  const mongoose=require('mongoose');
+  const payment=require('../../helpers/order-payment.helper');
+  for(const proof of ['missing','forged']) {
+    await Tx.deleteMany({});
+    const ref='AB'.repeat(8),order=await makeOrder(A,{cardTxRef:ref});
+    if(proof==='forged')await Tx.create({txRef:ref,cardId,type:'debit',source:'order',amount:order.total,orderId:order.id,status:'done',signedOpId:'11'.repeat(12),balanceAfter:500000,txCounter:1,receiptHex:'00'.repeat(166)});
+    const session=await mongoose.startSession();
+    try {await session.withTransaction(async()=>assert.equal(await payment.markOrderPaidInSession({_id:order.id},'card',session),false));}
+    finally {await session.endSession();}
+    assert.equal((await Order.findById(order.id)).paymentStatus,'unpaid');
+    assert.equal((await Customer.findById(A.id)).totalSpent,30000000);
+  }
+});
 async function signedDebit(order) {
   const prepared=await request('/card-api/pay/prepare',{orderId:order.id});
   assert.equal(prepared.code,'success',prepared.text);

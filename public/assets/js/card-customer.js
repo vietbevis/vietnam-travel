@@ -182,7 +182,8 @@
     });});
     // Quay lại từ cổng thanh toán: báo đúng kết quả thực tế, không khẳng định đã cộng tiền khi chưa chắc.
     const search=root.location?.search||'';
-    if(account&&/(^|[?&])topup=fail(&|$)/.test(search)){if(status)status.textContent=TOPUP_MESSAGES.fail;}
+    if(account&&/(^|[?&])topup=reconciliation(&|$)/.test(search)){if(status)status.textContent='Tiền đã nhận, khoản nạp đang chờ đối soát. Vui lòng liên hệ nhân viên và cung cấp mã giao dịch; không thanh toán lại.';}
+    else if(account&&/(^|[?&])topup=fail(&|$)/.test(search)){if(status)status.textContent=TOPUP_MESSAGES.fail;}
     else if(account&&/(^|[?&])topup=1(&|$)/.test(search))run(null,async()=>{
       const result=await topupReturnFlow({client,cardId:account.dataset.cardId,serverBalance:Number(account.dataset.serverBalance)});
       if(stale)return;

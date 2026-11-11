@@ -64,6 +64,14 @@ it('positive balance requires explicit refund and concurrent retries create one 
   assert.equal((await post(body)).http,409);const refund=await Tx.find({cardId:c.cardId});assert.equal(refund.length,1);assert.equal(refund[0].type,'debit');assert.equal(refund[0].source,'refund');assert.equal(refund[0].status,'done');assert.equal(refund[0].amount,45000);assert.equal(refund[0].balanceAfter,0);assert.equal((await Card.findById(c.id)).balance,0);assert.equal(await Log.countDocuments({cardId:c.cardId,action:'revoke',result:'success'}),1);
 });
 it('zero balance revoke never creates a zero amount refund',async()=>{const c=await card();assert.equal((await post({cardId:c.cardId,action:'revoke',reason:'Mất',refunded:true})).code,'success');assert.equal(await Tx.countDocuments({cardId:c.cardId}),0);});
+it('unresolved received gateway money blocks revoke without refunding or dropping its obligation',async()=>{
+  const c=await card();
+  const tx=await Tx.create({cardId:c.cardId,txRef:crypto.randomBytes(8).toString('hex'),type:'credit',source:'zalopay',amount:1000000,status:'reconciliation',paymentReceivedAt:new Date(),reconciliationReason:'wallet-cap'});
+  assert.equal((await post({cardId:c.cardId,action:'revoke',reason:'Mất',refunded:true})).http,409);
+  assert.equal((await Card.findById(c.id)).status,'active');
+  assert.equal((await Tx.findById(tx.id)).status,'reconciliation');
+  assert.equal(await Tx.countDocuments({source:'refund'}),0);
+});
 it('anonymous prepared state sync cannot veto privileged revoke or later unlock the revoked card',async()=>{
   const c=await card({balance:45000});
   async function anonymous(endpoint,body){const response=await fetch(base+'/card-api/'+endpoint,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});return {http:response.status,...await response.json()};}

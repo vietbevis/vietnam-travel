@@ -75,6 +75,55 @@ function vnpQuery(tx,extra={}) {
 }
 const status=async tx=>(await Tx.findById(tx.id).lean()).status;
 
+it('late callback over cap records one durable reconciliation obligation and never queues credit',async()=> {
+  await Card.updateOne({cardId},{$set:{balance:49000000}});
+  const late=await makeTx({amount:1000000});await backdate(late,30);await E.expireStaleTopups(cardId);
+  await makeTx({amount:1000000,status:'pending-card',source:'cash'});
+  for(let i=0;i<3;i++) assert.equal((await post('/card-api/topup-zalopay-result',zaloBody(late),null)).return_code,1);
+  const stored=await Tx.findById(late.id).lean();
+  assert.equal(stored.status,'reconciliation');
+  assert.equal(stored.reconciliationReason,'wallet-cap');
+  assert.ok(stored.paymentReceivedAt);
+  assert.equal(await CardLog.countDocuments({action:'card-topup-reconciliation','detail.txRef':late.txRef}),1);
+  assert.equal(await Tx.countDocuments({status:'pending-card'}),1);
+});
+it('concurrent expired callbacks reserve available wallet capacity only once',async()=> {
+  await Card.updateOne({cardId},{$set:{balance:49000000}});
+  const rows=await Promise.all([makeTx({amount:1000000}),makeTx({amount:1000000,source:'vnpay'})]);
+  for(const tx of rows)await backdate(tx,30);
+  await E.expireStaleTopups(cardId);
+  await Promise.all([post('/card-api/topup-zalopay-result',zaloBody(rows[0]),null),get('/card-api/topup-vnpay-result?'+vnpQuery(rows[1]))]);
+  assert.equal(await Tx.countDocuments({status:'pending-card'}),1);
+  assert.equal(await Tx.countDocuments({status:'reconciliation'}),1);
+});
+it('fresh callback on an unavailable card records money for reconciliation',async()=> {
+  for(const change of [{status:'locked'},{status:'revoked',isCurrent:false},{isCurrent:false}]) {
+    await Tx.deleteMany({});await Card.updateOne({cardId},{$set:{status:'active',isCurrent:true,...change}});
+    const tx=await makeTx({source:'vnpay'});
+    assert.equal((await get('/card-api/topup-vnpay-result?'+vnpQuery(tx))).location,'/account/card?topup=reconciliation');
+    const stored=await Tx.findById(tx.id).lean();
+    assert.equal(stored.status,'reconciliation');assert.ok(stored.paymentReceivedAt);
+    assert.equal(stored.reconciliationReason,'card-unavailable');
+  }
+});
+it('verified success after a gateway failure preserves received money without automatic credit',async()=> {
+  const tx=await makeTx({status:'failed',failReason:'gateway'});
+  assert.equal((await post('/card-api/topup-zalopay-result',zaloBody(tx),null)).return_code,1);
+  const stored=await Tx.findById(tx.id).lean();
+  assert.equal(stored.status,'reconciliation');assert.equal(stored.reconciliationReason,'gateway-conflict');assert.ok(stored.paymentReceivedAt);
+});
+it('a callback audit write failure rolls back payment evidence and a retry records it once',async t=> {
+  const tx=await makeTx();
+  const audit=t.mock.method(CardLog,'create',async()=>{throw new Error('Lỗi nhật ký fixture');});
+  assert.equal((await post('/card-api/topup-zalopay-result',zaloBody(tx),null)).return_code,0);
+  assert.equal(await status(tx),'awaiting-payment');
+  assert.equal((await Tx.findById(tx.id)).paymentReceivedAt,undefined);
+  audit.mock.restore();
+  for(let i=0;i<2;i++)assert.equal((await post('/card-api/topup-zalopay-result',zaloBody(tx),null)).return_code,1);
+  assert.equal(await status(tx),'pending-card');
+  assert.equal(await CardLog.countDocuments({action:'card-topup-paid','detail.txRef':tx.txRef}),1);
+});
+
 it('paidTwiceCreditsOnce',async()=> {
   const tx=await makeTx();
   assert.equal(await E.markTopupPaid(tx.id,'zalopay'),true);
@@ -188,12 +237,15 @@ it('sync never plans a credit that would push the chip over 50 000 000 and logs 
   assert.equal(stored.status,'pending-card');assert.equal(stored.signedOpId,undefined);
   assert.equal(await CardLog.countDocuments({action:'card-sync-credit-held'}),1);
 });
-it('gateway failure leaves no awaiting-payment transaction',async()=> {
+it('gateway failure retains its identity for a possible late successful callback',async()=> {
   axios.post=async()=>({data:{return_code:2}});
   try {
     const r=await post('/card-api/topup',{amount:100000,method:'zalopay'});
     assert.equal(r.code,'error');
-    assert.equal(await Tx.countDocuments(),0);
+    const tx=await Tx.findOne();
+    assert.deepEqual([tx.status,tx.failReason],['failed','gateway']);
+    assert.equal((await post('/card-api/topup-zalopay-result',zaloBody(tx),null)).return_code,1);
+    assert.equal(await status(tx),'reconciliation');
   } finally {
     axios.post=async(url,body,options)=>{zaloCalls.push(options.params);return{data:{return_code:1,order_url:'https://zalo.example.invalid/checkout'}};};
   }
@@ -275,15 +327,16 @@ it('gateway requests carry a 15 minute expiry for top-up only',async()=> {
   await require('../../helpers/zalopay.helper').createOrder({appUser:'0901111111-x',amount:10000,description:'d',redirectUrl:'https://s/r',callbackPath:'/order/payment-zalopay-result'});
   assert.ok(!('expire_duration_seconds' in zaloCalls.at(-1)));
 });
-it('verified VNPay failure closes the tx as failed and a later success never re-credits it',async()=> {
+it('verified VNPay failure closes the tx and a later success records reconciliation without credit',async()=> {
   const tx=await makeTx({source:'vnpay'});
   const r=await get('/card-api/topup-vnpay-result?'+vnpQuery(tx,{vnp_ResponseCode:'24'}));
   assert.equal(r.location,'/account/card?topup=fail');
   const stored=await Tx.findById(tx.id).lean();
   assert.deepEqual([stored.status,stored.failReason],['failed','gateway']);
   const later=await get('/card-api/topup-vnpay-result?'+vnpQuery(tx));
-  assert.notEqual(later.location,'/account/card?topup=1');
-  assert.equal(await status(tx),'failed');
+  assert.equal(later.location,'/account/card?topup=reconciliation');
+  assert.equal(await status(tx),'reconciliation');
+  assert.ok((await Tx.findById(tx.id)).paymentReceivedAt);
 });
 it('stale awaiting-payment rows stop blocking replace and revoke checks, fresh ones still count',async()=> {
   const stale=await makeTx(),fresh=await makeTx();
@@ -308,23 +361,25 @@ it('late paid callback for an expired tx is honoured once when the card is activ
   assert.equal((await get('/card-api/topup-vnpay-result?'+vnpQuery(vn))).location,'/account/card?topup=1');
   assert.equal(await status(vn),'pending-card');
 });
-it('late paid callback after card is no longer active or current needs manual reconciliation and leaves tx untouched',async()=> {
+it('late paid callback after card is no longer active or current records one durable reconciliation',async()=> {
   for(const change of [{status:'locked'},{status:'revoked'},{isCurrent:false}]) {
     await Tx.deleteMany({});await CardLog.deleteMany({});
     await Card.updateOne({cardId},{$set:{status:'active',isCurrent:true}});
     const tx=await makeTx();await backdate(tx,30);await E.expireStaleTopups(cardId);
     await Card.updateOne({cardId},{$set:change});
-    assert.notEqual((await post('/card-api/topup-zalopay-result',zaloBody(tx),null)).return_code,1);
+    for(let i=0;i<2;i++)assert.equal((await post('/card-api/topup-zalopay-result',zaloBody(tx),null)).return_code,1);
     const stored=await Tx.findById(tx.id).lean();
-    assert.deepEqual([stored.status,stored.failReason],['failed','expired']);
-    const entry=await CardLog.findOne({result:'fail','detail.reason':/đối soát thủ công/});
+    assert.deepEqual([stored.status,stored.reconciliationReason],['reconciliation','card-unavailable']);
+    assert.ok(stored.paymentReceivedAt);
+    assert.equal(await CardLog.countDocuments({action:'card-topup-reconciliation'}),1);
+    const entry=await CardLog.findOne({action:'card-topup-reconciliation'});
     assert.ok(entry);assert.equal(entry.detail.txRef,tx.txRef);assert.equal(entry.detail.amount,tx.amount);
   }
 });
-it('failed for a real gateway failure is never re-credited by zalopay callback',async()=> {
+it('gateway failure followed by successful zalopay callback records money for reconciliation',async()=> {
   const tx=await makeTx({status:'failed',failReason:'gateway'});
-  assert.notEqual((await post('/card-api/topup-zalopay-result',zaloBody(tx),null)).return_code,1);
-  assert.equal(await status(tx),'failed');
+  assert.equal((await post('/card-api/topup-zalopay-result',zaloBody(tx),null)).return_code,1);
+  assert.equal(await status(tx),'reconciliation');
 });
 it('every callback and return rejection writes a failure CardLog without secrets',async()=> {
   const tx=await makeTx(),vn=await makeTx({source:'vnpay'});

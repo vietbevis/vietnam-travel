@@ -475,18 +475,17 @@ module.exports.topupPost=customerHandler(customerValidation.topup,'card-topup-pr
   }
   const redirectUrl=body.method==='zalopay'?await topupZaloPay(tx):topupVnpay(tx,req);
   if(!redirectUrl) {
-    // Chưa có tiền nào đi qua cổng: bỏ giao dịch chờ để không để lại rác.
-    await Tx.deleteOne({_id:tx._id,status:'awaiting-payment'});
+    // Timeout không chứng minh cổng chưa nhận lệnh. Giữ identity để callback đến muộn còn đối soát được.
+    await E.markTopupFailed(tx._id,body.method);
     throw refused('GATEWAY_UNAVAILABLE','Không thể kết nối cổng thanh toán, vui lòng thử lại sau.');
   }
   await cardLog.write({action:'card-topup-prepare',cardId:req.card.cardId,actorType:'customer',actorId:customerId,result:'success',detail:{txRef:tx.txRef,amount:tx.amount,method:body.method},req});
   res.json({code:'success',message:'Đã tạo yêu cầu nạp ví.',redirectUrl});
 },true);
 // Ghi nhật ký khi khoản nạp chuyển sang chờ ghi thẻ (chỉ lần chuyển đầu tiên).
-const topupPaidLog=(tx,source,req)=>cardLog.write({action:'card-topup-paid',cardId:tx.cardId,actorType:'system',result:'success',detail:{txRef:tx.txRef,amount:tx.amount,source},req});
 // Mọi từ chối/thất bại của callback hoặc return đều có dấu vết; chỉ ghi lý do, txRef, số tiền (không ghi chữ ký).
 const topupFailLog=(req,source,reason,tx,extra={})=>cardLog.write({action:'card-topup-callback',cardId:tx?.cardId,actorType:'system',result:'fail',detail:{source,reason,...(tx?{txRef:tx.txRef,amount:tx.amount}:{}),...extra},req});
-const PAID_STATES=['pending-card','sent','done'];
+const PAID_STATES=['pending-card','sent','done','reconciliation'];
 // Đã thu tiền: đang/đã ghi thẻ, đã ký chờ biên nhận, hoặc đã chuyển sang thẻ cấp lại/hoàn tiền mặt khi thu hồi.
 const PAID_MATCH=[{status:{$in:PAID_STATES}},{status:'failed',signedOpId:{$exists:true}},{status:'failed',failReason:{$in:['moved','refunded']}}];
 // Tiền đã thu nhưng khoản nạp đã đóng (hết hạn) và thẻ không còn nhận được: cần nhân viên đối soát.
@@ -510,10 +509,9 @@ module.exports.topupZaloPayResult=async(req,res)=> {
       await topupFailLog(req,'zalopay','không tìm thấy khoản nạp khớp hoặc trạng thái không hợp lệ',undefined,{txId:match[1],amount:verified.data.amount});
       return res.json({return_code:-1,return_message:'invalid payment'});
     }
-    if(await E.markTopupPaid(tx._id,'zalopay'))
-      await topupPaidLog(tx,'zalopay',req);
+    const changed=await E.markTopupPaid(tx._id,'zalopay',req);
     // Callback lặp chỉ được ACK khi cùng identity/amount đã ở trạng thái đã thanh toán.
-    else if(!await Tx.exists({...identity,$or:PAID_MATCH})) {
+    if(!changed&&!await Tx.exists({...identity,$or:PAID_MATCH})) {
       if(tx.status==='failed'&&tx.failReason==='expired')
         await topupManual(req,'zalopay',tx);
       else
@@ -548,21 +546,21 @@ module.exports.topupVnpayResult=async(req,res)=> {
       return res.redirect('/account/card');
     }
     if(!verified.success) {
-      // Cổng báo thất bại (đã ký): đóng khoản chờ, không bao giờ nạp lại.
+      // Cổng báo thất bại (đã ký): đóng khoản chờ; nếu sau đó báo success thì giữ nghĩa vụ đối soát.
       await E.markTopupFailed(tx._id,'vnpay');
       await topupFailLog(req,'vnpay','thanh toán không thành công',tx,{responseCode:String(req.query.vnp_ResponseCode||'')});
       return res.redirect('/account/card?topup=fail');
     }
-    if(await E.markTopupPaid(tx._id,'vnpay'))
-      await topupPaidLog(tx,'vnpay',req);
-    else if(!await Tx.exists({...identity,$or:PAID_MATCH})) {
+    const changed=await E.markTopupPaid(tx._id,'vnpay',req);
+    if(!changed&&!await Tx.exists({...identity,$or:PAID_MATCH})) {
       if(tx.status==='failed'&&tx.failReason==='expired')
         await topupManual(req,'vnpay',tx);
       else
         await topupFailLog(req,'vnpay','khoản nạp đã đóng, không cộng tiền',tx);
       return res.redirect('/account/card?topup=fail');
     }
-    return res.redirect(TOPUP_RETURN_PATH);
+    const recorded=await Tx.findById(tx._id).lean();
+    return res.redirect(recorded.status==='reconciliation'?'/account/card?topup=reconciliation':TOPUP_RETURN_PATH);
   }
   catch {
     await topupFailLog(req,'vnpay','lỗi xử lý return',tx);

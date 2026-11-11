@@ -6,7 +6,10 @@ const schema = new mongoose.Schema({
   source:{type:String,required:true,enum:['cash','zalopay','vnpay','order','transfer','refund']},
   amount:{type:Number,required:true,min:1,max:50_000_000,validate:Number.isSafeInteger},
   orderId:String,
-  status:{type:String,required:true,enum:['awaiting-payment','pending-card','sent','done','failed'],default:'pending-card'},
+  status:{type:String,required:true,enum:['awaiting-payment','pending-card','sent','done','failed','reconciliation'],default:'pending-card'},
+  // Tiền cổng đã thu nhưng chưa được phép ghi ví: giữ nghĩa vụ trên giao dịch gốc, không tự hoàn/chuyển tiền.
+  paymentReceivedAt:Date,
+  reconciliationReason:{type:String,enum:['wallet-cap','card-unavailable','gateway-conflict']},
   // Lý do giao dịch bị đóng: nạp online hết hạn/cổng báo thất bại; giao dịch chưa ký bị huỷ (voided),
   // chuyển sang thẻ mới khi cấp lại (moved), đã hoàn tiền mặt khi thu hồi (refunded) hoặc debit đã ký nhưng
   // thẻ chứng minh chưa từng nhận (not-on-card: GET_RECEIPT 6A88 sau khi đổi challenge).

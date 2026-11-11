@@ -67,7 +67,7 @@ function replacementPermission(req){
 }
 // Nghĩa vụ còn cản thu hồi/cấp lại: chờ cổng, đã gửi, debit chờ thẻ, hoặc mọi giao dịch đã ký chưa done.
 // Credit pending-card chưa ký thì không cản: cấp lại chuyển sang thẻ mới, thu hồi hoàn tiền cùng số dư (Ruling 13).
-const liabilityFilter=cardId=>({cardId,status:{$ne:'done'},$or:[{status:{$in:['awaiting-payment','sent']}},{status:'pending-card',type:'debit'},{signedOpId:{$exists:true}}]});
+const liabilityFilter=cardId=>({cardId,status:{$ne:'done'},$or:[{status:{$in:['awaiting-payment','sent','reconciliation']}},{status:'pending-card',type:'debit'},{signedOpId:{$exists:true}}]});
 const unsignedCreditFilter=cardId=>({cardId,type:'credit',status:'pending-card',signedOpId:{$exists:false}});
 // Debit chưa ký chắc chắn chưa tới chip: huỷ trong cùng transaction kiểm nghĩa vụ; đã ký/đã gửi luôn giữ để khôi phục biên nhận.
 async function voidUnsigned(cardId,session,req,actorId){

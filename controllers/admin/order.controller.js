@@ -36,7 +36,7 @@ module.exports.list = async (req, res) => {
 
   for (const orderDetail of orderList) {
     orderDetail.paymentMethodName = variableConfig.paymentMethod.find(item => item.value == orderDetail.paymentMethod).label;
-    
+
     orderDetail.paymentStatusName = variableConfig.paymentStatus.find(item => item.value == orderDetail.paymentStatus).label;
 
     orderDetail.statusName = variableConfig.orderStatus.find(item => item.value == orderDetail.status).label;
@@ -138,6 +138,10 @@ module.exports.editPatch = async (req, res) => {
     const guardedChange = GUARDED_FIELDS.some(field => update[field] !== undefined);
     // Chuyển sang đã thanh toán phải đi qua settlement chung để vé điện tử và chi tiêu khách được cập nhật.
     const markPaid = update.paymentStatus === "paid";
+    // Chỉ engine xác minh biên nhận mới được ghi nhận thanh toán ví; form admin không có chứng cứ debit.
+    const manualCardPayment = (markPaid && (update.paymentMethod || order.paymentMethod) === "card") ||
+        update.paymentMethod === "card" ||
+        (order.paymentMethod === "card" && order.paymentStatus === "paid" && update.paymentMethod !== undefined);
     const fields = {...update};
     if(markPaid) {
       delete fields.paymentStatus;
@@ -153,6 +157,7 @@ module.exports.editPatch = async (req, res) => {
         if(await Tx.exists({orderId, type: "debit", status: {$ne: "done"}, $or: [{status: "sent"}, {signedOpId: {$exists: true}}]}).session(session || null)) {
           throw new EditRefusal(IN_FLIGHT_MESSAGE);
         }
+        if(manualCardPayment) throw new EditRefusal("Thanh toán ví thẻ chỉ được xác nhận bằng biên nhận trừ tiền hợp lệ!");
         // Huỷ thanh toán không hoàn tiền ví (spec 1.2); mở lại đơn đã trừ ví sẽ cho phép trừ lần hai.
         if(order.paymentStatus === "paid" && update.paymentStatus !== undefined && await Tx.exists({orderId, type: "debit", status: "done"}).session(session || null)) {
           throw new EditRefusal(PAID_BY_CARD_MESSAGE);

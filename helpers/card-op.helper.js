@@ -407,9 +407,6 @@ async function receiptInSession({card,tx,responseHex},session) {
     }).session(session).lean();
     if(!order||order.cardTxRef!==tx.txRef)
       return false;
-    if(!await settlement.markOrderPaidInSession({_id:tx.orderId,total:tx.amount},'card',session))
-      return false;
-    await Order.updateOne({_id:tx.orderId},{$set:{cardTxRef:tx.txRef}},{session});
   }
   const c=await Card.updateOne({_id:card._id,txCounter:card.txCounter,balance:card.balance},{$set:{balance:r.balanceAfter,txCounter:r.txCounter}},{session,runValidators:true});
   if(c.modifiedCount!==1)
@@ -421,6 +418,9 @@ async function receiptInSession({card,tx,responseHex},session) {
       receiptHex:responseHex
     }},{session,runValidators:true});
   if(t.modifiedCount!==1)
+    fail('OP_STATE');
+  // Settlement thấy debit done và biên nhận đã kiểm trong cùng transaction; lỗi sẽ rollback cả ví/đơn.
+  if(tx.type==='debit'&&!await settlement.markOrderPaidInSession({_id:tx.orderId,total:tx.amount},'card',session))
     fail('OP_STATE');
   await Op.updateOne({_id:tx.signedOpId,status:{$in:['prepared','failed']}},{$set:{status:'done'},$unset:{'params.encryptedPin':1}},{session});
   return true;
@@ -627,22 +627,38 @@ async function voidUnsignedDebits(filter,session) {
 // Hạn cổng 15 phút + 5 phút châu chấu: quá mức này khoản chờ thanh toán không còn là nghĩa vụ.
 const TOPUP_EXPIRE_MINUTES=15;
 const TOPUP_STALE_MS=(TOPUP_EXPIRE_MINUTES+5)*60000;
-// Chuyển khoản nạp online đã thanh toán sang chờ ghi thẻ. CAS nguyên tử: chỉ lần chuyển đầu tiên trả true.
-// Khoản đã hết hạn (failed/expired) vẫn nhận tiền muộn, nhưng chỉ khi thẻ còn active và là thẻ hiện hành.
-async function markTopupPaid(txId,source) {
+// Ghi nhận tiền đã thu đúng một lần. Khoá Card chung với nạp/ký/xác nhận/thu hồi trước khi kiểm hạn mức.
+// Khoản không thể ghi thẻ được giữ thành nghĩa vụ đối soát, không làm mất tiền và không vượt trần ví.
+async function markTopupPaid(txId,source,req) {
   if(!mongoose.isValidObjectId(txId)||!['zalopay','vnpay'].includes(source))
     return false;
   const base={_id:txId,type:'credit',source};
-  const result=await Tx.updateOne({...base,status:'awaiting-payment'},{$set:{status:'pending-card'}});
-  if(result.modifiedCount===1)
+  return transaction(async session=> {
+    const tx=await Tx.findOne(base).session(session).lean();
+    if(!tx||tx.paymentReceivedAt||tx.signedOpId||!(tx.status==='awaiting-payment'||tx.status==='failed'&&['expired','gateway'].includes(tx.failReason)))
+      return false;
+    const card=await Card.findOneAndUpdate({cardId:tx.cardId},{$inc:{__v:1}},{session,new:true}).lean();
+    let reason;
+    if(!card||card.cardType!=='customer'||card.status!=='active'||!card.isCurrent)
+      reason='card-unavailable';
+    else if(tx.failReason==='gateway')
+      reason='gateway-conflict';
+    else {
+      const [pending]=await Tx.aggregate([{$match:{_id:{$ne:tx._id},cardId:tx.cardId,type:'credit',$or:[
+        {status:{$in:['pending-card','sent']}},
+        {status:'failed',signedOpId:{$exists:true}},
+        {status:'awaiting-payment',createdAt:{$gt:new Date(Date.now()-TOPUP_STALE_MS)}}
+      ]}},{$group:{_id:null,sum:{$sum:'$amount'}}}]).session(session);
+      if(require('./wallet-rule.helper').checkOnlineTopup({balance:card.balance,pendingSum:pending?.sum||0,amount:tx.amount})) reason='wallet-cap';
+    }
+    const update={$set:{status:reason?'reconciliation':'pending-card',paymentReceivedAt:new Date()},$unset:{failReason:1}};
+    if(reason)update.$set.reconciliationReason=reason;
+    await Tx.updateOne({_id:tx._id},update,{session,runValidators:true});
+    await log.write({action:reason?'card-topup-reconciliation':'card-topup-paid',cardId:tx.cardId,actorType:'system',result:reason?'fail':'success',detail:{txRef:tx.txRef,amount:tx.amount,source,...(reason?{reason}:{})},req},{session});
     return true;
-  const late=await Tx.findOne({...base,status:'failed',failReason:'expired',signedOpId:{$exists:false}}).lean();
-  if(!late||!await Card.exists({cardId:late.cardId,cardType:'customer',status:'active',isCurrent:true}))
-    return false;
-  const claim=await Tx.updateOne({...base,status:'failed',failReason:'expired',signedOpId:{$exists:false}},{$set:{status:'pending-card'},$unset:{failReason:1}});
-  return claim.modifiedCount===1;
+  });
 }
-// Cổng báo thất bại (đã xác minh chữ ký): đóng khoản chờ thanh toán. Không bao giờ nạp lại khoản này.
+// Cổng báo thất bại (đã xác minh chữ ký): đóng khoản chờ; success đến sau được giữ để đối soát, không tự nạp ví.
 async function markTopupFailed(txId,source) {
   if(!mongoose.isValidObjectId(txId)||!['zalopay','vnpay'].includes(source))
     return false;

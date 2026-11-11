@@ -2,6 +2,14 @@ const {test}=require('node:test'),assert=require('node:assert/strict'),fs=requir
 const file='../public/assets/js/card-customer';
 const UI=fs.existsSync(require('node:path').resolve('public/assets/js/card-customer.js'))?require(file):{};
 const id='A0'.repeat(16);
+test('reconciliation return tells the customer money was received and does not attempt a credit',()=>{
+  let opens=0;
+  const f=browserFixture({openSession:async()=>{opens++;}});
+  f.window.location.search='?topup=reconciliation';
+  f.mount();
+  assert.match(f.status.textContent,/đã nhận.*đối soát/i);
+  assert.equal(opens,0);
+});
 const vm=require('node:vm');
 function browserFixture(client){
   const listeners={},nodes={},body={cleared:false,replaceChildren(){this.cleared=true;}};

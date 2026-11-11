@@ -72,7 +72,7 @@ integration('CAS không trả paid cho sai phone, amount, method, deleted hoặc
     } else assert.equal(await payment().markOrderPaid({_id:order.id},'zalopay'),false);
     await assertUnpaid(order);
   }
-  const card=await makeOrder({paymentMethod:'card'}); assert.equal(await payment().markOrderPaid({_id:card.id},'card'),true);
+  const card=await makeOrder({paymentMethod:'card'}); assert.equal(await payment().markOrderPaid({_id:card.id},'card'),false);
 });
 integration('linked thiếu customer, deleted customer hoặc overflow không lưu một phần',async()=> {
   const absent=new mongoose.Types.ObjectId().toString();

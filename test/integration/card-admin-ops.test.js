@@ -44,6 +44,17 @@ const reset=(body,options)=>post('/admin/card/reset-pin',body,options);
 const cash=(body,options)=>post('/admin/card/topup-cash',body,options);
 async function prepared(c){const r=await reset({cardId:c.cardId});assert.equal(r.code,'success',JSON.stringify(r));assert.equal((await post('/admin/card/op/sign',{opId:r.opId,challenge:'AB'.repeat(16)})).code,'success');return r.opId;}
 async function row(c,amount,extra={}){return Tx.create({cardId:c.cardId,txRef:crypto.randomBytes(8).toString('hex'),type:'credit',source:'cash',amount,status:'done',createdBy:admin.id,...extra});}
+it('late callback and cash topup share the wallet lock and cannot overbook capacity',async()=>{
+  const c=await card({balance:49000000});
+  const late=await row(c,1000000,{source:'zalopay',status:'failed',failReason:'expired'});
+  const [received,cashResult]=await Promise.all([E.markTopupPaid(late.id,'zalopay'),cash({cardId:c.cardId,amount:1000000})]);
+  assert.equal(received,true);
+  const stored=await Tx.findById(late.id);
+  assert.ok(['pending-card','reconciliation'].includes(stored.status));
+  const pending=await Tx.find({cardId:c.cardId,type:'credit',status:{$in:['pending-card','sent']}}).lean();
+  assert.equal(49000000+pending.reduce((sum,tx)=>sum+tx.amount,0),50000000);
+  assert.equal(cashResult.http,stored.status==='pending-card'?409:200);
+});
 
 // Bắt thiếu route, quyền hiện tại hoặc tin freshness do trình duyệt tự gửi.
 it('reset and cash enforce current admin permission fresh staff step-up and strict input',async()=>{

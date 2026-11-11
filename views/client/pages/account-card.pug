@@ -39,7 +39,7 @@ block main
                 td= tx.txRef
                 td= tx.type === 'credit' ? 'Nạp' : 'Trừ'
                 td= money(tx.amount)
-                td= ({'awaiting-payment':'Chờ thanh toán','pending-card':'Chờ ghi thẻ',sent:'Đang đối soát',done:'Hoàn tất',failed:'Chưa hoàn tất'})[tx.status]
+                td= ({'awaiting-payment':'Chờ thanh toán','pending-card':'Chờ ghi thẻ',sent:'Đang đối soát',done:'Hoàn tất',failed:'Chưa hoàn tất',reconciliation:'Đã nhận tiền — chờ đối soát'})[tx.status]
             if !transactions.length
               tr
                 td(colspan="5") Chưa có giao dịch.
