@@ -66,6 +66,8 @@ it('customer list permission and rendered card menus follow backend role permiss
   assert.equal(response.status,200);assert.ok(html.includes('/admin/card/list'));assert.ok(!html.includes('/admin/card/issue'));assert.ok(!html.includes('/admin/card/checkin'));assert.ok(!html.includes('/admin/card/log'));
   await Role.updateOne({_id:admin.role},{$set:{permissions:[]}});
   response=await fetch(base+'/admin/user/list',{headers:{cookie:'token='+token}});assert.equal(response.status,403);
+  // M4: đúng thông báo chung và trang không có quyền trong layout admin.
+  html=await response.text();assert.ok(html.includes('Bạn không có quyền sử dụng tính năng này!'));assert.ok(html.includes('data-no-permission'));
   await Role.updateOne({_id:admin.role},{$set:{permissions:['card-issue','card-checkin','card-log-view']}});
   response=await fetch(base+'/admin/card/issue',{headers:{cookie:'token='+token}});html=await response.text();assert.equal(response.status,200);assert.ok(html.includes('/admin/card/checkin'));assert.ok(html.includes('/admin/card/log'));assert.ok(html.includes('data-card-issue'));assert.ok(!html.includes('name="password"'));
 });

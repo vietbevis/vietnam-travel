@@ -3,7 +3,7 @@ const Card=require('../../models/card.model');
 const access=require('./card.controller');
 module.exports.list=(req,res)=>access.authenticate(req,res,async()=>{
   try{
-    if(!req.cardActor.permissions.some(permission=>['card-view','card-issue'].includes(permission)))return res.status(403).send('Bạn không có quyền xem khách hàng.');
+    if(!req.cardActor.permissions.some(permission=>['card-view','card-issue'].includes(permission)))return res.status(403).render('admin/pages/no-permission',{pageTitle:'Quản lý khách hàng',message:'Bạn không có quyền sử dụng tính năng này!'});
     const keyword=typeof req.query.keyword==='string'?req.query.keyword.trim().slice(0,120):'';
     const query={deleted:false,status:'active'};
     if(keyword){const escaped=keyword.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');query.$or=['fullName','email','phone'].map(field=>({[field]:{$regex:escaped,$options:'i'}}));}
