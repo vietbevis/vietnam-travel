@@ -132,7 +132,7 @@ function batchAgent(swFor = () => '9000') {
     return response({ responses });
   };
 }
-const receiptStep = { step: { kind: 'receipt', txRef: '33'.repeat(8), apdu: '8054000008' + '33'.repeat(8) + '00' } };
+const receiptStep = { step: { kind: 'receipt', txRef: '33'.repeat(8), signedOpId: 'b'.repeat(24), apdu: '8054000008' + '33'.repeat(8) + '00' } };
 test('sync receipt rotates the challenge in the same batch and forwards it with the raw missing-receipt SW', async () => {
   const transmit = batchAgent(ins => ins === '54' ? '6A88' : '9000');
   const { client, calls } = make((url, body) => url.endsWith('/v1/transmit') ? transmit(body) : response(url.endsWith('/next') ? receiptStep : { code: 'error', ok: false }));
@@ -141,8 +141,19 @@ test('sync receipt rotates the challenge in the same batch and forwards it with 
   assert.equal(batch.body.apdus.length, 2);
   assert.equal(batch.body.apdus[0].slice(2, 4), '30', 'GET_CHALLENGE phải đi trước GET_RECEIPT trong cùng batch');
   assert.equal(batch.body.apdus[1], receiptStep.step.apdu);
-  assert.deepEqual(calls.at(-1).body, { cardId: '11'.repeat(16), txRef: '33'.repeat(8), challenge: nonce.toUpperCase(), response: '', sw: '6A88' });
-  assert.equal(calls.at(-1).credentials, 'omit');
+  // Ruling 19: gửi kèm đúng lần ký đã quan sát và phiên đăng nhập (server chỉ mở lại cho chủ thẻ/admin hợp lệ).
+  assert.deepEqual(calls.at(-1).body, { cardId: '11'.repeat(16), txRef: '33'.repeat(8), signedOpId: 'b'.repeat(24), challenge: nonce.toUpperCase(), response: '', sw: '6A88' });
+  assert.equal(calls.at(-1).credentials, 'same-origin');
+});
+test('sync receipt refuses a malformed signedOpId and omits it when the server sends none', async () => {
+  const transmit = batchAgent(ins => ins === '54' ? '6A88' : '9000');
+  let step = { ...receiptStep.step, signedOpId: 'zz' };
+  const { client, calls } = make((url, body) => url.endsWith('/v1/transmit') ? transmit(body) : response(url.endsWith('/next') ? { step } : { code: 'error', ok: false }));
+  await assert.rejects(client.openSession(), /SERVER_RESPONSE/);
+  assert.equal(calls.filter(c => c.url.endsWith('/receipt')).length, 0);
+  step = { ...receiptStep.step }; delete step.signedOpId;
+  await assert.rejects(client.openSession(), error => error.sw === '6A88');
+  assert.equal(calls.at(-1).body.signedOpId, undefined);
 });
 test('sync continues after the server releases a transaction the card never received', async () => {
   const transmit = batchAgent(ins => ins === '54' ? '6A88' : '9000');

@@ -226,13 +226,16 @@
           if (!object(step) || !validApdu(step.apdu)) throw fail('SERVER_RESPONSE');
           if (step.kind === 'receipt') {
             if (!hex(step.txRef, 8) || step.apdu.toUpperCase() !== S.apdu(S.INS.GET_RECEIPT, 0, 0, S.fromHex(step.txRef))) throw fail('SERVER_RESPONSE');
+            if (step.signedOpId !== undefined && !hex(step.signedOpId, 12)) throw fail('SERVER_RESPONSE');
             // GET_CHALLENGE ngay trước GET_RECEIPT trong cùng một batch (agent giữ khoá thẻ, dừng ở SW lỗi đầu tiên):
             // challenge mới ghi đè challenge mà APDU đã ký cũ cần, nên khi thẻ báo 6A88 server được phép mở lại giao dịch.
             const [rotated, raw] = await transmit([S.apdu(S.INS.GET_CHALLENGE, 0, 0), step.apdu]);
             if (!raw) throw new CardError(rotated.sw);
             const fresh = S.toHex(exact(S.fromHex(rotated.data), 16));
             let result;
-            try { result = await server(base + '/receipt', { cardId: info.cardId, txRef: step.txRef, challenge: fresh, response: raw.data, sw: raw.sw }, 'omit', raw.sw !== '9000'); }
+            // Gửi kèm lần ký đã quan sát và phiên đăng nhập: server chỉ mở lại cho chủ thẻ/admin hợp lệ, đúng lần ký này.
+            const observed = step.signedOpId === undefined ? {} : { signedOpId: step.signedOpId };
+            try { result = await server(base + '/receipt', { cardId: info.cardId, txRef: step.txRef, ...observed, challenge: fresh, response: raw.data, sw: raw.sw }, credentials, raw.sw !== '9000'); }
             catch (error) { if (raw.sw === '9000') throw error; const cardError = new CardError(raw.sw); cardError.confirmationFailed = true; throw cardError; }
             if (raw.sw !== '9000' && result.released !== true) throw new CardError(raw.sw);
           } else if (step.kind === 'op' && hex(step.opId, 12)) await execute(step.apdu, base + '/confirm', { opId: step.opId }, credentials);

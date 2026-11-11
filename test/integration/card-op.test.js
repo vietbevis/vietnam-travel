@@ -491,6 +491,107 @@ it('API public sync rejects generic sensitive operation and untrusted receipt ab
     assert.equal((await Customer.findOne()).totalSpent,500000);
   });
 });
+// Ruling 19: chỉ chủ thẻ (phiên khách của đúng thẻ) hoặc admin có quyền ví và Step-up còn hạn mới mở lại được giao dịch.
+const ownerCookie=(id=ownerId)=>{process.env.JWT_SECRET='fixture-task5-secret';return{Cookie:'customerToken='+jwt.sign({customerId:id,cardId},process.env.JWT_SECRET,{expiresIn:'1d'})};};
+// C1: kẻ lạ chỉ biết cardId lấy txRef từ /sync/next công khai rồi gửi 6A88 + challenge ngẫu nhiên: không được mở lại.
+it('anonymous or foreign 6A88 with a random challenge never releases a signed debit and the victim still confirms',async()=> {
+  const{op}=await signed('debit');
+  await Customer.create({_id:'987654321098765432109876',email:'other@example.invalid'});
+  const role=await Role.create({permissions:['card-topup']});
+  const admin=await Account.create({email:'release-admin@example.invalid',role:role.id,status:'active'});
+  await Card.create({cardId:'AA'.repeat(16),ownerId:admin.id,cardType:'staff',status:'active'});
+  const adminCookie=claims=>({Cookie:'token='+jwt.sign({id:admin.id,email:admin.email,cardId:'AA'.repeat(16),...claims},process.env.JWT_SECRET)});
+  await http(async post=> {
+    const next=await post('/sync/next',{cardId,cardState:2,challenge:challengeHex});
+    assert.equal(next.body.step.kind,'receipt');
+    assert.equal(next.body.step.txRef,txRef);
+    assert.equal(next.body.step.signedOpId,op.id);
+    ownerCookie();
+    for(const headers of [{},ownerCookie('987654321098765432109876'),adminCookie({}),adminCookie({stepUpAt:Date.now()-301000})]) {
+      const out=await post('/sync/receipt',{cardId,txRef,signedOpId:op.id,challenge:crypto.randomBytes(16).toString('hex'),response:'',sw:'6A88'},headers);
+      assert.equal(out.body.released,undefined);
+      const tx=await Tx.findOne().lean();
+      assert.equal(tx.signedOpId,op.id);
+      assert.equal(tx.failReason,undefined);
+      assert.equal(tx.abandonedOpIds,undefined);
+      assert.equal((await Op.findById(op.id)).status,'prepared');
+    }
+    assert.equal(await CardLog.countDocuments({'detail.released':true}),0);
+  });
+  // APDU của nạn nhân vẫn chạy trên chip: xác nhận vẫn được ghi sổ đúng.
+  assert.equal((await E.confirmOp({opId:op.id,responseHex:receipt({type:'debit',balance:400000}),sw:'9000',...actor})).ok,true);
+  assert.equal((await Order.findOne()).paymentStatus,'paid');
+  assert.equal((await Card.findOne({cardId})).txCounter,1);
+});
+it('an admin with wallet permission and a fresh step-up may release, binding the CardLog to that admin',async()=> {
+  const{op}=await signed();
+  const role=await Role.create({permissions:['card-topup']});
+  const admin=await Account.create({email:'release-admin@example.invalid',role:role.id,status:'active'});
+  await Card.create({cardId:'AA'.repeat(16),ownerId:admin.id,cardType:'staff',status:'active'});
+  ownerCookie();
+  const headers={Cookie:'token='+jwt.sign({id:admin.id,email:admin.email,cardId:'AA'.repeat(16),stepUpAt:Date.now()},process.env.JWT_SECRET)};
+  await http(async post=> {
+    const out=await post('/sync/receipt',{cardId,txRef,signedOpId:op.id,challenge:'EF'.repeat(16),response:'',sw:'6A88'},headers);
+    assert.equal(out.body.released,true);
+  });
+  const log=await CardLog.findOne({'detail.released':true}).lean();
+  assert.equal(log.actorType,'admin');
+  assert.equal(log.actorId,admin.id);
+});
+// I1: yêu cầu mở lại trễ của tab thứ hai mang signedOpId cũ không được mở lại lần ký mới (vẫn chạy được trên chip).
+it('a stale second-tab release for an older signing never releases the newer signing',async()=> {
+  const{op}=await signed();
+  await http(async post=> {
+    const owner=ownerCookie();
+    let out=await post('/sync/receipt',{cardId,txRef,signedOpId:op.id,challenge:'E1'.repeat(16),response:'',sw:'6A88'},owner);
+    assert.equal(out.body.released,true);
+    const again=await E.createOp({cardId,type:'credit',params:{txRef},...actor});
+    await E.signOp({opId:again.id,challengeHex:'C3'.repeat(16),...actor});
+    // Tab A: challenge khác C3 nhưng gắn với lần ký cũ, hoặc không gửi signedOpId (client cũ).
+    for(const body of [{signedOpId:op.id},{}]) {
+      out=await post('/sync/receipt',{cardId,txRef,...body,challenge:'E2'.repeat(16),response:'',sw:'6A88'},owner);
+      assert.equal(out.body.released,undefined);
+      const tx=await Tx.findOne().lean();
+      assert.equal(tx.signedOpId,again.id);
+      assert.deepEqual(tx.abandonedOpIds,[op.id]);
+      assert.equal((await Op.findById(again.id)).status,'prepared');
+    }
+    assert.equal((await E.confirmOp({opId:again.id,responseHex:receipt(),sw:'9000',...actor})).ok,true);
+    assert.equal((await Card.findOne({cardId})).balance,500000);
+  });
+});
+// I2: biên nhận thẻ ký hợp lệ đến sau khi đã mở lại là bằng chứng lệch sổ: ghi nhật ký đối soát, không ghi sổ.
+it('a valid card receipt for a released transaction is logged for reconciliation without any booking',async()=> {
+  const{op}=await signed('debit');
+  const late=receipt({type:'debit',balance:400000});
+  await http(async post=> {
+    const owner=ownerCookie();
+    assert.equal((await post('/sync/receipt',{cardId,txRef,signedOpId:op.id,challenge:'E1'.repeat(16),response:'',sw:'6A88'},owner)).body.released,true);
+    // Biên nhận giả (khoá khác) không tạo bằng chứng.
+    assert.equal((await post('/sync/receipt',{cardId,txRef,response:receipt({type:'debit',balance:400000,privateKey:otherKey.privateKey}),sw:'9000'})).status,404);
+    assert.equal(await CardLog.countDocuments({'detail.releasedButApplied':true}),0);
+    const out=await post('/sync/receipt',{cardId,txRef,response:late,sw:'9000'});
+    assert.equal(out.status,404);
+  });
+  assert.equal((await E.confirmOp({opId:op.id,responseHex:late,sw:'9000',...actor})).ok,false);
+  const logs=await CardLog.find({'detail.releasedButApplied':true}).lean();
+  assert.equal(logs.length,2);
+  for(const log of logs) {
+    assert.equal(log.result,'fail');
+    assert.equal(log.cardId,cardId);
+    assert.equal(log.detail.txRef,txRef);
+    assert.equal(log.detail.type,'debit');
+    assert.equal(log.detail.amount,500000);
+    assert.equal(log.detail.txCounter,1);
+    assert.equal(log.detail.balanceAfter,400000);
+  }
+  const tx=await Tx.findOne().lean();
+  assert.equal(tx.status,'failed');
+  assert.equal(tx.failReason,'not-on-card');
+  assert.equal((await Order.findOne()).paymentStatus,'unpaid');
+  assert.equal((await Card.findOne({cardId})).balance,900000);
+  assert.equal((await Card.findOne({cardId})).txCounter||0,0);
+});
 // L7 (Ruling 17): 6A88 kèm challenge mới lấy cùng batch với GET_RECEIPT chứng minh APDU cũ không còn chạy được.
 it('receipt 6A88 after a challenge rotation releases a credit to unsigned pending-card that re-signs and applies once',async()=> {
   const{op}=await signed();
@@ -498,11 +599,12 @@ it('receipt 6A88 after a challenge rotation releases a credit to unsigned pendin
   assert.equal((await Tx.findOne()).signedChallenge,challengeHex);
   await http(async post=> {
     // Challenge trùng challenge đã ký: không chứng minh được việc xoay vòng, không mở lại.
-    let out=await post('/sync/receipt',{cardId,txRef,challenge:challengeHex,response:'',sw:'6A88'});
+    const owner=ownerCookie();
+    let out=await post('/sync/receipt',{cardId,txRef,signedOpId:op.id,challenge:challengeHex,response:'',sw:'6A88'},owner);
     assert.equal(out.body.released,undefined);
     let tx=await Tx.findOne().lean();
     assert.equal(tx.signedOpId,op.id);
-    out=await post('/sync/receipt',{cardId,txRef,challenge:rotated,response:'',sw:'6A88'});
+    out=await post('/sync/receipt',{cardId,txRef,signedOpId:op.id,challenge:rotated,response:'',sw:'6A88'},owner);
     assert.equal(out.status,200);
     assert.equal(out.body.code,'success');
     assert.equal(out.body.released,true);
@@ -520,7 +622,7 @@ it('receipt 6A88 after a challenge rotation releases a credit to unsigned pendin
     assert.equal(released[0].detail.txRef,txRef);
     assert.equal(released[0].detail.type,'credit');
     // Gửi lại cùng yêu cầu không mở lại lần nữa, không ghi thêm.
-    out=await post('/sync/receipt',{cardId,txRef,challenge:rotated,response:'',sw:'6A88'});
+    out=await post('/sync/receipt',{cardId,txRef,signedOpId:op.id,challenge:rotated,response:'',sw:'6A88'},owner);
     assert.equal(out.status,404);
     assert.equal(await CardLog.countDocuments({action:'card-receipt-recovery','detail.released':true}),1);
   });
@@ -542,10 +644,11 @@ it('receipt 6A88 after a challenge rotation closes a debit as not-on-card so syn
   await Op.deleteMany({});
   await http(async post=> {
     // Không gửi challenge (client cũ): giữ hành vi cũ, vẫn chặn đồng bộ chờ biên nhận.
-    let out=await post('/sync/receipt',{cardId,txRef,response:'',sw:'6A88'});
+    const owner=ownerCookie();
+    let out=await post('/sync/receipt',{cardId,txRef,signedOpId:op.id,response:'',sw:'6A88'},owner);
     assert.equal(out.body.released,undefined);
     assert.equal((await Tx.findOne()).signedOpId,op.id);
-    out=await post('/sync/receipt',{cardId,txRef,challenge:'EF'.repeat(16),response:'',sw:'6A88'});
+    out=await post('/sync/receipt',{cardId,txRef,signedOpId:op.id,challenge:'EF'.repeat(16),response:'',sw:'6A88'},owner);
     assert.equal(out.body.released,true);
     const tx=await Tx.findOne().lean();
     assert.equal(tx.status,'failed');
@@ -1125,6 +1228,7 @@ it('sync next throttles bursts per card and IP with a retry-later message',async
   await fixture();
   const controller=require('../../controllers/client/card-api.controller');
   const saved=controller.syncThrottle.limit;
+  const savedKeys=controller.syncThrottle.maxKeys;
   controller.syncThrottle.hits.clear();
   controller.syncThrottle.limit=3;
   try {
@@ -1139,9 +1243,15 @@ it('sync next throttles bursts per card and IP with a retry-later message',async
       // Thẻ khác từ cùng IP không bị chặn bởi bộ đếm của thẻ này.
       const other=await post('/sync/next',{cardId:'22'.repeat(16),cardState:2,challenge:'A1'.repeat(16)});
       assert.equal(other.status,200);
+      // M1: bộ đếm có giới hạn số khoá; cardId ngẫu nhiên không làm map phình vô hạn.
+      controller.syncThrottle.maxKeys=4;
+      for(let i=0;i<10;i++)
+        await post('/sync/next',{cardId:crypto.randomBytes(16).toString('hex'),cardState:2,challenge:'A1'.repeat(16)});
+      assert.ok(controller.syncThrottle.hits.size<=4);
     });
   } finally {
     controller.syncThrottle.limit=saved;
+    controller.syncThrottle.maxKeys=savedKeys;
     controller.syncThrottle.hits.clear();
   }
 });

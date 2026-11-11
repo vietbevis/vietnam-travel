@@ -31,6 +31,8 @@ const schemas={
     txRef:hex(16),
     // Challenge thẻ vừa phát trong cùng batch, ngay trước GET_RECEIPT (client cũ không gửi).
     challenge:Joi.string().pattern(/^[a-fA-F0-9]{32}$/),
+    // Lần ký mà client quan sát được trong bước receipt (/sync/next): mở lại chỉ khi vẫn đúng lần ký hiện tại.
+    signedOpId:Joi.string().pattern(/^[a-fA-F0-9]{24}$/),
     response,
     sw:hex(4)
   }).required().unknown(false)
@@ -176,15 +178,21 @@ async function owned(req,res,id,publicSync) {
   return{op,actor:resolved};
 }
 // Bộ đếm trong bộ nhớ theo (thẻ, IP): chặn gọi /sync/next dồn dập. Mỗi phiên hợp lệ tối đa 10 vòng đồng bộ.
-const syncThrottle={limit:60,windowMs:60_000,hits:new Map()};
+// Lưu ý: req.ip chỉ là IP thật của khách khi Express bật 'trust proxy' đúng với reverse proxy phía trước;
+// nếu không, mọi khách sau proxy dùng chung một IP (bộ đếm thành theo thẻ). Ở đây không tự bật 'trust proxy'.
+// Map có giới hạn số khoá: xoá khoá hết hạn trước, còn đầy thì bỏ khoá cũ nhất (Map giữ thứ tự chèn).
+const syncThrottle={limit:60,windowMs:60_000,maxKeys:10_000,hits:new Map()};
 function syncAllowed(cardId,ip) {
   const now=Date.now(),key=cardId+'|'+(ip||'');
-  if(syncThrottle.hits.size>10_000)
-    for(const [stale,entry] of syncThrottle.hits)
-      if(now-entry.start>=syncThrottle.windowMs)
-        syncThrottle.hits.delete(stale);
   let entry=syncThrottle.hits.get(key);
   if(!entry||now-entry.start>=syncThrottle.windowMs) {
+    syncThrottle.hits.delete(key);
+    if(syncThrottle.hits.size>=syncThrottle.maxKeys)
+      for(const [stale,old] of syncThrottle.hits)
+        if(now-old.start>=syncThrottle.windowMs)
+          syncThrottle.hits.delete(stale);
+    while(syncThrottle.hits.size>=syncThrottle.maxKeys)
+      syncThrottle.hits.delete(syncThrottle.hits.keys().next().value);
     entry={start:now,count:0};
     syncThrottle.hits.set(key,entry);
   }
@@ -203,11 +211,12 @@ module.exports.next=handler('next',async(req,res,body)=> {
   const card=await Card.findOne({cardId:body.cardId.toUpperCase()}).lean();
   if(!card||!['active','locked','revoked'].includes(card.status))
     return res.json({code:'success',message:'Không có bước đồng bộ.',step:null});
-  const step=P.planNextSync({card,cardState:body.cardState,...await P.loadSyncContext(card)});
+  const context=await P.loadSyncContext(card);
+  const step=P.planNextSync({card,cardState:body.cardState,...context});
   if(!step)
     return res.json({code:'success',message:'Không có bước đồng bộ.',step:null});
   if(step.kind==='receipt')
-    return res.json({code:'success',message:'Cần khôi phục biên nhận.',step:{...step,apdu:S.apdu(S.INS.GET_RECEIPT,0,0,Buffer.from(step.txRef,'hex'))}});
+    return res.json({code:'success',message:'Cần khôi phục biên nhận.',step:{...step,...(context.sentTx?.signedOpId?{signedOpId:context.sentTx.signedOpId}:{}),apdu:S.apdu(S.INS.GET_RECEIPT,0,0,Buffer.from(step.txRef,'hex'))}});
   let binding;
   if(step.type!=='set-state') {
     let resolved;
@@ -275,11 +284,35 @@ function confirm(publicSync) {
 }
 module.exports.confirm=confirm(false);
 module.exports.syncConfirm=confirm(true);
+// Chủ thể được phép mở lại giao dịch sau 6A88: khách sở hữu đúng thẻ (phiên/JWT của thẻ này),
+// hoặc admin có quyền ví (card-topup), thẻ nhân viên hợp lệ và Step-up còn hạn. Người lạ/ẩn danh: null.
+async function releasePrincipal(req,card,tx) {
+  if(card.cardType!=='customer')
+    return null;
+  try {
+    if(req.cookies?.customerToken)
+      return await actor(req,{cardId:card.cardId,type:tx.type,params:{txRef:tx.txRef},actorType:'customer',actorId:card.ownerId});
+    if(req.cookies?.token) {
+      const resolved=await actor(req,{cardId:card.cardId,type:'credit',params:{txRef:tx.txRef},actorType:'admin'});
+      if(resolved&&adminTokenHelper.stepUp.isFresh(req))
+        return resolved;
+    }
+  }
+  catch(error) {
+    if(error?.code!=='OP_FORBIDDEN')
+      throw error;
+  }
+  return null;
+}
 module.exports.receipt=handler('receipt',async(req,res,body)=> {
   const card=await Card.findOne({cardId:body.cardId.toUpperCase()}).lean();
   const tx=await Tx.findOne({cardId:body.cardId.toUpperCase(),txRef:body.txRef.toUpperCase()}).lean();
-  if(!card||!tx||!tx.signedOpId)
+  if(!card||!tx||!tx.signedOpId) {
+    // Biên nhận thẻ ký hợp lệ cho giao dịch đã được mở lại: chỉ ghi nhật ký đối soát, không ghi sổ.
+    if(card&&tx&&!tx.signedOpId&&body.sw.toUpperCase()==='9000')
+      await E.recordLateReceipt({cardId:card.cardId,txRef:tx.txRef,responseHex:body.response,req});
     return problem(res,404,'OP_NOT_FOUND');
+  }
   let ok=false;
   if(body.sw.toUpperCase()==='9000')
     ok=await E.applyReceipt({
@@ -291,7 +324,9 @@ module.exports.receipt=handler('receipt',async(req,res,body)=> {
   else
   if(body.sw.toUpperCase()==='6A88') {
     // Có challenge mới (đã đổi cùng batch): lệnh cũ chắc chắn chưa chạy và không còn chạy được, mở lại giao dịch.
-    const released=body.challenge?await E.releaseUnappliedTx({cardId:card.cardId,txRef:tx.txRef,challengeHex:body.challenge,req}):null;
+    // Chỉ người được phép đồng bộ thẻ này (Ruling 19) và đúng lần ký client đã quan sát; còn lại giữ hành vi cũ, không mở lại.
+    const principal=body.challenge&&body.signedOpId===tx.signedOpId?await releasePrincipal(req,card,tx):null;
+    const released=principal?await E.releaseUnappliedTx({cardId:card.cardId,txRef:tx.txRef,challengeHex:body.challenge,signedOpId:body.signedOpId,actor:principal,req}):null;
     if(released)
       return res.json({
         code:'success',

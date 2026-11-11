@@ -535,6 +535,9 @@ async function confirmOpCore({opId,responseHex='',sw,actorType,actorId,req},audi
     detail:{opId:String(opId),sw,...opLogDetail(audit.op,audit.tx)},
     req
   });
+  // Xác nhận muộn cho op ví đã bị bỏ khi mở lại giao dịch (6A88): giữ bằng chứng để đối soát.
+  if(!output.ok&&audit.op?.status==='failed'&&['credit','debit'].includes(audit.op.type)&&sw.toUpperCase()==='9000')
+    await recordLateReceipt({cardId:audit.op.cardId,txRef:audit.op.params?.txRef,responseHex,opId:String(audit.op._id),req});
   if(output.ok&&output.result?.type==='reset-pin'){
     let emailStatus='not-applicable';
     if(notification){
@@ -553,13 +556,15 @@ async function confirmOpCore({opId,responseHex='',sw,actorType,actorId,req},audi
 // challenge nghĩa là lệnh đã ký chưa từng chạy và không bao giờ còn chạy được: debit → failed 'not-on-card';
 // credit → pending-card chưa ký (ký lại bằng op mới). Op cũ được giữ trong abandonedOpIds để kiểm toán.
 // Challenge mới trùng challenge đã ký (không có xoay vòng) thì không mở lại.
-async function releaseUnappliedTx({cardId,txRef,challengeHex,req}) {
-  if(!hex(cardId,32)||!hex(txRef,16)||!hex(challengeHex,32))
+// Ruling 19: bên gọi (controller) phải là chủ thể được phép đồng bộ thẻ (actor), và signedOpId phải đúng lần ký client đã
+// quan sát trong bước receipt; yêu cầu trễ của tab khác mang lần ký cũ không khớp CAS nên không mở lại lần ký mới.
+async function releaseUnappliedTx({cardId,txRef,challengeHex,signedOpId,actor,req}) {
+  if(!hex(cardId,32)||!hex(txRef,16)||!hex(challengeHex,32)||!objectId(String(signedOpId))||!actor||!['customer','admin'].includes(actor.actorType)||!objectId(String(actor.actorId)))
     return null;
   const fresh=challengeHex.toUpperCase();
   const released=await transaction(async session=> {
     const tx=await Tx.findOne({cardId:cardId.toUpperCase(),txRef:txRef.toUpperCase()}).session(session).lean();
-    if(!tx||tx.status==='done'||!tx.signedOpId)
+    if(!tx||tx.status==='done'||!tx.signedOpId||tx.signedOpId!==String(signedOpId))
       return null;
     if(tx.signedChallenge===fresh)
       return null;
@@ -579,8 +584,31 @@ async function releaseUnappliedTx({cardId,txRef,challengeHex,req}) {
     return{type:tx.type,txRef:tx.txRef,amount:tx.amount,abandonedOpId:tx.signedOpId,status:set.status};
   });
   if(released)
-    await log.write({action:'card-receipt-recovery',cardId:cardId.toUpperCase(),actorType:'system',result:'success',detail:{txRef:released.txRef,sw:'6A88',released:true,abandonedOpId:released.abandonedOpId,type:released.type,amount:released.amount,status:released.status},req});
+    await log.write({action:'card-receipt-recovery',cardId:cardId.toUpperCase(),actorType:actor.actorType,actorId:String(actor.actorId),result:'success',detail:{txRef:released.txRef,sw:'6A88',released:true,abandonedOpId:released.abandonedOpId,type:released.type,amount:released.amount,status:released.status},req});
   return released;
+}
+// Biên nhận do thẻ ký hợp lệ cho giao dịch đã được mở lại (op đã bỏ trong abandonedOpIds): bằng chứng sổ và chip lệch nhau.
+// Chỉ ghi nhật ký đối soát (txRef, loại, số tiền, bộ đếm, số dư sau); không ghi sổ, không đổi trạng thái, không đánh dấu đơn.
+async function recordLateReceipt({cardId,txRef,responseHex,opId,req}) {
+  if(!hex(cardId,32)||!hex(txRef,16)||typeof responseHex!=='string'||!responseHex)
+    return false;
+  const card=await Card.findOne({cardId:cardId.toUpperCase()}).lean();
+  const tx=await Tx.findOne({cardId:cardId.toUpperCase(),txRef:txRef.toUpperCase()}).lean();
+  if(!card?.publicKeyModulus||!tx||!Array.isArray(tx.abandonedOpIds)||!tx.abandonedOpIds.length)
+    return false;
+  if(opId!==undefined&&!tx.abandonedOpIds.includes(String(opId)))
+    return false;
+  let r;
+  try {
+    r=A.parseReceipt(responseHex);
+  }
+  catch {
+    return false;
+  }
+  if(!r||!C.verifyCardSignature(card.publicKeyModulus,r.message,r.signature)||r.cardId!==card.cardId||r.txRef!==tx.txRef||r.type!==tx.type||r.amount!==tx.amount)
+    return false;
+  await log.write({action:'card-receipt-recovery',cardId:card.cardId,actorType:'system',result:'fail',detail:{txRef:tx.txRef,type:tx.type,amount:tx.amount,txCounter:r.txCounter,balanceAfter:r.balanceAfter,releasedButApplied:true,abandonedOpIds:tx.abandonedOpIds,...(opId!==undefined?{opId:String(opId)}:{}),reason:'thẻ đã áp dụng giao dịch đã được mở lại, cần đối soát thủ công'},req});
+  return true;
 }
 // Giao dịch đã ký (signedOpId) hoặc đã gửi xuống thẻ mà chưa done: chỉ biên nhận của thẻ mới kết thúc được, không bao giờ huỷ hay ký lại.
 const unresolvedFilter=extra=>({...extra,status:{$ne:'done'},$or:[{status:'sent'},{signedOpId:{$exists:true}}]});
@@ -641,6 +669,7 @@ module.exports={
   confirmOp,
   applyReceipt,
   releaseUnappliedTx,
+  recordLateReceipt,
   markTopupPaid,
   markTopupFailed,
   expireStaleTopups,
