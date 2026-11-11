@@ -115,7 +115,7 @@ Hướng dẫn dựng toàn bộ hệ thống (web + MongoDB + Card Agent) để
    - Unit: `AGENT_URL=http://127.0.0.1:31999 npm test` (`AGENT_URL` trỏ tới agent `--sim` đang chạy; thiếu thì các test cần agent bị bỏ qua).
    - Integration: `TEST_DATABASE=mongodb://127.0.0.1:27018/vietnam-travel-smartcard-test npm run test:integration`.
      Chỉ chấp nhận Mongo loopback, replica set và đúng database `vietnam-travel-smartcard-test`; không có `TEST_DATABASE` thì các test được `skip`.
-   - Applet và agent: `cd smartcard && sh ./gradlew test`.
+   - Applet và agent: `cd smartcard && ./gradlew test`.
 
 ### Thống kê thẻ trên dashboard (A11)
 
