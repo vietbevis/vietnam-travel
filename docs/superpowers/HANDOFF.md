@@ -1,6 +1,6 @@
 # Bàn giao: Thẻ Thành viên Du lịch (Java Card)
 
-Tài liệu này dành cho thành viên nhận tiếp phần còn lại của dự án. Ngày lập: 2026-11-06. Nhánh làm việc: `feature/smartcard` (tách từ `main`).
+Tài liệu này dành cho thành viên nhận tiếp phần còn lại của dự án. Ngày lập: 2026-11-06, cập nhật 2026-11-11. Nhánh làm việc: `feature/smartcard` (tách từ `main`).
 
 Dự án là web du lịch Node/Express + Mongo + Pug (thanh toán ZaloPay/VNPay), được bổ sung tính năng thẻ thành viên Java Card. Đây là bài tập lớn: **chỉ cần thẻ ảo (jCardSim), không cần thẻ thật.**
 
@@ -10,7 +10,7 @@ Dự án là web du lịch Node/Express + Mongo + Pug (thanh toán ZaloPay/VNPay
 |---|---|---|
 | Plan 01: Applet Java Card | **Xong** | 266 test pass, build được file CAP |
 | Plan 02: Card Agent (cầu HTTP giữa trình duyệt và thẻ) | **Xong** | 30 test pass, chạy thử được chế độ sim |
-| Plan 03: Web (server + giao diện) | **Task 1–12 đã triển khai, kiểm thử và review** | 169 unit + 5 E2E jCardSim + 202 Mongo/HTTP integration PASS; Task 12 Edge thật 26 mục PASS; Task 13–16 chưa triển khai |
+| Plan 03: Web (server + giao diện) | **Xong cả 16 task; Task 1–12 đã rà soát lại và sửa** | 199 unit/E2E jCardSim + 289 Mongo/HTTP integration PASS (2026-11-11); nghiệm thu end-to-end trên Chrome 15 PASS + 1 NOT_RUN (cổng sandbox thật). Xem [báo cáo Task 13–16 và rà soát](reports/2026-11-11-smartcard-03-tasks-13-16-and-review.md) |
 
 **Cập nhật 2026-11-10:** Task 1 Plan 03 đã bổ sung helper giao thức/mật mã, `CardShared`, test runner, keygen và cấu hình web tối thiểu. Review độc lập: Spec PASS / Quality Approved; không phát hiện vấn đề cần sửa. Xem [báo cáo Task 1](reports/2026-11-10-smartcard-03-task-1.md).
 
@@ -34,9 +34,11 @@ Dự án là web du lịch Node/Express + Mongo + Pug (thanh toán ZaloPay/VNPay
 
 **Task 11 đã triển khai/kiểm thử và review:** sửa hồ sơ/ảnh Customer chỉ sau commit-write confirm, latest-target binding chặn ACK cũ, audit build/rejection; cấp lại bind nguồn/chủ/loại/actor với cả hai quyền và Step-up. Finish transaction giữ tiền nguồn đến lúc debit transfer done/credit pending, không credit server trước receipt; vé dùng/quá hạn không hồi sinh. Full 164 PASS (159 unit + 5 E2E), Mongo test thật 180 PASS, Edge thật 25 mục PASS: SĐT/JPEG đọc lại đúng, mất Agent sau INIT/cancel giữ nguồn 700.000đ, cấp lại slot 1, lost-confirm CREDIT rồi GET_RECEIPT đưa server=chip=700.000đ đúng một lần, vé ghi lại và chip cũ slot 0 TERMINATED 7F. Đã sửa source binding bị thiếu trong Pug và audit thiếu; kết quả review cuối ghi trong [báo cáo Task 11](reports/2026-11-10-smartcard-03-task-11.md). Cloudinary/SMTP MOCK, REAL NOT_RUN. Chỉ tiếp tục Task 12 khi được giao.
 
-**Task 12 đã triển khai/kiểm thử và review:** khách đăng nhập bằng PIN/thẻ/RSA, nonce single-use và customerToken 1 ngày, revalidate owner/card mỗi request; tài khoản server/chip, profile ba trường confirm-only và OTP báo mất purpose riêng admin. OTP HMAC, expiry/attempt/quota bền, IP được kiểm trước email, transaction lock/consume/audit giữ ví và pending. PIN sinh nhật được kiểm DOB cục bộ khi chip cho phép đọc và buộc đổi mạnh trước AUTH, cả khi hủy rồi đăng nhập lại. Full 174 PASS (169 unit +5 E2E), Mongo test thật 202 PASS, Edge thật 26 mục PASS: chip/server 700.000đ sau lost-confirm receipt, sửa hồ sơ đúng, OTP sai/hết hạn/replay và JWT cũ sau lock bị từ chối, chip LOCK03. Spec PASS / Quality Approved / SecurityApproved, các Important đã sửa. Minor pending/history cần reload sau mismatch sync; SMTP/Cloudinary MOCK, REAL NOT_RUN. Xem [báo cáo Task 12](reports/2026-11-10-smartcard-03-task-12.md). Chỉ tiếp tục Task 13 khi được giao.
+**Task 12 đã triển khai/kiểm thử và review:** khách đăng nhập bằng PIN/thẻ/RSA, nonce single-use và customerToken 1 ngày, revalidate owner/card mỗi request; tài khoản server/chip, profile ba trường confirm-only và OTP báo mất purpose riêng admin. OTP HMAC, expiry/attempt/quota bền, IP được kiểm trước email, transaction lock/consume/audit giữ ví và pending. PIN sinh nhật được kiểm DOB cục bộ khi chip cho phép đọc và buộc đổi mạnh trước AUTH, cả khi hủy rồi đăng nhập lại. Full 174 PASS (169 unit +5 E2E), Mongo test thật 202 PASS, Edge thật 26 mục PASS: chip/server 700.000đ sau lost-confirm receipt, sửa hồ sơ đúng, OTP sai/hết hạn/replay và JWT cũ sau lock bị từ chối, chip LOCK03. Spec PASS / Quality Approved / SecurityApproved, các Important đã sửa. Minor pending/history cần reload sau mismatch sync; SMTP/Cloudinary MOCK, REAL NOT_RUN. Xem [báo cáo Task 12](reports/2026-11-10-smartcard-03-task-12.md). Task 13–16 đã làm xong sau đó, xem đoạn dưới.
 
-**Điều kiện vận hành:** MongoDB standalone hiện tại chỉ phục vụ settlement đơn legacy không customerId. Engine, phát hành và đơn gắn customerId cần replica set/transaction; standalone bị từ chối để tránh ghi một phần. Test dùng replica set cô lập cổng 27018, không đổi DB website. Cloudinary thiếu cấu hình; SMTP có cấu hình nhưng chưa có địa chỉ nhận thử, upload/delivery thật NOT_RUN (Task 7 dùng MOCK; Task 8 không cần dịch vụ này). Manual gateway sandbox, Node 26 runtime và thẻ thật chưa kiểm chứng. Browser proof render layout/route/API thật trong fixture test, bỏ script/CDN không liên quan; chưa hồi quy mọi trang nghiệp vụ. Bước tiếp theo chỉ khi được giao: Task 13. Cấp lại qua Task 11 có claim/transfer riêng; phát hành thông thường không được bỏ replaceOf để vượt nghĩa vụ thẻ cũ.
+**Điều kiện vận hành:** MongoDB standalone hiện tại chỉ phục vụ settlement đơn legacy không customerId. Engine, phát hành và đơn gắn customerId cần replica set/transaction; standalone bị từ chối để tránh ghi một phần. Test dùng replica set cô lập cổng 27018, không đổi DB website. Cloudinary thiếu cấu hình; SMTP có cấu hình nhưng chưa có địa chỉ nhận thử, upload/delivery thật NOT_RUN (Task 7 dùng MOCK; Task 8 không cần dịch vụ này). Manual gateway sandbox, Node 26 runtime và thẻ thật chưa kiểm chứng. Browser proof render layout/route/API thật trong fixture test, bỏ script/CDN không liên quan; chưa hồi quy mọi trang nghiệp vụ. Ứng dụng ghi cảnh báo khi Mongo không phải replica set (không dừng app). Cấp lại qua Task 11 có claim/transfer riêng; phát hành thông thường không được bỏ replaceOf để vượt nghĩa vụ thẻ cũ.
+
+**Task 13–16 và rà soát lại (2026-11-11):** đã làm thanh toán bằng ví thẻ + giảm giá theo hạng (13), nạp ví online ZaloPay/VNPay (14), vé điện tử/check-in/hủy đơn (15), dashboard + README "Chạy toàn hệ thống" + nghiệm thu toàn bộ (16). Sau đó toàn bộ Task 1–12 được review độc lập lại: sửa 1 lỗi nghiêm trọng (thẻ kẹt vĩnh viễn khi GET_RECEIPT trả 6A88) và 8 lỗi quan trọng (thanh toán cổng mất dấu vết, số điện thoại ZaloPay, nhật ký thao tác bị từ chối, thông báo thiếu quyền, mass-assignment form tài khoản admin, kiểm tra PIN ngày sinh, spam `/sync/next`, `requiresAuth`). Các lỗi nhỏ còn lại và 19 quyết định đã đưa ra nằm trong [báo cáo](reports/2026-11-11-smartcard-03-tasks-13-16-and-review.md). Bước tiếp theo: merge/PR vào `main` khi được duyệt.
 
 **Lưu ý cho các task tiếp theo:** sync state/receipt vẫn public; ký credit/ghi/xóa vé cần current owner hoặc admin có quyền, operation bind actor. Anonymous sync trả `step:null, requiresAuth:true`; chạy lại sync sau đăng nhập. Transaction đã có `signedOpId/signedAt` nhưng chưa done cần recovery ngay cả status failed/pending-card; không xóa marker/cấp chữ ký tiền mới dựa SW hoặc TTL. Các luồng nạp/trả tiền/thu hồi/cấp lại/hủy đơn tương lai phải giữ quy tắc đối soát này. Khi không còn receipt hoặc đơn không còn khớp, cần xử lý thủ công, không tự tạo paid/balance.
 
@@ -71,7 +73,7 @@ Applet (Java Card) ⇄ APDU/PC/SC ⇄ Card Agent (Java, 127.0.0.1:31999) ⇄ fet
 - `AgentMain` cùng `agent.properties` (port, allowedOrigins, mode).
 - Đã review cả hai plan bằng subagent, đã sửa các lỗi Critical và Important.
 
-## 5. Việc cần làm tiếp: Plan 03 (web)
+## 5. Plan 03 (web): tiến độ từng task
 
 Plan 03 chia thành 16 task, dự kiến làm theo 3 đợt. Chạy tuần tự, mỗi task commit riêng.
 
@@ -94,17 +96,17 @@ Plan 03 chia thành 16 task, dự kiến làm theo 3 đợt. Chạy tuần tự,
 | 8 | **Đã triển khai/kiểm thử, review Approved** — staff card login/OTP chống bypass/Step-up; 4 unit + 27 integration mới, Edge thật 20 mục PASS |
 | 9 | **Đã triển khai/kiểm thử, review Approved** — list/detail/status/refund/audit, 7 unit + 15 integration mới, Edge thật 19 mục PASS |
 | 10 | **Đã triển khai/kiểm thử, review Approved** — reset PIN/cash cap/idempotency, 9 unit + 19 integration mới, Edge thật 22 mục PASS; SMTP MOCK |
-| 11 | Sửa hồ sơ/ảnh trên thẻ (A7) và cấp lại thẻ (A6) |
+| 11 | **Đã triển khai/kiểm thử, review Approved** — sửa hồ sơ/ảnh trên thẻ (A7) và cấp lại thẻ (A6) |
 
 **Đợt 3: Chức năng khách hàng (Task 12 đến 16)**
 
 | Task | Nội dung |
 |---|---|
 | 12 | **Đã triển khai/kiểm thử, review Approved** — đăng nhập khách bằng thẻ, tài khoản thẻ, OTP khóa thẻ; 169 unit +5 E2E +202 Mongo +26 Edge PASS |
-| 13 | Thanh toán bằng ví thẻ, giảm giá theo hạng, tự điền (U5-debit, U9, U4) |
-| 14 | Nạp ví online qua ZaloPay/VNPay (U5-credit) |
-| 15 | Vé điện tử, check-in, hủy đơn (U6, A9) |
-| 16 | Thống kê dashboard (A11) và nghiệm thu toàn bộ |
+| 13 | **Xong** — thanh toán bằng ví thẻ, giảm giá theo hạng, tự điền (U5-debit, U9, U4) |
+| 14 | **Xong** — nạp ví online qua ZaloPay/VNPay (U5-credit); sandbox thật NOT_RUN |
+| 15 | **Xong** — vé điện tử, check-in, hủy đơn (U6, A9) |
+| 16 | **Xong** — thống kê dashboard (A11) và nghiệm thu toàn bộ (15 PASS, 1 NOT_RUN) |
 
 Lưu ý quan trọng từ plan 03 (mục Global Constraints và Review Focus):
 - Không thêm dependency npm mới. Dùng `node:test`, `node:crypto`.
@@ -156,6 +158,10 @@ Các mục dưới đây đã biết rõ, không chặn việc làm plan 03.
 **Git và dọn dẹp**
 - Commit `4c4a8b0` (applet) tự nó không biên dịch được, đã được sửa ở `6e15015`. Có thể squash hai commit này nếu muốn lịch sử gọn.
 - Tên nhánh `feature/smartcard` chưa merge vào `main`. Chưa tạo PR.
+
+**Plan 03 (web)**
+- Lỗi nhỏ còn để lại, các mục NOT_RUN (cổng sandbox thật, SMTP, Cloudinary, thẻ thật) và rủi ro còn lại của việc đóng giao dịch 6A88: xem [báo cáo Task 13–16 và rà soát](reports/2026-11-11-smartcard-03-tasks-13-16-and-review.md), mục 3, 5 và 6.
+- Chạy sau proxy HTTPS cần bật Express `trust proxy`, nếu không kiểm tra Origin và giới hạn tần suất đồng bộ thấy IP/giao thức của proxy.
 
 **Bảo mật cần nhớ khi triển khai thật**
 - `smartcard/test-vectors/server-test-key.pem` chỉ dùng để test. Khóa server thật sinh bằng `npm run card:keygen` (Task 1 của plan 03), để trong `keys/` và không commit.
