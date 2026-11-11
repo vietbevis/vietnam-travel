@@ -57,6 +57,28 @@
     const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15000);
     try{const response=await fetcher(url,{method:'POST',credentials:'same-origin',redirect:'error',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:controller.signal});const data=await response.json();if(!response.ok||data.code==='error')invalid(data.message||'Không thể xử lý yêu cầu.');return data;}finally{clearTimeout(timer);}
   }
+  const TOPUP_MESSAGES={
+    fail:'Thanh toán không thành công hoặc đã hết hạn nên chưa nạp tiền vào ví. Bạn có thể thử nạp lại.',
+    waiting:'Đang chờ cổng thanh toán xác nhận. Vui lòng đợi ít phút rồi tải lại trang và cắm thẻ để nhận tiền.',
+    pending:'Khoản nạp đã được xác nhận nhưng chưa ghi được vào thẻ. Vui lòng giữ thẻ trong đầu đọc và thử lại.',
+    login:'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại bằng thẻ.',
+    'no-card':'Cắm thẻ để nhận tiền'
+  };
+  async function topupReturnFlow({client,cardId,serverBalance,fetch:fetcher=root.fetch.bind(root)}){
+    let info;
+    try{info=await client.openSession({expectedCardId:cardId});}catch{return{outcome:'no-card'};}
+    // Thẻ khác, thẻ khóa hoặc không phải thẻ khách: nói rõ lý do thay vì bảo cắm thẻ.
+    try{identity(info,cardId);}catch(error){return{outcome:'card-problem',message:error.message};}
+    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15000);
+    let data;
+    try{
+      const response=await fetcher('/account/card/snapshot',{credentials:'same-origin',cache:'no-store',redirect:'error',signal:controller.signal});
+      data=await response.json();
+      if(!response.ok||data.code!=='success')return{outcome:'login'};
+    }catch{return{outcome:'waiting'};}finally{clearTimeout(timer);}
+    if(Number.isSafeInteger(data.balance)&&data.balance>serverBalance)return{outcome:'credited',credited:data.balance-serverBalance,balance:data.balance};
+    return{outcome:data.pendingCredit>0?'pending':'waiting',balance:data.balance};
+  }
   async function readFlow({client,cardId,serverBalance,fetch:fetcher=root.fetch.bind(root),onMismatch=()=>{}}){
     identity(await client.openSession({expectedCardId:cardId,sync:false}),cardId);
     await pin(client,'Nhập PIN để đọc thẻ');
@@ -155,14 +177,14 @@
       const result=await post(root.fetch.bind(root),'/card-api/topup',{amount:Number(form.amount),method:form.method});
       if(!stale&&typeof result.redirectUrl==='string')root.location.assign(result.redirectUrl);
     });});
-    // Quay lại từ cổng thanh toán: có thẻ cắm thì đồng bộ ngay để ghi tiền vào thẻ.
-    if(account&&/(^|[?&])topup=1(&|$)/.test(root.location?.search||''))run(null,async()=>{
-      try{
-        identity(await client.openSession({expectedCardId:account.dataset.cardId}),account.dataset.cardId);
-        if(!stale&&status)status.textContent='Đã đồng bộ thẻ, tiền nạp đã được ghi vào thẻ.';
-      }catch{
-        if(!stale&&status)status.textContent='Cắm thẻ để nhận tiền';
-      }
+    // Quay lại từ cổng thanh toán: báo đúng kết quả thực tế, không khẳng định đã cộng tiền khi chưa chắc.
+    const search=root.location?.search||'';
+    if(account&&/(^|[?&])topup=fail(&|$)/.test(search)){if(status)status.textContent=TOPUP_MESSAGES.fail;}
+    else if(account&&/(^|[?&])topup=1(&|$)/.test(search))run(null,async()=>{
+      const result=await topupReturnFlow({client,cardId:account.dataset.cardId,serverBalance:Number(account.dataset.serverBalance)});
+      if(stale)return;
+      if(result.balance!==undefined){account.dataset.serverBalance=String(result.balance);text('strong[data-server-balance]',result.balance.toLocaleString('vi-VN')+' đ');}
+      if(status)status.textContent=result.outcome==='credited'?`Đã ghi ${result.credited.toLocaleString('vi-VN')} đ vào thẻ.`:result.message||TOPUP_MESSAGES[result.outcome];
     });
     const changeButton=document.querySelector('[data-card-change-pin]');if(changeButton)changeButton.addEventListener('click',()=>run(changeButton,async()=>{identity(await client.openSession({expectedCardId:account.dataset.cardId,sync:false}),account.dataset.cardId);await change(client,account.dataset.dob);if(!stale&&status)status.textContent='Đã đổi PIN.';}));
     const profile=document.querySelector('form[data-card-profile]');if(profile)profile.addEventListener('submit',event=>{event.preventDefault();run(profile.querySelector('button'),async()=>{const fields=Object.fromEntries(new root.FormData(profile));await profileFlow({client,cardId:account.dataset.cardId,fields});if(!stale)root.location.reload();});});
@@ -173,5 +195,5 @@
       });});
     }
   }
-  return{loginFlow,readFlow,profileFlow,payFlow,autofillFlow,mount};
+  return{loginFlow,readFlow,topupReturnFlow,profileFlow,payFlow,autofillFlow,mount};
 }));

@@ -314,13 +314,14 @@ async function topupZaloPay(tx) {
     amount:tx.amount,
     description:`Nạp ví thẻ ${tx.txRef}`,
     redirectUrl:`${process.env.DOMAIN_WEBSITE}${TOPUP_RETURN_PATH}`,
-    callbackPath:'/card-api/topup-zalopay-result'
+    callbackPath:'/card-api/topup-zalopay-result',
+    expireSeconds:E.TOPUP_EXPIRE_MINUTES*60
   });
 }
 function topupVnpay(tx,req) {
   const ipAddr=req.headers['x-forwarded-for']||req.socket?.remoteAddress||req.ip;
   try {
-    return vnpayHelper.buildPaymentUrl({txnRef:tx.txRef,amount:tx.amount,orderInfo:'Nap vi the '+tx.txRef,returnPath:'/card-api/topup-vnpay-result',ipAddr});
+    return vnpayHelper.buildPaymentUrl({txnRef:tx.txRef,amount:tx.amount,orderInfo:'Nap vi the '+tx.txRef,returnPath:'/card-api/topup-vnpay-result',ipAddr,expireMinutes:E.TOPUP_EXPIRE_MINUTES});
   }
   catch {
     return null;
@@ -350,50 +351,86 @@ module.exports.topupPost=customerHandler(customerValidation.topup,'card-topup-pr
 },true);
 // Ghi nhật ký khi khoản nạp chuyển sang chờ ghi thẻ (chỉ lần chuyển đầu tiên).
 const topupPaidLog=(tx,source,req)=>cardLog.write({action:'card-topup-paid',cardId:tx.cardId,actorType:'system',result:'success',detail:{txRef:tx.txRef,amount:tx.amount,source},req});
+// Mọi từ chối/thất bại của callback hoặc return đều có dấu vết; chỉ ghi lý do, txRef, số tiền (không ghi chữ ký).
+const topupFailLog=(req,source,reason,tx,extra={})=>cardLog.write({action:'card-topup-callback',cardId:tx?.cardId,actorType:'system',result:'fail',detail:{source,reason,...(tx?{txRef:tx.txRef,amount:tx.amount}:{}),...extra},req});
 const PAID_STATES=['pending-card','sent','done'];
+// Tiền đã thu nhưng khoản nạp đã đóng (hết hạn) và thẻ không còn nhận được: cần nhân viên đối soát.
+const topupManual=(req,source,tx)=>topupFailLog(req,source,'cần đối soát thủ công',tx);
 module.exports.topupZaloPayResult=async(req,res)=> {
+  let tx;
   try {
     const verified=zalopayHelper.verifyCallback(req.body);
-    if(!verified.valid)
+    if(!verified.valid) {
+      await topupFailLog(req,'zalopay','chữ ký hoặc dữ liệu callback không hợp lệ');
       return res.json({return_code:-1,return_message:'mac not equal'});
+    }
     const match=/^topup-([a-fA-F0-9]{24})$/.exec(verified.data.app_user);
-    if(!match)
+    if(!match) {
+      await topupFailLog(req,'zalopay','app_user không phải khoản nạp ví',undefined,{amount:verified.data.amount});
       return res.json({return_code:-1,return_message:'invalid payment'});
+    }
     const identity={_id:match[1],type:'credit',source:'zalopay',amount:verified.data.amount};
-    const tx=await Tx.findOne(identity).lean();
-    if(!tx||!['awaiting-payment',...PAID_STATES].includes(tx.status))
+    tx=await Tx.findOne(identity).lean();
+    if(!tx||!['awaiting-payment','failed',...PAID_STATES].includes(tx.status)) {
+      await topupFailLog(req,'zalopay','không tìm thấy khoản nạp khớp hoặc trạng thái không hợp lệ',undefined,{txId:match[1],amount:verified.data.amount});
       return res.json({return_code:-1,return_message:'invalid payment'});
+    }
     if(await E.markTopupPaid(tx._id,'zalopay'))
       await topupPaidLog(tx,'zalopay',req);
     // Callback lặp chỉ được ACK khi cùng identity/amount đã ở trạng thái đã thanh toán.
-    else if(!await Tx.exists({...identity,status:{$in:PAID_STATES}}))
+    else if(!await Tx.exists({...identity,$or:[{status:{$in:PAID_STATES}},{status:'failed',signedOpId:{$exists:true}}]})) {
+      if(tx.status==='failed'&&tx.failReason==='expired')
+        await topupManual(req,'zalopay',tx);
+      else
+        await topupFailLog(req,'zalopay','khoản nạp đã đóng, không cộng tiền',tx);
       return res.json({return_code:-1,return_message:'invalid payment'});
+    }
     return res.json({return_code:1,return_message:'success'});
   }
   catch {
+    await topupFailLog(req,'zalopay','lỗi xử lý callback',tx);
     return res.json({return_code:0,return_message:'processing failed'});
   }
 };
 module.exports.topupVnpayResult=async(req,res)=> {
+  let tx;
   try {
     const verified=vnpayHelper.verifyReturn(req.query);
     const rawAmount=req.query.vnp_Amount;
-    if(!verified.valid||!verified.success||!process.env.VNPAY_CODE||req.query.vnp_TmnCode!==process.env.VNPAY_CODE||!/^[a-fA-F0-9]{16}$/.test(verified.txnRef)||typeof rawAmount!=='string'||!/^[1-9][0-9]*$/.test(rawAmount))
+    if(!verified.valid) {
+      await topupFailLog(req,'vnpay','chữ ký return không hợp lệ');
       return res.redirect('/account/card');
-    const scaled=Number(rawAmount);
-    if(!Number.isSafeInteger(scaled)||scaled%100!==0)
+    }
+    const scaled=typeof rawAmount==='string'&&/^[1-9][0-9]*$/.test(rawAmount)?Number(rawAmount):NaN;
+    if(!process.env.VNPAY_CODE||req.query.vnp_TmnCode!==process.env.VNPAY_CODE||!/^[a-fA-F0-9]{16}$/.test(verified.txnRef)||!Number.isSafeInteger(scaled)||scaled%100!==0) {
+      await topupFailLog(req,'vnpay','merchant, mã tham chiếu hoặc số tiền không hợp lệ');
       return res.redirect('/account/card');
+    }
     const identity={txRef:verified.txnRef.toUpperCase(),type:'credit',source:'vnpay',amount:scaled/100};
-    const tx=await Tx.findOne(identity).lean();
-    if(!tx||!['awaiting-payment',...PAID_STATES].includes(tx.status))
+    tx=await Tx.findOne(identity).lean();
+    if(!tx||!['awaiting-payment','failed',...PAID_STATES].includes(tx.status)) {
+      await topupFailLog(req,'vnpay','không tìm thấy khoản nạp khớp hoặc trạng thái không hợp lệ',undefined,{txRef:identity.txRef,amount:identity.amount});
       return res.redirect('/account/card');
+    }
+    if(!verified.success) {
+      // Cổng báo thất bại (đã ký): đóng khoản chờ, không bao giờ nạp lại.
+      await E.markTopupFailed(tx._id,'vnpay');
+      await topupFailLog(req,'vnpay','thanh toán không thành công',tx,{responseCode:String(req.query.vnp_ResponseCode||'')});
+      return res.redirect('/account/card?topup=fail');
+    }
     if(await E.markTopupPaid(tx._id,'vnpay'))
       await topupPaidLog(tx,'vnpay',req);
-    else if(!await Tx.exists({...identity,status:{$in:PAID_STATES}}))
-      return res.redirect('/account/card');
+    else if(!await Tx.exists({...identity,$or:[{status:{$in:PAID_STATES}},{status:'failed',signedOpId:{$exists:true}}]})) {
+      if(tx.status==='failed'&&tx.failReason==='expired')
+        await topupManual(req,'vnpay',tx);
+      else
+        await topupFailLog(req,'vnpay','khoản nạp đã đóng, không cộng tiền',tx);
+      return res.redirect('/account/card?topup=fail');
+    }
     return res.redirect(TOPUP_RETURN_PATH);
   }
   catch {
+    await topupFailLog(req,'vnpay','lỗi xử lý return',tx);
     return res.redirect('/account/card');
   }
 };

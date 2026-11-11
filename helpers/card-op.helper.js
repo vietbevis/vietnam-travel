@@ -438,13 +438,35 @@ async function confirmOp({opId,responseHex='',sw,actorType,actorId,req}) {
   }
   return output;
 }
-// Chuyển khoản nạp online đã thanh toán từ chờ thanh toán sang chờ ghi thẻ.
-// CAS nguyên tử: chỉ lần chuyển đầu tiên trả true, callback/return lặp không cộng thêm.
+// Hạn cổng 15 phút + 5 phút châu chấu: quá mức này khoản chờ thanh toán không còn là nghĩa vụ.
+const TOPUP_EXPIRE_MINUTES=15;
+const TOPUP_STALE_MS=(TOPUP_EXPIRE_MINUTES+5)*60000;
+// Chuyển khoản nạp online đã thanh toán sang chờ ghi thẻ. CAS nguyên tử: chỉ lần chuyển đầu tiên trả true.
+// Khoản đã hết hạn (failed/expired) vẫn nhận tiền muộn, nhưng chỉ khi thẻ còn active và là thẻ hiện hành.
 async function markTopupPaid(txId,source) {
   if(!mongoose.isValidObjectId(txId)||!['zalopay','vnpay'].includes(source))
     return false;
-  const result=await Tx.updateOne({_id:txId,type:'credit',source,status:'awaiting-payment'},{$set:{status:'pending-card'}});
+  const base={_id:txId,type:'credit',source};
+  const result=await Tx.updateOne({...base,status:'awaiting-payment'},{$set:{status:'pending-card'}});
+  if(result.modifiedCount===1)
+    return true;
+  const late=await Tx.findOne({...base,status:'failed',failReason:'expired',signedOpId:{$exists:false}}).lean();
+  if(!late||!await Card.exists({cardId:late.cardId,cardType:'customer',status:'active',isCurrent:true}))
+    return false;
+  const claim=await Tx.updateOne({...base,status:'failed',failReason:'expired',signedOpId:{$exists:false}},{$set:{status:'pending-card'},$unset:{failReason:1}});
+  return claim.modifiedCount===1;
+}
+// Cổng báo thất bại (đã xác minh chữ ký): đóng khoản chờ thanh toán. Không bao giờ nạp lại khoản này.
+async function markTopupFailed(txId,source) {
+  if(!mongoose.isValidObjectId(txId)||!['zalopay','vnpay'].includes(source))
+    return false;
+  const result=await Tx.updateOne({_id:txId,type:'credit',source,status:'awaiting-payment'},{$set:{status:'failed',failReason:'gateway'}});
   return result.modifiedCount===1;
+}
+// Đóng các khoản nạp online bỏ dở (quá hạn cổng + châu chấu) trước khi kiểm tra nghĩa vụ thẻ.
+async function expireStaleTopups(cardId,session) {
+  const result=await Tx.updateMany({cardId,type:'credit',source:{$in:['zalopay','vnpay']},status:'awaiting-payment',createdAt:{$lte:new Date(Date.now()-TOPUP_STALE_MS)}},{$set:{status:'failed',failReason:'expired'}},session?{session}:{});
+  return result.modifiedCount;
 }
 module.exports={
   cardStatus:{nextStatus(current,action){
@@ -458,5 +480,8 @@ module.exports={
   signOp,
   confirmOp,
   applyReceipt,
-  markTopupPaid
+  markTopupPaid,
+  markTopupFailed,
+  expireStaleTopups,
+  TOPUP_EXPIRE_MINUTES
 };

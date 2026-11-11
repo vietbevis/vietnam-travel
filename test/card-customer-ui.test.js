@@ -46,14 +46,25 @@ test('login fails closed on profile read errors other than known initial 6985 an
   for(const initial of [false,true]){let authenticated=false;const f=fixture({openSession:async()=>({cardId:id,cardType:1,state:2,mustChangePin:initial}),readProfile:async()=>{throw Object.assign(new Error('thẻ không đọc được'),{sw:'6F00'});},authenticate:async()=>{authenticated=true;}});await assert.rejects(UI.loginFlow({client:f.client}));assert.equal(authenticated,false);}
   let authenticated=false;const f=fixture({readProfile:async()=>({fullName:'Không ngày sinh'}),authenticate:async()=>{authenticated=true;return{code:'success'};}});await UI.loginFlow({client:f.client});assert.equal(authenticated,true);
 });
-test('topup=1 return page syncs when a card is present and otherwise asks to insert the card',async()=>{
-  for(const present of [true,false]){
-    const f=fixture({openSession:async opts=>{f.calls.push(['open',opts]);if(!present)throw new Error('no card');return{cardId:id,cardType:1,state:2,mustChangePin:false};}});
-    const browser=browserFixture(f.client);browser.window.location.search='?topup=1';browser.mount();
-    await new Promise(r=>setImmediate(r));
-    assert.equal(browser.status.textContent,present?'Đã đồng bộ thẻ, tiền nạp đã được ghi vào thẻ.':'Cắm thẻ để nhận tiền');
+test('topup=1 return page reports the real outcome: credited, pending, waiting, login, wrong card, no card',async()=>{
+  const cases=[
+    ['credited',{balance:800000,pendingCredit:0},'Đã ghi 100.000 đ vào thẻ.'],
+    ['pending',{balance:700000,pendingCredit:100000},/chưa ghi được vào thẻ/],
+    ['waiting',{balance:700000,pendingCredit:0},/chờ cổng thanh toán/],
+    ['login',null,/đăng nhập lại/],
+    ['wrong',{balance:700000,pendingCredit:0},/thẻ khác/],
+    ['nocard',{balance:700000,pendingCredit:0},'Cắm thẻ để nhận tiền']
+  ];
+  for(const [name,snapshot,expected] of cases){
+    const f=fixture({openSession:async opts=>{f.calls.push(['open',opts]);if(name==='nocard')throw new Error('no card');return{cardId:name==='wrong'?'B0'.repeat(16):id,cardType:1,state:2,mustChangePin:false};}});
+    const browser=browserFixture(f.client);browser.window.location.search='?topup=1';
+    browser.window.fetch=async()=>snapshot?{ok:true,json:async()=>({code:'success',...snapshot})}:{ok:false,json:async()=>({code:'error'})};
+    browser.mount();await new Promise(r=>setImmediate(r));await new Promise(r=>setImmediate(r));
+    if(expected instanceof RegExp)assert.match(browser.status.textContent,expected);else assert.equal(browser.status.textContent,expected);
     assert.equal(f.calls.filter(call=>call[0]==='open').length,1);
   }
-  const f=fixture(),browser=browserFixture(f.client);browser.mount();await new Promise(r=>setImmediate(r));
-  assert.equal(f.calls.length,0);
+  // Return thất bại từ cổng: báo lỗi, không đụng tới thẻ.
+  const f=fixture(),failed=browserFixture(f.client);failed.window.location.search='?topup=fail';failed.mount();await new Promise(r=>setImmediate(r));
+  assert.match(failed.status.textContent,/không thành công/);assert.equal(f.calls.length,0);
+  const idle=fixture(),plain=browserFixture(idle.client);plain.mount();await new Promise(r=>setImmediate(r));assert.equal(idle.calls.length,0);
 });

@@ -8,10 +8,10 @@ const amountValid = value => Number.isSafeInteger(value) && value > 0;
 // Helper dùng chung cho order/topup; từng controller kiểm identity nghiệp vụ riêng.
 const appUserValid = value => typeof value === 'string' && /^[A-Za-z0-9+_-]{1,50}$/.test(value);
 
-module.exports.createOrder = async ({appUser,amount,description,redirectUrl,callbackPath} = {}) => {
+module.exports.createOrder = async ({appUser,amount,description,redirectUrl,callbackPath,expireSeconds} = {}) => {
   // Đọc cấu hình lúc gọi, không chụp secret khi require module.
   const {ZALOPAY_APPID:appId,ZALOPAY_KEY1:key,ZALOPAY_DOMAIN:domain,DOMAIN_WEBSITE:website} = process.env;
-  if (![appId,key,domain,website,description,redirectUrl,callbackPath].every(text) || !/^\d+$/.test(appId) || !appUserValid(appUser) || !amountValid(amount) || !callbackPath.startsWith('/')) return null;
+  if (![appId,key,domain,website,description,redirectUrl,callbackPath].every(text) || !/^\d+$/.test(appId) || !appUserValid(appUser) || !amountValid(amount) || !callbackPath.startsWith('/') || (expireSeconds !== undefined && !(Number.isSafeInteger(expireSeconds) && expireSeconds > 0))) return null;
   try {
     const order = {
       app_id:appId,
@@ -25,6 +25,8 @@ module.exports.createOrder = async ({appUser,amount,description,redirectUrl,call
       bank_code:'',
       callback_url:`${website}${callbackPath}`
     };
+    // Chỉ nạp ví đặt hạn thanh toán; luồng đơn hàng giữ nguyên tham số cũ.
+    if (expireSeconds !== undefined) order.expire_duration_seconds = expireSeconds;
     const data = [order.app_id,order.app_trans_id,order.app_user,order.amount,order.app_time,order.embed_data,order.item].join('|');
     order.mac = crypto.createHmac('sha256',key).update(data).digest('hex');
     const response = await axios.post(`${domain}/v2/create`,null,{params:order});

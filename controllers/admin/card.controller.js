@@ -66,6 +66,7 @@ function replacementPermission(req){
   if(!adminToken.stepUp.isFresh(req))fail('STEP_UP_REQUIRED',403);
 }
 async function obligations(cardId,session){
+  await E.expireStaleTopups(cardId,session);
   const liability=await Tx.exists({cardId,status:{$ne:'done'},$or:[{status:{$in:['awaiting-payment','pending-card','sent']}},{signedOpId:{$exists:true}}]}).session(session);
   const prepared=await Op.exists({cardId,status:'prepared',type:{$ne:'set-state'}}).session(session);
   if(liability||prepared)fail('RECONCILIATION_REQUIRED',409,'Thẻ còn giao dịch hoặc lệnh đã ký cần đối soát. Không được cấp lại khi chưa xác nhận kết quả.');
@@ -395,6 +396,7 @@ module.exports.statusPost=async(req,res)=>{
       const lock=await Card.updateOne({_id:card._id,status:card.status,__v:card.__v},{$inc:{__v:1}},{session});
       if(lock.modifiedCount!==1)fail('CARD_STATE',409,'Trạng thái thẻ đã thay đổi; hãy tải lại trang.');
       if(body.action==='revoke'){
+        await E.expireStaleTopups(card.cardId,session);
         const liability=await Tx.exists({cardId:card.cardId,status:{$ne:'done'},$or:[{status:{$in:['awaiting-payment','pending-card','sent']}},{signedOpId:{$exists:true}}]}).session(session);
         // Sync công khai có thể tạo set-state; lệnh này không được dùng để cản thu hồi.
         const prepared=await Op.exists({cardId:card.cardId,status:'prepared',type:{$ne:'set-state'}}).session(session);
