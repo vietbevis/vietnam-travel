@@ -373,6 +373,8 @@ const topupPaidLog=(tx,source,req)=>cardLog.write({action:'card-topup-paid',card
 // Mọi từ chối/thất bại của callback hoặc return đều có dấu vết; chỉ ghi lý do, txRef, số tiền (không ghi chữ ký).
 const topupFailLog=(req,source,reason,tx,extra={})=>cardLog.write({action:'card-topup-callback',cardId:tx?.cardId,actorType:'system',result:'fail',detail:{source,reason,...(tx?{txRef:tx.txRef,amount:tx.amount}:{}),...extra},req});
 const PAID_STATES=['pending-card','sent','done'];
+// Đã thu tiền: đang/đã ghi thẻ, đã ký chờ biên nhận, hoặc đã chuyển sang thẻ cấp lại/hoàn tiền mặt khi thu hồi.
+const PAID_MATCH=[{status:{$in:PAID_STATES}},{status:'failed',signedOpId:{$exists:true}},{status:'failed',failReason:{$in:['moved','refunded']}}];
 // Tiền đã thu nhưng khoản nạp đã đóng (hết hạn) và thẻ không còn nhận được: cần nhân viên đối soát.
 const topupManual=(req,source,tx)=>topupFailLog(req,source,'cần đối soát thủ công',tx);
 module.exports.topupZaloPayResult=async(req,res)=> {
@@ -397,7 +399,7 @@ module.exports.topupZaloPayResult=async(req,res)=> {
     if(await E.markTopupPaid(tx._id,'zalopay'))
       await topupPaidLog(tx,'zalopay',req);
     // Callback lặp chỉ được ACK khi cùng identity/amount đã ở trạng thái đã thanh toán.
-    else if(!await Tx.exists({...identity,$or:[{status:{$in:PAID_STATES}},{status:'failed',signedOpId:{$exists:true}}]})) {
+    else if(!await Tx.exists({...identity,$or:PAID_MATCH})) {
       if(tx.status==='failed'&&tx.failReason==='expired')
         await topupManual(req,'zalopay',tx);
       else
@@ -439,7 +441,7 @@ module.exports.topupVnpayResult=async(req,res)=> {
     }
     if(await E.markTopupPaid(tx._id,'vnpay'))
       await topupPaidLog(tx,'vnpay',req);
-    else if(!await Tx.exists({...identity,$or:[{status:{$in:PAID_STATES}},{status:'failed',signedOpId:{$exists:true}}]})) {
+    else if(!await Tx.exists({...identity,$or:PAID_MATCH})) {
       if(tx.status==='failed'&&tx.failReason==='expired')
         await topupManual(req,'vnpay',tx);
       else

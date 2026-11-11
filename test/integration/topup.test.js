@@ -293,3 +293,18 @@ it('every callback and return rejection writes a failure CardLog without secrets
   assert.ok(entries.every(e=>e.detail.reason&&!JSON.stringify(e).includes('fixture-')&&!JSON.stringify(e).includes(bad.mac)));
   assert.ok(entries.some(e=>e.detail.txRef===vn.txRef&&e.detail.amount===vn.amount));
 });
+
+it('a repeated callback for a paid top-up later moved to a replacement card or refunded is acknowledged without crediting again',async()=> {
+  for(const failReason of ['moved','refunded']) {
+    await Tx.deleteMany({});
+    const tx=await makeTx();
+    assert.equal((await post('/card-api/topup-zalopay-result',zaloBody(tx),null)).return_code,1);
+    await Tx.updateOne({_id:tx._id},{$set:{status:'failed',failReason}});
+    assert.equal((await post('/card-api/topup-zalopay-result',zaloBody(tx),null)).return_code,1);
+    const vn=await makeTx({source:'vnpay'});
+    assert.equal((await get('/card-api/topup-vnpay-result?'+vnpQuery(vn))).location,'/account/card?topup=1');
+    await Tx.updateOne({_id:vn._id},{$set:{status:'failed',failReason}});
+    assert.equal((await get('/card-api/topup-vnpay-result?'+vnpQuery(vn))).location,'/account/card?topup=1');
+    assert.equal(await Tx.countDocuments({status:{$ne:'failed'}}),0);
+  }
+});

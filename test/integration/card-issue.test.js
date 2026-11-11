@@ -150,6 +150,17 @@ it('owner asset boundary rejects omitted predecessor with balance pending funds 
   }
   const allowed=await post('issue/prepare',payload);assert.equal(allowed.code,'success');
 });
+it('closed unsigned transactions on a revoked predecessor do not defer a new issuance but signed ones do',async()=>{
+  const Tx=require('../../models/card-transaction.model');
+  const customer=await Customer.create({fullName:'Closed Owner',email:'closed@example.invalid'});
+  const old=await Card.create({cardId:'98'.repeat(16),ownerId:customer.id,cardType:'customer',status:'revoked',isCurrent:false,balance:0});
+  const payload=body({customer:undefined,customerId:customer.id});
+  let n=0;for(const failReason of ['voided','moved','refunded','expired','gateway'])await Tx.create({cardId:old.cardId,txRef:'7'+String(++n).padStart(15,'0'),type:failReason==='voided'?'debit':'credit',source:failReason==='voided'?'order':'zalopay',status:'failed',failReason,amount:10000});
+  const signed=await Tx.create({cardId:old.cardId,txRef:'76'.repeat(8),type:'credit',source:'cash',status:'failed',signedOpId:'33'.repeat(12),amount:10000});
+  assert.equal((await post('issue/prepare',payload)).errorCode,'REPLACEMENT_DEFERRED');
+  await Tx.deleteOne({_id:signed._id});
+  const allowed=await post('issue/prepare',payload);assert.equal(allowed.code,'success',JSON.stringify(allowed));
+});
 it('actual HTTP response lost after prepare commit is recovered before Agent work and cancels safely',async()=>{
   const browser=require('../../public/admin/assets/js/card-admin');let dropped=false,transmitted=false;
   const payload=body({requestId:'B8'.repeat(16)});delete payload.photoBase64;payload.photo=Buffer.from(photoBase64,'base64');

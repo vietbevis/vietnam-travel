@@ -65,9 +65,19 @@ function replacementPermission(req){
   requirePermission(req,'card-issue');requirePermission(req,'card-revoke');
   if(!adminToken.stepUp.isFresh(req))fail('STEP_UP_REQUIRED',403);
 }
-async function obligations(cardId,session){
+// Nghĩa vụ còn cản thu hồi/cấp lại: chờ cổng, đã gửi, debit chờ thẻ, hoặc mọi giao dịch đã ký chưa done.
+// Credit pending-card chưa ký thì không cản: cấp lại chuyển sang thẻ mới, thu hồi hoàn tiền cùng số dư (Ruling 13).
+const liabilityFilter=cardId=>({cardId,status:{$ne:'done'},$or:[{status:{$in:['awaiting-payment','sent']}},{status:'pending-card',type:'debit'},{signedOpId:{$exists:true}}]});
+const unsignedCreditFilter=cardId=>({cardId,type:'credit',status:'pending-card',signedOpId:{$exists:false}});
+// Debit chưa ký chắc chắn chưa tới chip: huỷ trong cùng transaction kiểm nghĩa vụ; đã ký/đã gửi luôn giữ để khôi phục biên nhận.
+async function voidUnsigned(cardId,session,req,actorId){
+  const voided=await E.voidUnsignedDebits({cardId},session);
+  if(voided.length)await cardLog.write({action:'card-debit-void',cardId,actorType:'admin',actorId,result:'success',detail:{reason:'card-close',txRefs:voided.map(tx=>tx.txRef),orderIds:voided.map(tx=>tx.orderId)},req},{session});
+}
+async function obligations(cardId,session,req,actorId){
   await E.expireStaleTopups(cardId,session);
-  const liability=await Tx.exists({cardId,status:{$ne:'done'},$or:[{status:{$in:['awaiting-payment','pending-card','sent']}},{signedOpId:{$exists:true}}]}).session(session);
+  await voidUnsigned(cardId,session,req,actorId);
+  const liability=await Tx.exists(liabilityFilter(cardId)).session(session);
   const prepared=await Op.exists({cardId,status:'prepared',type:{$ne:'set-state'}}).session(session);
   if(liability||prepared)fail('RECONCILIATION_REQUIRED',409,'Thẻ còn giao dịch hoặc lệnh đã ký cần đối soát. Không được cấp lại khi chưa xác nhận kết quả.');
 }
@@ -84,10 +94,10 @@ async function replacement(body,ownerId,session,actorId){
       const target=await Card.findOne({cardId:source.replacement.targetCardId}).session(session).lean();
       if(target&&target.status!=='failed')fail('CURRENT_CARD');
     }
-    await obligations(source.cardId,session);
+    await obligations(source.cardId,session,null,actorId);
     return source;
   }
-  if(previous.some(card=>card.replacement&&!card.replacement.completedAt)||previous.length&&(previous.some(card=>card.balance>0)||await Tx.exists({cardId:{$in:previous.map(card=>card.cardId)},status:{$ne:'done'}}).session(session)||body.ownerType==='customer'&&await Order.exists({customerId:ownerId,deleted:false,items:{$elemMatch:{ticketStatus:{$in:['pending','written','used','pending-delete']}}}}).session(session)))fail('REPLACEMENT_DEFERRED',409,'Thẻ cũ còn tài sản hoặc yêu cầu cấp lại; hãy dùng Cấp lại từ thẻ nguồn.');
+  if(previous.some(card=>card.replacement&&!card.replacement.completedAt)||previous.length&&(previous.some(card=>card.balance>0)||await Tx.exists({cardId:{$in:previous.map(card=>card.cardId)},status:{$ne:'done'},$nor:[{status:'failed',signedOpId:{$exists:false}}]}).session(session)||body.ownerType==='customer'&&await Order.exists({customerId:ownerId,deleted:false,items:{$elemMatch:{ticketStatus:{$in:['pending','written','used','pending-delete']}}}}).session(session)))fail('REPLACEMENT_DEFERRED',409,'Thẻ cũ còn tài sản hoặc yêu cầu cấp lại; hãy dùng Cấp lại từ thẻ nguồn.');
 }
 async function replacementSource(card,actorId,session){
   const source=await Card.findOne({cardId:card.replaceOf,ownerId:card.ownerId,cardType:card.cardType,status:'revoked',isCurrent:false,revokedReason:'replaced','replacement.actorId':actorId,'replacement.targetCardId':card.cardId,'replacement.completedAt':{$exists:false}}).session(session).lean();
@@ -95,12 +105,21 @@ async function replacementSource(card,actorId,session){
   return source;
 }
 async function transferReplacement(card,actorId,session,req){
+  const moved=[];
   const source=await replacementSource(card,actorId,session);
-  await obligations(source.cardId,session);
+  await obligations(source.cardId,session,req,actorId);
   const won=await Card.updateOne({_id:source._id,__v:source.__v,balance:source.balance,'replacement.targetCardId':card.cardId,'replacement.completedAt':{$exists:false}},{$set:{balance:0,'replacement.completedAt':new Date()},$inc:{__v:1}},{session});
   if(won.modifiedCount!==1)fail('INVALID_REPLACEMENT');
   if(card.cardType==='customer'){
     if(source.balance>0)await Tx.create([{cardId:source.cardId,txRef:C.randomHex(8),type:'debit',source:'transfer',amount:source.balance,status:'done',balanceAfter:0,createdBy:actorId},{cardId:card.cardId,txRef:C.randomHex(8),type:'credit',source:'transfer',amount:source.balance,status:'pending-card',createdBy:actorId}],{session,ordered:true});
+    // Credit chưa ký (chưa từng tới chip cũ) chuyển nguyên số tiền/nguồn sang thẻ mới; không mang createdBy/cashRequestId
+    // để không tính lại vào hạn mức tiền mặt trong ngày, movedFrom giữ liên kết đối soát.
+    for(const credit of await Tx.find(unsignedCreditFilter(source.cardId)).session(session).lean()){
+      const closed=await Tx.updateOne({_id:credit._id,status:'pending-card',signedOpId:{$exists:false}},{$set:{status:'failed',failReason:'moved'}},{session});
+      if(closed.modifiedCount!==1)fail('RECONCILIATION_REQUIRED',409,'Thẻ còn giao dịch hoặc lệnh đã ký cần đối soát. Không được cấp lại khi chưa xác nhận kết quả.');
+      const [next]=await Tx.create([{cardId:card.cardId,txRef:C.randomHex(8),type:'credit',source:credit.source,amount:credit.amount,status:'pending-card',movedFrom:credit.txRef}],{session});
+      moved.push({from:credit.txRef,to:next.txRef,amount:credit.amount,source:credit.source});
+    }
     const orders=await Order.find({customerId:card.ownerId,deleted:false,paymentStatus:'paid',status:{$nin:['cancel','cancelled']},'items.ticketStatus':'written'}).session(session).lean();
     const today=new Date(Date.now()+7*3600000).toISOString().slice(0,10);
     const tickets=require('../../helpers/ticket.helper');
@@ -110,7 +129,7 @@ async function transferReplacement(card,actorId,session,req){
       changes['items.'+i+'.ticketStatus']='pending';
     }if(Object.keys(changes).length)await Order.updateOne({_id:order._id},{$set:changes},{session});}
   }
-  await cardLog.write({action:'replace-finish',cardId:card.cardId,actorType:'admin',actorId,result:'success',detail:{replaceOf:source.cardId,amount:card.cardType==='customer'?source.balance:0},req},{session});
+  await cardLog.write({action:'replace-finish',cardId:card.cardId,actorType:'admin',actorId,result:'success',detail:{replaceOf:source.cardId,amount:card.cardType==='customer'?source.balance:0,...(moved.length?{moved}:{})},req},{session});
 }
 function requestDigest(body,bytes){
   const canonical=value=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).sort().map(key=>[key,canonical(value[key])])):value;
@@ -322,7 +341,7 @@ module.exports.replacePost=async(req,res)=>{
       if(!['active','locked'].includes(card.status)||!card.isCurrent)fail('CARD_STATE');
       const owner=await (card.cardType==='customer'?Customer:Account).exists({_id:card.ownerId,status:'active',deleted:false}).session(session);if(!owner)fail('OWNER_STATE');
       const changed=await Card.updateOne({_id:card._id,status:card.status,__v:card.__v},{$set:{status:'revoked',isCurrent:false,revokedReason:'replaced',revokedBy:req.cardActor.id,revokedAt:new Date(),replacement:{actorId:req.cardActor.id,reason:body.reason}},$inc:{__v:1}},{session});if(changed.modifiedCount!==1)fail('CARD_STATE');
-      await obligations(card.cardId,session);
+      await obligations(card.cardId,session,req,req.cardActor.id);
       await cardLog.write({action:'replace',cardId:card.cardId,actorType:'admin',actorId:req.cardActor.id,result:'success',detail:{reason:body.reason,balanceHeld:card.balance},req},{session});
       return {cardId:card.cardId};
     });
@@ -391,18 +410,29 @@ module.exports.statusPost=async(req,res)=>{
       if(!card)fail('CARD_NOT_FOUND',404,'Không tìm thấy thẻ.');
       const status=E.cardStatus.nextStatus(card.status,body.action);
       const previousStatus=card.status,previousBalance=card.balance;
+      let refundedCredits=[];
       if(!status)fail('CARD_STATE',409,card.status==='revoked'?'Thẻ đã bị thu hồi.':'Không thể chuyển trạng thái thẻ này.');
       // Cùng ghi Card với sign/confirm để snapshot cũ không lọt qua kiểm tra nghĩa vụ.
       const lock=await Card.updateOne({_id:card._id,status:card.status,__v:card.__v},{$inc:{__v:1}},{session});
       if(lock.modifiedCount!==1)fail('CARD_STATE',409,'Trạng thái thẻ đã thay đổi; hãy tải lại trang.');
       if(body.action==='revoke'){
         await E.expireStaleTopups(card.cardId,session);
-        const liability=await Tx.exists({cardId:card.cardId,status:{$ne:'done'},$or:[{status:{$in:['awaiting-payment','pending-card','sent']}},{signedOpId:{$exists:true}}]}).session(session);
+        await voidUnsigned(card.cardId,session,req,req.cardActor.id);
+        const liability=await Tx.exists(liabilityFilter(card.cardId)).session(session);
         // Sync công khai có thể tạo set-state; lệnh này không được dùng để cản thu hồi.
         const prepared=await Op.exists({cardId:card.cardId,status:'prepared',type:{$ne:'set-state'}}).session(session);
         if(liability||prepared)fail('RECONCILIATION_REQUIRED',409,'Thẻ còn giao dịch hoặc lệnh đã ký cần đối soát. Hãy đồng bộ và xác nhận kết quả trước khi thu hồi; có thể khóa thẻ ngay.');
-        if(card.balance>0&&body.refunded!==true)fail('REFUND_REQUIRED',409,'Thẻ còn số dư, hãy xác nhận đã hoàn tiền hoặc dùng Cấp lại thẻ');
+        // Credit chờ ghi chưa ký là tiền khách đã nộp nhưng chưa tới chip: hoàn cùng số dư khi "đã hoàn tiền mặt".
+        const credits=await Tx.find(unsignedCreditFilter(card.cardId)).session(session).lean();
+        if((card.balance>0||credits.length)&&body.refunded!==true)fail('REFUND_REQUIRED',409,'Thẻ còn số dư, hãy xác nhận đã hoàn tiền hoặc dùng Cấp lại thẻ');
         if(card.balance>0)await Tx.create([{cardId:card.cardId,txRef:C.randomHex(8),type:'debit',source:'refund',amount:card.balance,status:'done',balanceAfter:0,createdBy:req.cardActor.id}],{session});
+        for(const credit of credits){
+          const closed=await Tx.updateOne({_id:credit._id,status:'pending-card',signedOpId:{$exists:false}},{$set:{status:'failed',failReason:'refunded'}},{session});
+          if(closed.modifiedCount!==1)fail('RECONCILIATION_REQUIRED',409,'Thẻ còn giao dịch hoặc lệnh đã ký cần đối soát. Hãy đồng bộ và xác nhận kết quả trước khi thu hồi; có thể khóa thẻ ngay.');
+          // Mỗi credit một bút toán hoàn riêng (luôn trong giới hạn số tiền một giao dịch), chỉ ở server.
+          await Tx.create([{cardId:card.cardId,txRef:C.randomHex(8),type:'debit',source:'refund',amount:credit.amount,status:'done',createdBy:req.cardActor.id,movedFrom:credit.txRef}],{session});
+        }
+        refundedCredits=credits.map(credit=>credit.txRef);
         if(card.issuance?.requestId){
           await Request.updateOne({requestId:card.issuance.requestId,cardId:card.cardId,state:{$in:['preparing','ready']}},{$set:{state:'cancelled'},$inc:{__v:1}},{session});
         }
@@ -418,7 +448,7 @@ module.exports.statusPost=async(req,res)=>{
       if(body.action==='revoke')card.set('issuance',undefined);
       // Validator isCurrent cần document có status, không dùng query validator thiếu ngữ cảnh.
       await card.save({session});
-      await cardLog.write({action:body.action,cardId:card.cardId,actorType:'admin',actorId:req.cardActor.id,result:'success',detail:{reason,from:previousStatus,to:status,refunded:body.action==='revoke'&&previousBalance>0},req},{session});
+      await cardLog.write({action:body.action,cardId:card.cardId,actorType:'admin',actorId:req.cardActor.id,result:'success',detail:{reason,from:previousStatus,to:status,refunded:body.action==='revoke'&&(previousBalance>0||refundedCredits.length>0),...(refundedCredits.length?{refundedCredits}:{})},req},{session});
       return {cardId:card.cardId,status};
     });
     res.json({code:'success',...result,message:'Đã cập nhật trạng thái trên server. Cắm thẻ để đồng bộ.'});

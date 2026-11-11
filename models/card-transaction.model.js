@@ -18,7 +18,9 @@ const schema = new mongoose.Schema({
   cashRequestId:{type:String,match:/^[a-fA-F0-9]{32}$/,uppercase:true},
   // Dấu đã cấp quyền ký sống lâu hơn TTL operation, ngăn ký ví lần hai.
   signedOpId:{type:String,match:/^[a-fA-F0-9]{24}$/},
-  signedAt:Date
+  signedAt:Date,
+  // txRef của credit chưa ký mà giao dịch này thay thế (chuyển sang thẻ mới) hoặc hoàn tiền khi thu hồi.
+  movedFrom:{type:String,match:/^[a-fA-F0-9]{16}$/,uppercase:true}
 },{timestamps:true});
 schema.index({txRef:1},{unique:true});
 schema.index({cashRequestId:1},{unique:true,partialFilterExpression:{cashRequestId:{$type:'string'}}});

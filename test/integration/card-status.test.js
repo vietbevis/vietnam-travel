@@ -83,7 +83,8 @@ it('transactional audit failure rolls back refund and revoke while successful re
   assert.equal((await post({cardId:c.cardId,action:'revoke',reason:'PIN=582046 token=abc',refunded:true})).code,'success');const audit=await Log.findOne({cardId:c.cardId,action:'revoke'});assert.ok(!JSON.stringify(audit).includes('582046'));assert.ok(!JSON.stringify(audit).includes('abc'));
 });
 it('unreconciled pending payment credit and signed liabilities block revoke without destroying recovery rows but allow lock and unlock',async()=>{
-  for(const [type,status,signed]of [['credit','awaiting-payment',false],['credit','pending-card',false],['credit','sent',true],['credit','failed',true],['credit','pending-card',true],['debit','sent',true],['debit','failed',true],['debit','pending-card',true]]){
+  // Credit pending-card chưa ký không còn cản thu hồi: nó được hoàn tiền cùng số dư (Ruling 13, test bên dưới).
+  for(const [type,status,signed]of [['credit','awaiting-payment',false],['credit','sent',true],['credit','failed',true],['credit','pending-card',true],['debit','sent',true],['debit','failed',true],['debit','pending-card',true]]){
     const c=await card({ownerId:crypto.randomBytes(12).toString('hex')});const tx=await Tx.create({cardId:c.cardId,txRef:crypto.randomBytes(8).toString('hex'),type,source:type==='credit'?'cash':'order',amount:5000,status,...(signed?{signedOpId:crypto.randomBytes(12).toString('hex'),signedAt:new Date()}: {})});
     const r=await post({cardId:c.cardId,action:'revoke',reason:'Mất',refunded:true});assert.equal(r.http,409);assert.equal(r.errorCode,'RECONCILIATION_REQUIRED');assert.equal((await Tx.findById(tx.id)).status,status);assert.equal((await Card.findById(c.id)).status,'active');assert.equal((await post({cardId:c.cardId,action:'lock'})).code,'success');assert.equal((await post({cardId:c.cardId,action:'unlock'})).code,'success');assert.equal((await Tx.findById(tx.id)).status,status);assert.equal((await Tx.findById(tx.id)).signedOpId,tx.signedOpId);
   }
@@ -141,4 +142,36 @@ it('a signed non-wallet operation blocks revoke until receipt confirmation and c
   const stored=await Card.findById(c.id),operation=await Op.findById(op.id);
   if(stored.status==='revoked'){assert.equal(outcomes[0].status,'rejected');assert.notEqual(operation.status,'prepared');}
   else {assert.equal(stored.status,'active');assert.equal(operation.status,'prepared');assert.equal(outcomes[1].value.errorCode,'RECONCILIATION_REQUIRED');assert.equal((await E.confirmOp({opId:op.id,responseHex:'',sw:'9000',actorType:'admin',actorId:admin.id})).ok,true);assert.equal((await post({cardId:c.cardId,action:'revoke',reason:'Mất'})).code,'success');}
+});
+
+it('revoke voids unsigned debits and refunds unsigned pending credits together with the balance',async()=>{
+  const c=await card({balance:30000});
+  const order=await Order.create({orderCode:'OD1234567891',customerId:owner.id,total:20000,paymentMethod:'card',paymentStatus:'unpaid',status:'initial',cardTxRef:'D1'.repeat(8),items:[]});
+  const debit=await Tx.create({cardId:c.cardId,txRef:'D1'.repeat(8),type:'debit',source:'order',amount:20000,orderId:order.id,status:'pending-card'});
+  const cash=await Tx.create({cardId:c.cardId,txRef:'C1'.repeat(8),type:'credit',source:'cash',amount:17000,status:'pending-card'});
+  const online=await Tx.create({cardId:c.cardId,txRef:'C2'.repeat(8),type:'credit',source:'zalopay',amount:5000,status:'pending-card'});
+  const body={cardId:c.cardId,action:'revoke',reason:'Mất thẻ'};
+  const refused=await post(body);assert.equal(refused.errorCode,'REFUND_REQUIRED');
+  // Từ chối thì transaction rollback: không huỷ hay hoàn gì.
+  for(const tx of [debit,cash,online])assert.equal((await Tx.findById(tx.id)).status,'pending-card');
+  const r=await post({...body,refunded:true});assert.equal(r.code,'success',JSON.stringify(r));
+  const d=await Tx.findById(debit.id);assert.deepEqual([d.status,d.failReason],['failed','voided']);
+  for(const tx of [cash,online]){const t=await Tx.findById(tx.id);assert.deepEqual([t.status,t.failReason],['failed','refunded']);}
+  const refunds=await Tx.find({cardId:c.cardId,source:'refund'}).lean();
+  assert.equal(refunds.reduce((sum,tx)=>sum+tx.amount,0),52000);assert.ok(refunds.every(tx=>tx.type==='debit'&&tx.status==='done'));
+  const stored=await Card.findById(c.id);assert.equal(stored.status,'revoked');assert.equal(stored.balance,0);
+  const audit=await Log.findOne({cardId:c.cardId,action:'revoke'}).lean();assert.equal(audit.detail.refunded,true);
+  // Thẻ số dư 0 nhưng còn credit chờ ghi vẫn phải xác nhận hoàn tiền.
+  const z=await card();await Tx.create({cardId:z.cardId,txRef:'C3'.repeat(8),type:'credit',source:'cash',amount:10000,status:'pending-card'});
+  assert.equal((await post({cardId:z.cardId,action:'revoke',reason:'Mất'})).errorCode,'REFUND_REQUIRED');
+  assert.equal((await post({cardId:z.cardId,action:'revoke',reason:'Mất',refunded:true})).code,'success');
+  assert.equal(await Tx.countDocuments({cardId:z.cardId,source:'refund',amount:10000,status:'done'}),1);
+});
+it('revoke never voids or refunds signed transactions',async()=>{
+  const c=await card({balance:30000});
+  const signed=await Tx.create({cardId:c.cardId,txRef:'E1'.repeat(8),type:'debit',source:'order',amount:20000,orderId:'0123456789abcdef01234567',status:'pending-card',signedOpId:'11'.repeat(12)});
+  const unsigned=await Tx.create({cardId:c.cardId,txRef:'E2'.repeat(8),type:'credit',source:'cash',amount:17000,status:'pending-card'});
+  const r=await post({cardId:c.cardId,action:'revoke',reason:'Mất',refunded:true});assert.equal(r.errorCode,'RECONCILIATION_REQUIRED');
+  assert.equal((await Tx.findById(signed.id)).status,'pending-card');assert.equal((await Tx.findById(unsigned.id)).status,'pending-card');
+  assert.equal(await Tx.countDocuments({source:'refund'}),0);
 });
