@@ -88,9 +88,32 @@ module.exports.accountAdminCreate = async (req, res) => {
   })
 }
 
+// Chỉ nhận đúng các trường form tài khoản gửi lên (dạng chuỗi).
+// cardRequired, deleted, createdBy... do server quản lý, không bao giờ lấy từ body.
+const ACCOUNT_FORM_FIELDS = ["fullName", "email", "phone", "role", "positionCompany", "status", "password"];
+const accountFormData = (body) => {
+  const data = {};
+  for (const key of ACCOUNT_FORM_FIELDS) {
+    if (typeof body?.[key] === "string") {
+      data[key] = body[key];
+    }
+  }
+  return data;
+}
+
 module.exports.accountAdminCreatePost = async (req, res) => {
+  const data = accountFormData(req.body);
+
+  if(!data.email || !data.password) {
+    res.json({
+      code: "error",
+      message: "Dữ liệu tài khoản không hợp lệ!"
+    })
+    return;
+  }
+
   const existAccount = await AccountAdmin.findOne({
-    email: req.body.email
+    email: data.email
   })
 
   if(existAccount) {
@@ -101,15 +124,15 @@ module.exports.accountAdminCreatePost = async (req, res) => {
     return;
   }
 
-  req.body.createdBy = req.account.id;
-  req.body.updatedBy = req.account.id;
-  req.body.avatar = req.file ? req.file.path : "";
+  data.createdBy = req.account.id;
+  data.updatedBy = req.account.id;
+  data.avatar = req.file ? req.file.path : "";
 
   // Mã hóa mật khẩu với bcrypt
   const salt = await bcrypt.genSalt(10); // Tạo ra chuỗi ngẫu nhiên có 10 ký tự
-  req.body.password = await bcrypt.hash(req.body.password, salt);
+  data.password = await bcrypt.hash(data.password, salt);
 
-  const newAccount = new AccountAdmin(req.body);
+  const newAccount = new AccountAdmin(data);
   await newAccount.save();
 
   req.flash("success", "Tạo tài khoản quản trị thành công!");
@@ -150,23 +173,24 @@ module.exports.accountAdminEditPatch = async (req, res) => {
   try {
     const id = req.params.id;
 
-    req.body.updatedBy = req.account.id;
+    const data = accountFormData(req.body);
+    data.updatedBy = req.account.id;
     if(req.file) {
-      req.body.avatar = req.file.path;
-    } else {
-      delete req.body.avatar;
+      data.avatar = req.file.path;
     }
     
     // Mã hóa mật khẩu với bcrypt
-    if(req.body.password) {
+    if(data.password) {
       const salt = await bcrypt.genSalt(10); // Tạo salt - Chuỗi ngẫu nhiên có 10 ký tự
-      req.body.password = await bcrypt.hash(req.body.password, salt); // Mã hóa mật khẩu
+      data.password = await bcrypt.hash(data.password, salt); // Mã hóa mật khẩu
+    } else {
+      delete data.password;
     }
 
     await AccountAdmin.updateOne({
       _id: id,
       deleted: false
-    }, req.body);
+    }, data);
 
     req.flash('success', 'Cập nhật tài khoản quản trị thành công!');
 
