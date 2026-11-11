@@ -491,6 +491,80 @@ it('API public sync rejects generic sensitive operation and untrusted receipt ab
     assert.equal((await Customer.findOne()).totalSpent,500000);
   });
 });
+// L7 (Ruling 17): 6A88 kèm challenge mới lấy cùng batch với GET_RECEIPT chứng minh APDU cũ không còn chạy được.
+it('receipt 6A88 after a challenge rotation releases a credit to unsigned pending-card that re-signs and applies once',async()=> {
+  const{op}=await signed();
+  const rotated='EF'.repeat(16);
+  assert.equal((await Tx.findOne()).signedChallenge,challengeHex);
+  await http(async post=> {
+    // Challenge trùng challenge đã ký: không chứng minh được việc xoay vòng, không mở lại.
+    let out=await post('/sync/receipt',{cardId,txRef,challenge:challengeHex,response:'',sw:'6A88'});
+    assert.equal(out.body.released,undefined);
+    let tx=await Tx.findOne().lean();
+    assert.equal(tx.signedOpId,op.id);
+    out=await post('/sync/receipt',{cardId,txRef,challenge:rotated,response:'',sw:'6A88'});
+    assert.equal(out.status,200);
+    assert.equal(out.body.code,'success');
+    assert.equal(out.body.released,true);
+    tx=await Tx.findOne().lean();
+    assert.equal(tx.status,'pending-card');
+    assert.equal(tx.signedOpId,undefined);
+    assert.equal(tx.signedAt,undefined);
+    assert.equal(tx.signedChallenge,undefined);
+    assert.deepEqual(tx.abandonedOpIds,[op.id]);
+    assert.equal((await Op.findById(op.id)).status,'failed');
+    const released=await CardLog.find({action:'card-receipt-recovery','detail.released':true}).lean();
+    assert.equal(released.length,1);
+    assert.equal(released[0].cardId,cardId);
+    assert.equal(released[0].detail.abandonedOpId,op.id);
+    assert.equal(released[0].detail.txRef,txRef);
+    assert.equal(released[0].detail.type,'credit');
+    // Gửi lại cùng yêu cầu không mở lại lần nữa, không ghi thêm.
+    out=await post('/sync/receipt',{cardId,txRef,challenge:rotated,response:'',sw:'6A88'});
+    assert.equal(out.status,404);
+    assert.equal(await CardLog.countDocuments({action:'card-receipt-recovery','detail.released':true}),1);
+  });
+  // Ký lại bằng op mới (cùng txRef, cùng số tiền) và áp dụng đúng một lần.
+  const again=await E.createOp({cardId,type:'credit',params:{txRef},...actor});
+  await E.signOp({opId:again.id,challengeHex:'AB'.repeat(16),...actor});
+  assert.equal((await E.confirmOp({opId:op.id,responseHex:receipt(),sw:'9000',...actor})).ok,false);
+  assert.equal((await E.confirmOp({opId:again.id,responseHex:receipt(),sw:'9000',...actor})).ok,true);
+  const tx=await Tx.findOne().lean();
+  assert.equal(tx.status,'done');
+  assert.deepEqual(tx.abandonedOpIds,[op.id]);
+  assert.equal((await Card.findOne()).balance,500000);
+  assert.equal((await Card.findOne()).txCounter,1);
+});
+it('receipt 6A88 after a challenge rotation closes a debit as not-on-card so sync and payment are unblocked',async()=> {
+  const{op,card}=await signed('debit');
+  // Giao dịch ký trước bản sửa: không có signedChallenge và op đã hết hạn (TTL) vẫn mở được.
+  await Tx.updateOne({},{$unset:{signedChallenge:1}});
+  await Op.deleteMany({});
+  await http(async post=> {
+    // Không gửi challenge (client cũ): giữ hành vi cũ, vẫn chặn đồng bộ chờ biên nhận.
+    let out=await post('/sync/receipt',{cardId,txRef,response:'',sw:'6A88'});
+    assert.equal(out.body.released,undefined);
+    assert.equal((await Tx.findOne()).signedOpId,op.id);
+    out=await post('/sync/receipt',{cardId,txRef,challenge:'EF'.repeat(16),response:'',sw:'6A88'});
+    assert.equal(out.body.released,true);
+    const tx=await Tx.findOne().lean();
+    assert.equal(tx.status,'failed');
+    assert.equal(tx.failReason,'not-on-card');
+    assert.equal(tx.signedOpId,undefined);
+    assert.deepEqual(tx.abandonedOpIds,[op.id]);
+    assert.equal((await Order.findOne()).paymentStatus,'unpaid');
+    const ctx=await require('../../helpers/card-sync.helper').loadSyncContext(await Card.findById(card._id).lean());
+    assert.equal(ctx.sentTx,null);
+    assert.equal(await Tx.exists(E.unresolvedFilter({cardId})),null);
+    // Biên nhận muộn cho giao dịch đã đóng không được ghi nhận (thẻ không thể có nó theo chứng minh từ applet).
+    out=await post('/sync/receipt',{cardId,txRef,response:receipt({type:'debit',balance:400000}),sw:'9000'});
+    assert.equal(out.status,404);
+    assert.equal((await Customer.findOne()).totalSpent||0,0);
+    const log=await CardLog.findOne({action:'card-receipt-recovery','detail.released':true}).lean();
+    assert.equal(log.detail.type,'debit');
+    assert.equal(log.detail.abandonedOpId,op.id);
+  });
+});
 it('API JWT actor and fresh DB permissions control generic operations',async()=> {
   await fixture();
   process.env.JWT_SECRET='fixture-task5-secret';

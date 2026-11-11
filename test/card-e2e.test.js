@@ -245,3 +245,54 @@ test('delete of an absent ticket returns 6A88', options, async () => {
   const challenge = await transmit(command(S.INS.GET_CHALLENGE), 'GET_CHALLENGE');
   await transmit(A.signedApdu({ challengeHex: challenge.toString('hex'), cardIdHex: cardId, ins: S.INS.DELETE_TICKET, p1: 0, p2: 0, payload: A.ticketKey({ orderCode: 'OD0000000009', tourId: '0123456789abcdef01234567' }) }), 'DELETE absent', '6A88');
 });
+
+// Ruling 17 (L7): GET_CHALLENGE ngay trước GET_RECEIPT trong cùng batch làm APDU ví đã ký (gắn challenge cũ) không
+// bao giờ chạy được nữa; nếu thiếu bước đổi challenge thì APDU cũ VẪN chạy được sau 6A88 (đối chứng).
+test('rotating the challenge before GET_RECEIPT 6A88 makes a stale signed credit unrunnable', options, async () => {
+  await resetSlot();
+  const modulus = await issue();
+  await changePin();
+  const staleRef = '2122232425262728';
+  const controlRef = '3132333435363738';
+  async function balance() {
+    await verifyPin();
+    const out = await transmit(command(S.INS.GET_BALANCE), 'GET_BALANCE');
+    return { balance: out.readUInt32BE(0), counter: out.readUInt32BE(4) };
+  }
+  // Server ký CREDIT theo challenge cũ nhưng APDU chưa tới thẻ (mất mạng, đóng tab...).
+  const oldChallenge = (await transmit(command(S.INS.GET_CHALLENGE), 'GET_CHALLENGE old')).toString('hex');
+  const stale = A.signedApdu({ challengeHex: oldChallenge, cardIdHex: cardId, ins: S.INS.CREDIT, p1: 0, p2: 0, payload: A.walletPayload(staleRef, 1500000) });
+  // Bước khôi phục biên nhận của client: một batch [GET_CHALLENGE, GET_RECEIPT].
+  const batch = await request('POST', '/v1/transmit', { apdus: [command(S.INS.GET_CHALLENGE), command(S.INS.GET_RECEIPT, 0, 0, Buffer.from(staleRef, 'hex'))] });
+  assert.equal(batch.responses.length, 2);
+  assert.equal(batch.responses[0].sw.toUpperCase(), '9000');
+  assert.equal(batch.responses[0].data.length, 32);
+  assert.ok(batch.responses[0].data.toLowerCase() !== oldChallenge.toLowerCase(), 'Challenge mới phải khác challenge đã ký');
+  assert.equal(batch.responses[1].sw.toUpperCase(), '6A88', 'Thẻ chưa có giao dịch');
+  // APDU cũ giờ bị từ chối chữ ký; lần thử tiếp theo không còn challenge nào.
+  await transmit(stale, 'Stale CREDIT after rotation', '6F20');
+  await transmit(stale, 'Stale CREDIT replay', '6F21');
+  assert.deepEqual(await balance(), { balance: 0, counter: 0 });
+  // Server mở lại khoản nạp và ký lại cùng txRef theo challenge mới: áp dụng đúng một lần.
+  const credit = A.parseReceipt((await signed(S.INS.CREDIT, 0, A.walletPayload(staleRef, 1500000))).toString('hex'));
+  assert.ok(C.verifyCardSignature(modulus, credit.message, credit.signature));
+  assert.equal(credit.txRef, staleRef);
+  assert.equal(credit.balanceAfter, 1500000);
+  assert.equal(credit.txCounter, 1);
+  await transmit(stale, 'Stale CREDIT after re-sign', '6F21');
+  assert.deepEqual(await balance(), { balance: 1500000, counter: 1 });
+  // Đối chứng: GET_RECEIPT 6A88 KHÔNG kèm đổi challenge không chứng minh được gì, APDU cũ vẫn chạy.
+  const controlChallenge = (await transmit(command(S.INS.GET_CHALLENGE), 'GET_CHALLENGE control')).toString('hex');
+  const control = A.signedApdu({ challengeHex: controlChallenge, cardIdHex: cardId, ins: S.INS.CREDIT, p1: 0, p2: 0, payload: A.walletPayload(controlRef, 200000) });
+  await transmit(command(S.INS.GET_RECEIPT, 0, 0, Buffer.from(controlRef, 'hex')), 'GET_RECEIPT control', '6A88');
+  const late = A.parseReceipt((await transmit(control, 'Control CREDIT still runs')).toString('hex'));
+  assert.equal(late.txRef, controlRef);
+  assert.equal(late.txCounter, 2);
+  // Giao dịch đã chạy luôn được tìm thấy, kể cả khi đổi challenge trước GET_RECEIPT.
+  const found = await request('POST', '/v1/transmit', { apdus: [command(S.INS.GET_CHALLENGE), command(S.INS.GET_RECEIPT, 0, 0, Buffer.from(controlRef, 'hex'))] });
+  assert.equal(found.responses[1].sw.toUpperCase(), '9000');
+  const recovered = A.parseReceipt(found.responses[1].data);
+  assert.equal(recovered.txRef, controlRef);
+  assert.equal(recovered.balanceAfter, 1700000);
+  assert.ok(C.verifyCardSignature(modulus, recovered.message, recovered.signature));
+});

@@ -8,8 +8,9 @@ const schema = new mongoose.Schema({
   orderId:String,
   status:{type:String,required:true,enum:['awaiting-payment','pending-card','sent','done','failed'],default:'pending-card'},
   // Lý do giao dịch bị đóng: nạp online hết hạn/cổng báo thất bại; giao dịch chưa ký bị huỷ (voided),
-  // chuyển sang thẻ mới khi cấp lại (moved) hoặc đã hoàn tiền mặt khi thu hồi (refunded).
-  failReason:{type:String,enum:['expired','gateway','voided','moved','refunded']},
+  // chuyển sang thẻ mới khi cấp lại (moved), đã hoàn tiền mặt khi thu hồi (refunded) hoặc debit đã ký nhưng
+  // thẻ chứng minh chưa từng nhận (not-on-card: GET_RECEIPT 6A88 sau khi đổi challenge).
+  failReason:{type:String,enum:['expired','gateway','voided','moved','refunded','not-on-card']},
   balanceAfter:{type:Number,min:0,max:50_000_000,validate:{validator:value=>value==null || Number.isSafeInteger(value)}},
   txCounter:{type:Number,min:0,max:0xffffffff,validate:{validator:value=>value==null || Number.isSafeInteger(value)}},
   receiptHex:{type:String,match:/^[a-fA-F0-9]{332}$/,uppercase:true},
@@ -19,6 +20,10 @@ const schema = new mongoose.Schema({
   // Dấu đã cấp quyền ký sống lâu hơn TTL operation, ngăn ký ví lần hai.
   signedOpId:{type:String,match:/^[a-fA-F0-9]{24}$/},
   signedAt:Date,
+  // Challenge của thẻ mà lệnh ví đã ký gắn vào; dùng để từ chối "đổi challenge" giả khi thẻ báo 6A88.
+  signedChallenge:{type:String,match:/^[a-fA-F0-9]{32}$/,uppercase:true},
+  // Các op đã ký nhưng thẻ chứng minh chưa từng chạy (6A88 sau khi đổi challenge): giữ lại để kiểm toán.
+  abandonedOpIds:{type:[{type:String,match:/^[a-fA-F0-9]{24}$/}],default:undefined},
   // txRef của credit chưa ký mà giao dịch này thay thế (chuyển sang thẻ mới) hoặc hoàn tiền khi thu hồi.
   movedFrom:{type:String,match:/^[a-fA-F0-9]{16}$/,uppercase:true},
   // Đồng bộ phát hiện credit sẽ làm số dư chip vượt 50 000 000: giữ lại chờ đối soát thủ công (đã ghi nhật ký).

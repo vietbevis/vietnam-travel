@@ -29,6 +29,8 @@ const schemas={
   receipt:Joi.object({
     cardId:hex(32),
     txRef:hex(16),
+    // Challenge thẻ vừa phát trong cùng batch, ngay trước GET_RECEIPT (client cũ không gửi).
+    challenge:Joi.string().pattern(/^[a-fA-F0-9]{32}$/),
     response,
     sw:hex(4)
   }).required().unknown(false)
@@ -288,6 +290,16 @@ module.exports.receipt=handler('receipt',async(req,res,body)=> {
     });
   else
   if(body.sw.toUpperCase()==='6A88') {
+    // Có challenge mới (đã đổi cùng batch): lệnh cũ chắc chắn chưa chạy và không còn chạy được, mở lại giao dịch.
+    const released=body.challenge?await E.releaseUnappliedTx({cardId:card.cardId,txRef:tx.txRef,challengeHex:body.challenge,req}):null;
+    if(released)
+      return res.json({
+        code:'success',
+        ok:false,
+        released:true,
+        message:released.type==='credit'?'Thẻ chưa nhận khoản nạp; sẽ ghi lại ở lần đồng bộ tiếp theo.':'Thẻ chưa bị trừ tiền; giao dịch thanh toán đã được huỷ.',
+        result:null
+      });
     await Tx.updateOne({_id:tx._id,status:{$ne:'done'},signedOpId:tx.signedOpId},{$set:{status:'failed'}});
     await cardLog.write({action:'card-receipt-recovery',cardId:card.cardId,actorType:'system',result:'fail',detail:{txRef:tx.txRef,sw:'6A88',applied:false},req});
   }

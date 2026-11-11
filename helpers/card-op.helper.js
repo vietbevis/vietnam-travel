@@ -325,7 +325,7 @@ async function signOpCore({opId,challengeHex,actorType,actorId},audit) {
       const unresolved=await Tx.exists({cardId:card.cardId,status:{$ne:'done'},$or:[{signedOpId:{$exists:true}},{status:'sent'}]}).session(session);
       if(unresolved)
         fail('OP_STATE');
-      const update=await Tx.updateOne({_id:context.tx._id,status:'pending-card',signedOpId:{$exists:false}},{$set:{status:'sent',signedOpId:String(op._id),signedAt:new Date()}},{session});
+      const update=await Tx.updateOne({_id:context.tx._id,status:'pending-card',signedOpId:{$exists:false}},{$set:{status:'sent',signedOpId:String(op._id),signedAt:new Date(),signedChallenge:challengeHex.toUpperCase()}},{session});
       if(update.modifiedCount!==1)
         fail('OP_STATE');
       // Ghi vào đơn trong cùng transaction: admin sửa/huỷ đơn đồng thời sẽ xung đột thay vì lọt qua kiểm tra debit đang ký.
@@ -546,6 +546,42 @@ async function confirmOpCore({opId,responseHex='',sw,actorType,actorId,req},audi
   }
   return output;
 }
+// Thẻ trả 6A88 cho GET_RECEIPT ngay sau GET_CHALLENGE trong cùng batch (client báo challenge mới).
+// Chứng minh từ applet (xem legacy-fix-report.md, Ruling 17): challenge là mảng transient duy nhất, GET_CHALLENGE ghi đè nó
+// (ServerAuth.issueChallenge) và mọi lệnh ký đều huỷ nó trước khi kiểm chữ ký (ServerAuth.verifySigned); server không ký
+// giao dịch ví nào khác khi giao dịch này còn treo nên vòng nhật ký 10 mục không thể đẩy mất txRef. Vậy 6A88 sau khi đổi
+// challenge nghĩa là lệnh đã ký chưa từng chạy và không bao giờ còn chạy được: debit → failed 'not-on-card';
+// credit → pending-card chưa ký (ký lại bằng op mới). Op cũ được giữ trong abandonedOpIds để kiểm toán.
+// Challenge mới trùng challenge đã ký (không có xoay vòng) thì không mở lại.
+async function releaseUnappliedTx({cardId,txRef,challengeHex,req}) {
+  if(!hex(cardId,32)||!hex(txRef,16)||!hex(challengeHex,32))
+    return null;
+  const fresh=challengeHex.toUpperCase();
+  const released=await transaction(async session=> {
+    const tx=await Tx.findOne({cardId:cardId.toUpperCase(),txRef:txRef.toUpperCase()}).session(session).lean();
+    if(!tx||tx.status==='done'||!tx.signedOpId)
+      return null;
+    if(tx.signedChallenge===fresh)
+      return null;
+    const op=objectId(tx.signedOpId)?await Op.findById(tx.signedOpId).session(session).lean():null;
+    if(op?.challenge===fresh)
+      return null;
+    const set=tx.type==='debit'?{status:'failed',failReason:'not-on-card'}:{status:'pending-card'};
+    const result=await Tx.updateOne({_id:tx._id,status:{$ne:'done'},signedOpId:tx.signedOpId},{$set:set,$push:{abandonedOpIds:tx.signedOpId},$unset:{signedOpId:1,signedAt:1,signedChallenge:1}},{session});
+    if(result.modifiedCount!==1)
+      return null;
+    if(op&&['draft','prepared'].includes(op.status))
+      await Op.updateOne({_id:op._id,status:op.status},{$set:{status:'failed'}},{session});
+    // Cùng write-lock với signOp: không thể vừa mở lại vừa ký giao dịch khác của thẻ/đơn trên snapshot cũ.
+    await Card.updateOne({cardId:tx.cardId},{$inc:{__v:1}},{session});
+    if(tx.type==='debit'&&objectId(tx.orderId))
+      await Order.updateOne({_id:tx.orderId},{$inc:{__v:1}},{session});
+    return{type:tx.type,txRef:tx.txRef,amount:tx.amount,abandonedOpId:tx.signedOpId,status:set.status};
+  });
+  if(released)
+    await log.write({action:'card-receipt-recovery',cardId:cardId.toUpperCase(),actorType:'system',result:'success',detail:{txRef:released.txRef,sw:'6A88',released:true,abandonedOpId:released.abandonedOpId,type:released.type,amount:released.amount,status:released.status},req});
+  return released;
+}
 // Giao dịch đã ký (signedOpId) hoặc đã gửi xuống thẻ mà chưa done: chỉ biên nhận của thẻ mới kết thúc được, không bao giờ huỷ hay ký lại.
 const unresolvedFilter=extra=>({...extra,status:{$ne:'done'},$or:[{status:'sent'},{signedOpId:{$exists:true}}]});
 // Debit chưa từng ký (không có signedOpId) chắc chắn chưa tới chip: đóng (failed 'voided') bằng CAS để không còn là nghĩa vụ của thẻ.
@@ -604,6 +640,7 @@ module.exports={
   reuseSyncOp,
   confirmOp,
   applyReceipt,
+  releaseUnappliedTx,
   markTopupPaid,
   markTopupFailed,
   expireStaleTopups,

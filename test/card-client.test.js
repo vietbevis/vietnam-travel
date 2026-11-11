@@ -120,13 +120,49 @@ test('openSession refuses an eleventh next request', async () => {
   assert.equal(calls.filter(c => c.url.endsWith('/next')).length, 10);
   assert.equal(calls.filter(c => c.url.endsWith('/confirm')).length, 10);
 });
-test('sync receipt forwards cardId/txRef and raw missing-receipt SW', async () => {
-  const { client, calls } = make((url, body) => {
-    if (url.endsWith('/v1/transmit')) return agent(body.apdus[0].slice(2, 4) === '10' ? info : body.apdus[0].slice(2, 4) === '30' ? nonce : '', body.apdus[0].slice(2, 4) === '54' ? '6A88' : '9000');
-    return response(url.endsWith('/next') ? { step: { kind: 'receipt', txRef: '33'.repeat(8), apdu: '8054000008' + '33'.repeat(8) + '00' } } : { code: 'error', ok: false });
-  });
+// Agent giả trả lời từng APDU trong batch và dừng ở SW lỗi đầu tiên như agent thật.
+function batchAgent(swFor = () => '9000') {
+  return body => {
+    const responses = [];
+    for (const apdu of body.apdus) {
+      const ins = apdu.slice(2, 4), sw = swFor(ins);
+      responses.push({ data: sw !== '9000' ? '' : ins === '10' ? info : ins === '30' ? nonce : '', sw });
+      if (sw !== '9000') break;
+    }
+    return response({ responses });
+  };
+}
+const receiptStep = { step: { kind: 'receipt', txRef: '33'.repeat(8), apdu: '8054000008' + '33'.repeat(8) + '00' } };
+test('sync receipt rotates the challenge in the same batch and forwards it with the raw missing-receipt SW', async () => {
+  const transmit = batchAgent(ins => ins === '54' ? '6A88' : '9000');
+  const { client, calls } = make((url, body) => url.endsWith('/v1/transmit') ? transmit(body) : response(url.endsWith('/next') ? receiptStep : { code: 'error', ok: false }));
   await assert.rejects(client.openSession(), error => error.sw === '6A88');
-  assert.deepEqual(calls.at(-1).body, { cardId: '11'.repeat(16), txRef: '33'.repeat(8), response: '', sw: '6A88' });
+  const batch = calls.filter(c => c.url.endsWith('/v1/transmit')).find(c => c.body.apdus.includes(receiptStep.step.apdu));
+  assert.equal(batch.body.apdus.length, 2);
+  assert.equal(batch.body.apdus[0].slice(2, 4), '30', 'GET_CHALLENGE phải đi trước GET_RECEIPT trong cùng batch');
+  assert.equal(batch.body.apdus[1], receiptStep.step.apdu);
+  assert.deepEqual(calls.at(-1).body, { cardId: '11'.repeat(16), txRef: '33'.repeat(8), challenge: nonce.toUpperCase(), response: '', sw: '6A88' });
+  assert.equal(calls.at(-1).credentials, 'omit');
+});
+test('sync continues after the server releases a transaction the card never received', async () => {
+  const transmit = batchAgent(ins => ins === '54' ? '6A88' : '9000');
+  let nexts = 0;
+  const { client, calls } = make((url, body) => {
+    if (url.endsWith('/v1/transmit')) return transmit(body);
+    if (url.endsWith('/next')) return response(nexts++ === 0 ? receiptStep : { code: 'success', step: null });
+    return response({ code: 'success', ok: false, released: true, result: null });
+  });
+  assert.equal((await client.openSession()).cardId, '11'.repeat(16));
+  assert.equal(calls.filter(c => c.url.endsWith('/next')).length, 2);
+});
+test('sync receipt never sends GET_RECEIPT alone when the challenge rotation fails', async () => {
+  // GET_CHALLENGE cho /sync/next thành công; GET_CHALLENGE trong batch biên nhận thất bại.
+  let challenges = 0;
+  const transmit = batchAgent(ins => ins === '30' && ++challenges === 2 ? '6985' : ins === '54' ? '6A88' : '9000');
+  const { client, calls } = make((url, body) => url.endsWith('/v1/transmit') ? transmit(body) : response(url.endsWith('/next') ? receiptStep : { code: 'success', released: true }));
+  await assert.rejects(client.openSession(), error => error.sw === '6985');
+  assert.equal(challenges, 2);
+  assert.equal(calls.filter(c => c.url.endsWith('/receipt')).length, 0);
 });
 test('requiresAuth is returned without an authentication loop; mustChangePin omits cookies', async () => {
   const { client, calls } = make((url, body) => url.endsWith('/v1/transmit') ? agent(body.apdus[0].slice(2, 4) === '10' ? '11'.repeat(16) + '0102010501' : body.apdus[0].slice(2, 4) === '30' ? nonce : '') : response({ code: 'success', step: null, requiresAuth: true }));
