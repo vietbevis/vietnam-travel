@@ -247,8 +247,14 @@ module.exports.paymentZaloPay = async (req, res) => {
     });
     if (!orderDetail) return res.redirect('/');
     // Số điện thoại nhập tự do ("0901 234 567") được chuẩn hoá trước khi đưa vào app_user của ZaloPay.
+    const appPhone = zalopayHelper.normalizePhone(orderDetail.phone);
+    // Callback chỉ nhận ^\+?\d{8,15}: số không đạt thì báo lỗi ngay, không để khách trả tiền rồi callback bị từ chối.
+    if (!/^\+?\d{8,15}$/.test(appPhone)) {
+      if (typeof req.flash === 'function') req.flash('error', 'Số điện thoại của đơn hàng không hợp lệ để thanh toán qua ZaloPay. Vui lòng liên hệ hỗ trợ hoặc chọn phương thức thanh toán khác.');
+      return res.redirect(`/order/success?orderId=${orderDetail.id}&phone=${encodeURIComponent(orderDetail.phone)}`);
+    }
     const url = await zalopayHelper.createOrder({
-      appUser: `${zalopayHelper.normalizePhone(orderDetail.phone)}-${orderDetail.id}`,
+      appUser: `${appPhone}-${orderDetail.id}`,
       amount: orderDetail.total,
       description: `Thanh toán đơn hàng ${orderDetail.orderCode}`,
       redirectUrl: `${process.env.DOMAIN_WEBSITE}/order/success?orderId=${orderDetail.id}&phone=${encodeURIComponent(orderDetail.phone)}`,
@@ -330,10 +336,11 @@ module.exports.paymentVNPayResult = async (req, res) => {
     received = {orderId, amount, reference: verified.txnRef};
     const identity = {_id: orderId, total: amount, paymentMethod: 'vnpay', deleted: false, status: {$ne: 'cancel'}};
     const order = await Order.findOne(identity);
-    if (!order || !['unpaid', 'paid'].includes(order.paymentStatus)) return res.redirect('/');
-    received.orderCode = order.orderCode;
+    if (order) received.orderCode = order.orderCode;
+    // Từ đây VNPay đã xác nhận thu tiền: mọi nhánh không ghi nhận được đều phải ghi log đối soát và hiện trang đang xử lý.
+    if (!order || !['unpaid', 'paid'].includes(order.paymentStatus)) return paymentProcessing(res, 'vnpay', received, 'không có đơn khớp số tiền/phương thức hoặc đơn đã huỷ, xoá, đổi trạng thái thanh toán');
     const changed = await orderPaymentHelper.markOrderPaid({_id: orderId, phone: order.phone, deleted: false, total: amount}, 'vnpay');
-    if (!changed && !await Order.findOne({...identity, phone: order.phone, paymentStatus: 'paid'})) return res.redirect('/');
+    if (!changed && !await Order.findOne({...identity, phone: order.phone, paymentStatus: 'paid'})) return paymentProcessing(res, 'vnpay', received, 'không đánh dấu được đơn đã thanh toán');
     return res.redirect(`${process.env.DOMAIN_WEBSITE}/order/success?orderId=${orderId}&phone=${encodeURIComponent(order.phone)}`);
   } catch (error) {
     if (received) return paymentProcessing(res, 'vnpay', received, error);

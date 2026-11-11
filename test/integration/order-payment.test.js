@@ -134,13 +134,15 @@ integration('VNPay signed return và duplicate giữ success URL legacy cùng m�
 });
 integration('VNPay reject signed wrong amount/TmnCode/ref/status và query orderId không chọn target',async()=> {
   const order=await makeOrder({paymentMethod:'vnpay'}); const other=await makeOrder({paymentMethod:'vnpay'});
-  for(const extra of [{vnp_Amount:'10000001'},{vnp_Amount:'20000000'},{vnp_TmnCode:'WRONG'},{vnp_TxnRef:`${order.id}-bad`},{vnp_ResponseCode:'01'},{vnp_TransactionStatus:'01'},{vnp_TxnRef:'bad'},{orderId:other.id,vnp_Amount:'1'}]) {const res=response(); await controller.paymentVNPayResult({query:vnpQuery(order,extra)},res); assert.deepEqual(res.redirects,['/']); await assertUnpaid(order); await assertUnpaid(other);}
+  for(const extra of [{vnp_Amount:'10000001'},{vnp_TmnCode:'WRONG'},{vnp_TxnRef:`${order.id}-bad`},{vnp_ResponseCode:'01'},{vnp_TransactionStatus:'01'},{vnp_TxnRef:'bad'},{orderId:other.id,vnp_Amount:'1'}]) {const res=response(); await controller.paymentVNPayResult({query:vnpQuery(order,extra)},res); assert.deepEqual(res.redirects,['/']); await assertUnpaid(order); await assertUnpaid(other);}
+  // M2: số tiền khác đơn nhưng VNPay đã ký thành công (đã thu tiền): không ghi nhận, hiện trang đang xử lý để đối soát.
+  {const res=pageResponse(); await controller.paymentVNPayResult({query:vnpQuery(order,{vnp_Amount:'20000000'})},res); assert.deepEqual(res.redirects,[]); assert.equal(res.renders[0].view,'client/pages/order-payment-processing'); await assertUnpaid(order); await assertUnpaid(other);}
   const tampered=vnpQuery(order); tampered.vnp_Amount='1'; const res=response(); await controller.paymentVNPayResult({query:tampered},res); assert.deepEqual(res.redirects,['/']); await assertUnpaid(order);
 });
 integration('VNPay reject cancel/deleted/wrong method và signed duplicate wrong amount',async()=> {
-  for(const extra of [{deleted:true},{status:'cancel'},{paymentMethod:'zalopay'}]) {const order=await makeOrder({paymentMethod:'vnpay',...extra}); const res=response();await controller.paymentVNPayResult({query:vnpQuery(order)},res);assert.deepEqual(res.redirects,['/']); await assertUnpaid(order);}
+  for(const extra of [{deleted:true},{status:'cancel'},{paymentMethod:'zalopay'}]) {const order=await makeOrder({paymentMethod:'vnpay',...extra}); const res=pageResponse();await controller.paymentVNPayResult({query:vnpQuery(order)},res);assert.deepEqual(res.redirects,[]); assert.equal(res.renders[0].view,'client/pages/order-payment-processing'); await assertUnpaid(order);}
   const order=await makeOrder({paymentMethod:'vnpay'}); await controller.paymentVNPayResult({query:vnpQuery(order)},response());
-  const res=response(); await controller.paymentVNPayResult({query:vnpQuery(order,{vnp_Amount:'20000000'})},res); assert.deepEqual(res.redirects,['/']);
+  const res=pageResponse(); await controller.paymentVNPayResult({query:vnpQuery(order,{vnp_Amount:'20000000'})},res); assert.deepEqual(res.redirects,[]); assert.equal(res.renders[0].view,'client/pages/order-payment-processing');
 });
 integration('callback transaction lỗi trả generic failure và không ghi một phần',async()=> {
   const missingCustomer=new mongoose.Types.ObjectId().toString();
@@ -172,6 +174,33 @@ integration('hai entrypoint chỉ khởi tạo payment đúng method, không can
   }
 });
 // L2: số điện thoại nhập tự do ("0901 234 567", "(090) 123.4567") vẫn thanh toán ZaloPay; callback so khớp chặt trên số đã chuẩn hoá.
+// M3: số sau chuẩn hoá không khớp định dạng callback (^\+?\d{8,15}$) thì báo lỗi rõ, không gọi cổng ZaloPay.
+integration('ZaloPay refuses a phone that cannot pass the callback check before calling the gateway',async()=> {
+  let calls=0; axios.post=async()=>{calls++;return {data:{return_code:1,order_url:'https://zalo.example.invalid/checkout'}};};
+  try {
+    for(const phone of ['0901 234 567 890 123 45','09O1234567','1234']) {
+      const order=await makeOrder({phone}); const flashes=[]; const res=response();
+      await controller.paymentZaloPay({query:{orderId:order.id},flash:(type,message)=>flashes.push({type,message})},res);
+      assert.equal(calls,0);
+      assert.deepEqual(res.redirects,[`/order/success?orderId=${order.id}&phone=${encodeURIComponent(phone)}`]);
+      assert.equal(flashes.length,1); assert.equal(flashes[0].type,'error'); assert.match(flashes[0].message,/số điện thoại/i);
+      await assertUnpaid(order);
+    }
+  } finally {axios.post=async()=>({data:{return_code:1,order_url:'https://zalo.example.invalid/checkout'}});}
+});
+// M2: VNPay đã ký thành công (đã thu tiền) nhưng đơn bị huỷ/xoá/đổi phương thức/khác số tiền: không im lặng về "/".
+integration('VNPay verified success that cannot be recorded without throwing still logs and shows the processing page',async()=> {
+  const errors=[]; const originalError=console.error; console.error=(...args)=>errors.push(args.map(String).join(' '));
+  try {
+    for(const extra of [{status:'cancel'},{deleted:true},{paymentMethod:'zalopay'},{paymentStatus:'refund'}]) {
+      const order=await makeOrder({paymentMethod:'vnpay',...extra}); const res=pageResponse(); errors.length=0;
+      await controller.paymentVNPayResult({query:vnpQuery(order)},res);
+      assert.deepEqual(res.redirects,[]); assert.equal(res.renders[0].view,'client/pages/order-payment-processing'); assert.equal(res.renders[0].data.amount,100000);
+      const line=errors.find(item=>item.includes('vnpay')); assert.ok(line,'phải ghi log đối soát'); assert.ok(line.includes(order.id)&&line.includes('100000')&&!line.includes('vnp_SecureHash'));
+      assert.notEqual((await Order.findById(order.id)).paymentStatus,'paid');
+    }
+  } finally {console.error=originalError;}
+});
 integration('ZaloPay chuẩn hoá số điện thoại tự do và callback chỉ khớp số đã chuẩn hoá',async()=> {
   let sent; axios.post=async(url,body,options)=>{sent=options.params;return {data:{return_code:1,order_url:'https://zalo.example.invalid/checkout'}};};
   try {
