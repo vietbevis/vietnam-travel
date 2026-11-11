@@ -818,9 +818,18 @@ it('privileged sync binds current owner and rejects another actor confirmation',
   process.env.JWT_SECRET='fixture-task5-secret';
   const cookie=id=>({Cookie:'customerToken='+jwt.sign({customerId:id,cardId},process.env.JWT_SECRET,{expiresIn:'1d'})});
   await http(async post=> {
-    let out=await post('/sync/next',{cardId,cardState:2,challenge:challengeHex},cookie('987654321098765432109876'));
-    assert.equal(out.status,403);
-    assert.equal(await Op.countDocuments(),0);
+    // L9: cookie khách khác hoặc JWT hết hạn/sai chữ ký: dừng đồng bộ êm như chưa đăng nhập, không tạo op.
+    const stale={Cookie:'customerToken='+jwt.sign({customerId:ownerId,cardId},process.env.JWT_SECRET,{expiresIn:-10})};
+    const forged={Cookie:'customerToken='+jwt.sign({customerId:ownerId,cardId},'another-secret',{expiresIn:'1d'})};
+    let out;
+    for(const headers of [cookie('987654321098765432109876'),stale,forged]) {
+      out=await post('/sync/next',{cardId,cardState:2,challenge:challengeHex},headers);
+      assert.equal(out.status,200);
+      assert.equal(out.body.step,null);
+      assert.equal(out.body.requiresAuth,true);
+      assert.equal(await Op.countDocuments(),0);
+    }
+    assert.equal((await Tx.findOne()).signedOpId,undefined);
     out=await post('/sync/next',{cardId,cardState:2,challenge:challengeHex},cookie(ownerId));
     assert.equal(out.status,200);
     assert.equal(out.body.step.kind,'op');
@@ -991,7 +1000,10 @@ it('admin privileged sync rechecks cash step-up and role permissions before conf
   const headers=claims=>({Cookie:'token='+jwt.sign({id:admin.id,email:admin.email,cardId:staffCardId,...claims},process.env.JWT_SECRET)});
   await http(async post=> {
     let out=await post('/sync/next',{cardId,cardState:2,challenge:challengeHex},headers({}));
-    assert.equal(out.status,403);
+    // L9: thiếu Step-up cho khoản nạp tiền mặt: dừng đồng bộ êm (requiresAuth), không tạo op.
+    assert.equal(out.status,200);
+    assert.equal(out.body.step,null);
+    assert.equal(out.body.requiresAuth,true);
     assert.equal(await Op.countDocuments(),0);
     out=await post('/sync/next',{cardId,cardState:2,challenge:challengeHex},headers({stepUpAt:Date.now()}));
     assert.equal(out.status,200);

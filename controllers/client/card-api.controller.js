@@ -195,9 +195,12 @@ module.exports.next=handler('next',async(req,res,body)=> {
       });
     }
     catch(error) {
-      // Quản trị viên không đủ quyền ký bước này: dừng đồng bộ êm như chưa đăng nhập, không tạo op.
-      if(error.code!=='OP_FORBIDDEN'||error.missingPermission!==true||req.cookies?.customerToken)
+      // Mọi từ chối xác thực/quyền (thiếu quyền vai trò, cookie khách khác, JWT hết hạn, Step-up quá hạn cho tiền mặt):
+      // dừng đồng bộ êm như chưa đăng nhập, không tạo op. Lỗi khác vẫn ném ra.
+      if(error.code!=='OP_FORBIDDEN')
         throw error;
+      if(error.missingPermission!==true)
+        await cardLog.write({action:'card-sync-op',cardId:card.cardId,actorType:req.cookies?.customerToken?'customer':'admin',result:'fail',detail:{type:step.type,errorCode:'OP_FORBIDDEN',requiresAuth:true},req});
       resolved=null;
     }
     if(!resolved)

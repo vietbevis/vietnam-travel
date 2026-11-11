@@ -166,7 +166,7 @@ it('reset first confirm is denied to another admin or stale stepup through both 
 });
 it('cash bound sync sign and confirm require fresh staff permission before financial mutation',async()=>{
   const c=await card(),r=await cash({cardId:c.cardId,amount:500000});assert.equal(r.code,'success');
-  const body={cardId:c.cardId,cardState:2,challenge:'AB'.repeat(16)};assert.equal((await post('/card-api/sync/next',body,{cookie:makeToken({stepUpAt:Date.now()-301000})})).http,403);assert.equal(await Op.countDocuments(),0);
+  const body={cardId:c.cardId,cardState:2,challenge:'AB'.repeat(16)};const stale=await post('/card-api/sync/next',body,{cookie:makeToken({stepUpAt:Date.now()-301000})});assert.equal(stale.http,200);assert.equal(stale.step,null);assert.equal(stale.requiresAuth,true);assert.equal(await Op.countDocuments(),0);
   const next=await post('/card-api/sync/next',body);assert.equal(next.step.kind,'op');
   for(const endpoint of ['/admin/card/op/confirm','/card-api/op/confirm','/card-api/sync/confirm'])assert.equal((await post(endpoint,{opId:next.step.opId,response:'',sw:'9000'},{cookie:makeToken({stepUpAt:Date.now()-301000})})).http,403);
   await Role.updateOne({_id:admin.role},{$set:{permissions:['card-view']}});assert.equal((await post('/card-api/sync/confirm',{opId:next.step.opId,response:'',sw:'9000'})).http,403);assert.equal((await Card.findById(c.id)).balance,0);assert.equal((await Tx.findOne({txRef:r.txRef})).status,'sent');
