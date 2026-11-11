@@ -10,6 +10,7 @@ router.post('/profile/build',controller.profileBuild);
 router.post('/sync/next',controller.next);
 router.post('/sync/confirm',controller.syncConfirm);
 router.post('/sync/receipt',controller.receipt);
+router.post('/pay/prepare',controller.payPrepare);
 router.post('/op/sign',controller.sign);
 router.post('/op/confirm',controller.confirm);
 router.use(controller.errorHandler);

@@ -7,14 +7,35 @@ const gererateHelper = require("../../helpers/generate.helper");
 const zalopayHelper = require("../../helpers/zalopay.helper");
 const vnpayHelper = require("../../helpers/vnpay.helper");
 const orderPaymentHelper = require("../../helpers/order-payment.helper");
+const tierHelper = require("../../helpers/tier.helper");
 const moment = require("moment");
 
 module.exports.createPost = async (req, res) => {
   try {
+    // Danh tính khách chỉ lấy từ phiên đăng nhập, không tin dữ liệu client gửi lên.
+    for (const field of ["customerId", "cardTxRef", "deleted", "deletedBy", "deletedAt", "updatedBy"]) {
+      delete req.body[field];
+    }
+    if (req.body.paymentMethod === "card" && !req.customer) {
+      res.json({
+        code: "error",
+        message: "Vui lòng đăng nhập bằng thẻ để thanh toán bằng ví thẻ"
+      })
+      return;
+    }
+    if (req.customer) {
+      req.body.customerId = String(req.customer._id);
+    }
+
     req.body.orderCode = "OD" + gererateHelper.generateRandomNumber(10);
 
     // Danh sách tour
     for (const item of req.body.items) {
+      // Trạng thái vé do hệ thống quản lý, không nhận từ client
+      item.ticketStatus = "none";
+      delete item.checkedInAt;
+      delete item.checkedInBy;
+
       const infoTour = await Tour.findOne({
         _id: item.tourId,
         status: "active",
@@ -61,8 +82,11 @@ module.exports.createPost = async (req, res) => {
       return sum + ((item.priceNewAdult * item.quantityAdult) + (item.priceNewChildren * item.quantityChildren) + (item.priceNewBaby * item.quantityBaby));
     }, 0);
 
-    // Giảm
+    // Giảm theo hạng thành viên (chỉ khi đã đăng nhập)
     req.body.discount = 0;
+    if (req.customer && Number.isSafeInteger(req.body.subTotal) && req.body.subTotal >= 0) {
+      req.body.discount = tierHelper.discountFor(req.customer.totalSpent || 0, req.body.subTotal);
+    }
 
     // Thanh toán
     req.body.total = req.body.subTotal - req.body.discount;
@@ -141,6 +165,26 @@ module.exports.success = async (req, res) => {
   } catch (error) {
     console.log(error);
     res.redirect("/");
+  }
+}
+
+module.exports.paymentCard = async (req, res) => {
+  try {
+    const orderId = req.query.orderId;
+    if (!req.customer || !req.card) return res.redirect('/account/login');
+    if (typeof orderId !== 'string' || !/^[a-fA-F0-9]{24}$/.test(orderId)) return res.redirect('/');
+    const orderDetail = await Order.findOne({
+      _id: orderId, customerId: String(req.customer._id), paymentStatus: 'unpaid', paymentMethod: 'card', deleted: false, status: {$ne: 'cancel'}
+    });
+    if (!orderDetail) return res.redirect('/');
+    res.set('Cache-Control', 'no-store');
+    res.render("client/pages/order-payment-card", {
+      pageTitle: "Thanh toán bằng ví thẻ",
+      orderDetail: orderDetail,
+      cardInfo: {cardId: req.card.cardId, balance: req.card.balance}
+    });
+  } catch {
+    return res.redirect('/');
   }
 }
 

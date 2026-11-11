@@ -1,0 +1,18 @@
+extends ../layouts/default
+
+block main
+  - const money = value => Number(value).toLocaleString('vi-VN') + ' đ'
+  main.card-account(data-card-pay data-order-id=orderDetail.id data-card-id=cardInfo.cardId data-phone=orderDetail.phone data-balance=cardInfo.balance data-total=orderDetail.total)
+    h1 Thanh toán bằng ví thẻ
+    p Mã đơn hàng: #{orderDetail.orderCode}
+    p Tạm tính: #{money(orderDetail.subTotal)}
+    p Giảm theo hạng thành viên: -#{money(orderDetail.discount || 0)}
+    p Tổng thanh toán:
+      strong(data-pay-total)= money(orderDetail.total)
+    p Số dư ví hiện tại:
+      strong(data-pay-balance)= money(cardInfo.balance)
+    if cardInfo.balance < orderDetail.total
+      p.card-warning Số dư ví không đủ. Vui lòng nạp thêm trước khi thanh toán.
+    p Cắm thẻ vào đầu đọc, bấm Thanh toán và nhập PIN. Mỗi giao dịch đều cần PIN.
+    button(type="button" data-card-pay-button disabled=cardInfo.balance < orderDetail.total) Thanh toán
+    p(data-customer-status role="status" aria-live="polite")

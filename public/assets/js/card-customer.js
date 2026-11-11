@@ -83,6 +83,22 @@
     if(!result.ok)invalid('Chưa xác nhận ghi thẻ. Hồ sơ trên hệ thống chưa được cập nhật.');
     return result;
   }
+  // U5: trả tiền đơn bằng ví thẻ. Đồng bộ trước để khôi phục biên nhận cũ, PIN mỗi giao dịch.
+  async function payFlow({client,cardId,orderId,fetch:fetcher=root.fetch.bind(root)}){
+    identity(await client.openSession({expectedCardId:cardId}),cardId);
+    await pin(client,'Nhập PIN để thanh toán');
+    const prepared=await post(fetcher,'/card-api/pay/prepare',{orderId});
+    const result=await client.runSignedOp({opId:prepared.opId,signUrl:'/card-api/op/sign',confirmUrl:'/card-api/op/confirm'});
+    if(!result.ok)invalid('Chưa xác nhận thanh toán. Vui lòng cắm lại thẻ để hệ thống đối soát, không thanh toán lại.');
+    return result;
+  }
+  // U4: chỉ đọc họ tên và số điện thoại từ thẻ (cần PIN), không gửi gì lên máy chủ.
+  async function autofillFlow({client,cardId}){
+    identity(await client.openSession({expectedCardId:cardId,sync:false}),cardId);
+    await pin(client,'Nhập PIN để điền thông tin từ thẻ');
+    const profile=await client.readProfile();
+    return{fullName:profile.fullName||'',phone:profile.phone||''};
+  }
   function message(error){
     if(error?.sw)return S.swMessage(error.sw);
     const messages={PIN_CANCELLED:'Đã hủy nhập PIN.',WEAK_PIN:'PIN mới quá yếu.',PIN_FORMAT:'PIN phải gồm đúng 6 chữ số.',AUTH_REQUIRED:'Vui lòng đăng nhập lại.',CARD_AUTH_INVALID:'Không thể xác thực thẻ. Vui lòng kiểm tra thẻ và thử lại.',OP_FORBIDDEN:'Bạn không có quyền thực hiện thao tác này.',OP_STATE:'Thao tác đã hết hạn hoặc thay đổi. Vui lòng thử lại.',CARD_STATE:'Thẻ hiện không cho phép thao tác.',REQUEST_TIMEOUT:'Yêu cầu quá thời gian. Vui lòng kiểm tra kết nối.',CLIENT_STALE:'Trang đã thay đổi. Vui lòng thử lại.',CLIENT_SUSPENDED:'Trang đã tạm dừng.',CLIENT_DISPOSED:'Trang đã đóng.'};
@@ -105,6 +121,19 @@
     root.addEventListener('pagehide',clear);
     root.addEventListener('pageshow',event=>{if(event.persisted){root.location.reload();}else stale=false;});
     async function run(button,fn){if(busy)return;busy=true;if(button)button.disabled=true;if(status)status.textContent='Đang xử lý…';try{await fn();}catch(error){if(!stale&&status)status.textContent=message(error);}finally{busy=false;if(button)button.disabled=false;}}
+    const pay=document.querySelector('[data-card-pay]'),payButton=document.querySelector('[data-card-pay-button]');
+    if(pay&&payButton)payButton.addEventListener('click',()=>run(payButton,async()=>{
+      await payFlow({client,cardId:pay.dataset.cardId,orderId:pay.dataset.orderId});
+      if(!stale)root.location.assign('/order/success?orderId='+encodeURIComponent(pay.dataset.orderId)+'&phone='+encodeURIComponent(pay.dataset.phone));
+    }));
+    const fill=document.querySelector('[data-card-autofill]');
+    if(fill)fill.addEventListener('click',()=>run(fill,async()=>{
+      const data=await autofillFlow({client,cardId:fill.dataset.cardId||undefined});
+      if(stale)return;
+      const name=document.querySelector('#full-name-input'),phone=document.querySelector('#phone-input');
+      if(name)name.value=data.fullName;if(phone)phone.value=data.phone;
+      if(status)status.textContent='Đã điền thông tin từ thẻ.';
+    }));
     const login=document.querySelector('[data-card-login]');if(login)login.addEventListener('click',()=>run(login,async()=>{await loginFlow({client});if(!stale)root.location.assign('/account/card');}));
     for(const logout of document.querySelectorAll('[data-card-logout]'))logout.addEventListener('click',()=>run(logout,async()=>{await post(root.fetch.bind(root),'/card-api/logout',{});if(stale)return;clear();client?.dispose();document.body.replaceChildren();root.location.replace('/account/login');}));
     const read=document.querySelector('[data-card-read]');if(read)read.addEventListener('click',()=>run(read,async()=>{
@@ -129,5 +158,5 @@
       });});
     }
   }
-  return{loginFlow,readFlow,profileFlow,mount};
+  return{loginFlow,readFlow,profileFlow,payFlow,autofillFlow,mount};
 }));

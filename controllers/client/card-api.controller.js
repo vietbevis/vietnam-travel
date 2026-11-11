@@ -1,10 +1,12 @@
 const Joi=require('joi');
 const jwt=require('jsonwebtoken');
+const crypto=require('node:crypto');
 const adminTokenHelper=require('../../helpers/admin-token.helper');
 const Card=require('../../models/card.model');
 const Tx=require('../../models/card-transaction.model');
 const Op=require('../../models/card-operation.model');
 const Customer=require('../../models/customer.model');
+const Order=require('../../models/order.model');
 const Account=require('../../models/account-admin.model');
 const Role=require('../../models/role.model');
 const E=require('../../helpers/card-op.helper');
@@ -27,7 +29,7 @@ const schemas={
     sw:hex(4)
   }).required().unknown(false)
 };
-const problem=(res,status,errorCode)=>res.status(status).json({code:'error',errorCode,message:'Yêu cầu thẻ không hợp lệ hoặc không được phép.'});
+const problem=(res,status,errorCode,message='Yêu cầu thẻ không hợp lệ hoặc không được phép.')=>res.status(status).json({code:'error',errorCode,message});
 function handler(schema,fn) {
   return async(req,res)=> {
     if(!req.is('application/json'))
@@ -245,7 +247,7 @@ function customerHandler(schema,action,fn,required=false){
     }catch(error){
       const errorCode=error instanceof E.CardOpError?error.code:'INTERNAL';
       await cardLog.write({action,cardId:req.card?.cardId,actorType:'customer',actorId:req.customer?String(req.customer._id):undefined,result:'fail',detail:{errorCode},req});
-      problem(res,error.httpStatus||(['CARD_AUTH_INVALID','AUTH_REQUIRED'].includes(errorCode)?401:errorCode==='OP_FORBIDDEN'?403:errorCode==='INVALID_PROFILE'?400:errorCode==='INTERNAL'?500:409),errorCode);
+      problem(res,error.httpStatus||(['CARD_AUTH_INVALID','AUTH_REQUIRED'].includes(errorCode)?401:errorCode==='OP_FORBIDDEN'?403:errorCode==='INVALID_PROFILE'?400:errorCode==='INTERNAL'?500:409),errorCode,error.userMessage);
     }
   };
 }
@@ -277,6 +279,29 @@ module.exports.profileBuild=customerHandler(customerValidation.profile,'customer
   const op=await E.createOp({cardId:req.card.cardId,type:'commit-write',params:{target:1,dataHex:profileHex,customerUpdate:body},actorType:'customer',actorId:String(req.customer._id)});
   await cardLog.write({action:'customer-profile-build',cardId:req.card.cardId,actorType:'customer',actorId:String(req.customer._id),result:'success',detail:{opId:op.id},req});
   res.json({code:'success',message:'Đã chuẩn bị hồ sơ; dữ liệu chỉ đổi sau khi xác nhận ghi thẻ.',opId:op.id,profileHex});
+},true);
+const PAY_SYNC_MESSAGE='Giao dịch trước chưa hoàn tất, vui lòng cắm thẻ để đồng bộ';
+const refused=(code,message)=>{const error=new E.CardOpError(code);error.userMessage=message;return error;};
+// U5: chuẩn bị trừ ví cho một đơn. Không bao giờ ký lại tiền khi giao dịch cũ chưa đối soát xong.
+module.exports.payPrepare=customerHandler(customerValidation.payPrepare,'card-pay-prepare',async(req,res,body)=>{
+  const customerId=String(req.customer._id);
+  const order=await Order.findOne({_id:body.orderId,customerId,deleted:false,paymentMethod:'card',paymentStatus:'unpaid',status:{$ne:'cancel'}}).lean();
+  if(!order||!Number.isSafeInteger(order.total)||order.total<1)throw refused('OP_STATE','Đơn hàng không hợp lệ hoặc đã được thanh toán.');
+  const open=await Tx.find({orderId:String(order._id),type:'debit',status:{$ne:'done'}}).lean();
+  // Giao dịch đã ký (sent, hoặc pending-card/failed còn dấu signedOpId) cần khôi phục biên nhận trước.
+  if(open.some(tx=>tx.status==='sent'||tx.signedOpId))throw refused('OP_STATE',PAY_SYNC_MESSAGE);
+  if(req.card.balance<order.total)throw refused('INSUFFICIENT_BALANCE','Số dư ví không đủ');
+  // Giao dịch chưa từng ký (người dùng bỏ giữa chừng) dùng lại được, tránh kẹt đơn vĩnh viễn.
+  let tx=open.find(item=>item.cardId===req.card.cardId&&item.status==='pending-card'&&item.amount===order.total&&item.txRef===order.cardTxRef);
+  if(!tx){
+    const txRef=crypto.randomBytes(8).toString('hex').toUpperCase();
+    const claim=await Order.updateOne({_id:order._id,customerId,deleted:false,paymentMethod:'card',paymentStatus:'unpaid',status:{$ne:'cancel'},total:order.total,cardTxRef:order.cardTxRef===undefined?{$exists:false}:order.cardTxRef},{$set:{cardTxRef:txRef}});
+    if(claim.modifiedCount!==1)throw refused('OP_STATE','Đơn hàng vừa thay đổi, vui lòng thử lại.');
+    tx=await Tx.create({txRef,cardId:req.card.cardId,type:'debit',source:'order',amount:order.total,orderId:String(order._id),createdBy:customerId});
+  }
+  const op=await E.createOp({cardId:req.card.cardId,type:'debit',params:{txRef:tx.txRef},actorType:'customer',actorId:customerId});
+  await cardLog.write({action:'card-pay-prepare',cardId:req.card.cardId,actorType:'customer',actorId:customerId,result:'success',detail:{opId:op.id,orderId:String(order._id),txRef:tx.txRef,amount:order.total},req});
+  res.json({code:'success',message:'Đã chuẩn bị thanh toán bằng ví thẻ.',opId:op.id,amount:order.total});
 },true);
 // Mount trực tiếp tại app để bắt cả lỗi parser xảy ra trước router con.
 module.exports.errorHandler=(error,req,res,next)=> {

@@ -429,6 +429,10 @@ if(orderForm) {
                   // Chuyển hướng sang trang thanh toán bằng VNPay
                   window.location.href = `/order/payment-vnpay?orderId=${data.orderId}`;
                   break;
+                case "card":
+                  // Chuyển hướng sang trang thanh toán bằng ví thẻ
+                  window.location.href = `/order/payment-card?orderId=${data.orderId}`;
+                  break;
               }
             }
           })
@@ -764,7 +768,9 @@ const drawCart = () => {
             return sum;
           }
         }, 0);
-        const discount = 0;
+        // Giảm theo hạng thành viên (máy chủ vẫn tính lại khi tạo đơn)
+        const discountPercent = parseInt(document.querySelector("[page-cart]")?.getAttribute("data-discount-percent")) || 0;
+        const discount = Math.round(subTotalPrice * discountPercent / 100);
         const totalPrice = subTotalPrice - discount;
         
         const cartSubTotal = document.querySelector("[cart-sub-total]");
@@ -772,6 +778,9 @@ const drawCart = () => {
 
         const cartTotal = document.querySelector("[cart-total]");
         cartTotal.innerHTML = totalPrice.toLocaleString("vi-VN");
+
+        const cartDiscount = document.querySelector("[cart-discount]");
+        if(cartDiscount) cartDiscount.innerHTML = discount.toLocaleString("vi-VN");
         // Hết Tính tổng tiền
 
         // Sự kiện cập nhật số lượng

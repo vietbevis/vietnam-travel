@@ -2,7 +2,7 @@ extends ../layouts/default.pug
 
 block main
   // Section 11
-  .section-11(page-cart)
+  .section-11(page-cart data-discount-percent=customer ? tier.percent : 0)
     .container
       .inner-wrap
         .inner-head
@@ -27,7 +27,12 @@ block main
               span đ
           .inner-item
             .inner-label Giảm:
-            .inner-price -0đ
+            .inner-price
+              span -
+              span(cart-discount) 0
+              span đ
+              if customer && tier.percent > 0
+                span.inner-tier  (Hạng #{tier.label} giảm #{tier.percent}%)
           .inner-item
             .inner-label Thanh toán:
             .inner-price-highlight
@@ -47,13 +52,17 @@ block main
                   placeholder="Họ và tên" 
                   name="fullName" 
                   type="text"
+                  value=customer ? customer.fullName : ""
                   )
               .inner-input
                 input#phone-input(
                   placeholder="Số điện thoại" 
                   name="phone" 
                   type="text"
+                  value=customer ? customer.phone : ""
                   )
+            button(type="button" data-card-autofill data-card-id=card ? card.cardId : "") Điền từ thẻ
+            p(data-customer-status role="status" aria-live="polite")
             textarea(
               placeholder="Ghi chú" 
               name="note"
@@ -97,6 +106,14 @@ block main
                   type="radio"
                   )
                 label(for="methodBank") Chuyển khoản ngân hàng
+              if customer
+                .inner-item
+                  input#methodCard(
+                    value="card" 
+                    name="method" 
+                    type="radio"
+                    )
+                  label(for="methodCard") Ví thẻ thành viên
             .inner-info-bank
               .inner-title Thông tin chuyển khoản
               .inner-text Ngân hàng : Vietcombank
