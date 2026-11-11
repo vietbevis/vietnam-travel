@@ -244,3 +244,33 @@ it('payment page renders for owner only',async()=> {
   const guest=await request('/order/payment-card?orderId='+order.id,undefined,'');
   assert.equal(guest.status,302);
 });
+const item=(extra={})=>({tourId:tour.id,locationFrom:'x',quantityAdult:1,quantityChildren:0,quantityBaby:0,...extra});
+async function rejected(items,token=tokenA) {
+  const before=await Tour.findById(tour.id).lean();
+  const r=await request('/order/create',orderBody({items}),token);
+  assert.equal(r.code,'error',r.text);
+  assert.equal(await Order.countDocuments(),0);
+  const after=await Tour.findById(tour.id).lean();
+  assert.deepEqual([after.stockAdult,after.stockChildren,after.stockBaby],[before.stockAdult,before.stockChildren,before.stockBaby]);
+}
+it('createPost rejects unknown, inactive and deleted tours without order or stock change',async()=> {
+  const inactive=await Tour.create({name:'Tour tắt',status:'inactive',deleted:false,priceNewAdult:1,priceNewChildren:1,priceNewBaby:1,stockAdult:5,stockChildren:5,stockBaby:5});
+  const removed=await Tour.create({name:'Tour xóa',status:'active',deleted:true,priceNewAdult:1,priceNewChildren:1,priceNewBaby:1,stockAdult:5,stockChildren:5,stockBaby:5});
+  for(const bad of ['0123456789abcdef01234567',inactive.id,removed.id,'xyz'])
+    await rejected([item(),item({tourId:bad,priceNewAdult:1,priceNewChildren:1,priceNewBaby:1})]);
+});
+it('createPost rejects negative, fractional, non-numeric and all-zero quantities',async()=> {
+  for(const q of [{quantityAdult:-1},{quantityAdult:0.001},{quantityChildren:1.5},{quantityBaby:'1'},{quantityBaby:null},{quantityAdult:Number.MAX_SAFE_INTEGER+2}])
+    await rejected([item(q)]);
+  await rejected([item({quantityAdult:0})]);
+  await rejected([]);
+  await rejected('not-an-array');
+});
+it('createPost always prices from the server tour and ignores client priceNew values',async()=> {
+  const r=await request('/order/create',orderBody({paymentMethod:'card',items:[item({quantityAdult:1,priceNewAdult:1,priceNewChildren:1,priceNewBaby:1})]}));
+  assert.equal(r.code,'success',r.text);
+  const order=await Order.findById(r.orderId).lean();
+  assert.equal(order.items[0].priceNewAdult,1000000);
+  assert.equal(order.subTotal,1000000);
+  assert.equal(order.total,950000);
+});

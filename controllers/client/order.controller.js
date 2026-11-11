@@ -27,6 +27,32 @@ module.exports.createPost = async (req, res) => {
       req.body.customerId = String(req.customer._id);
     }
 
+    // Kiểm tra toàn bộ item phía server trước mọi thay đổi tồn kho:
+    // tour phải đang hoạt động, số lượng là số nguyên không âm, ít nhất một khách.
+    const items = req.body.items;
+    const validQuantity = value => Number.isSafeInteger(value) && value >= 0;
+    let totalQuantity = 0;
+    let itemsValid = Array.isArray(items) && items.length > 0;
+    if (itemsValid) {
+      for (const item of items) {
+        const validShape = item && typeof item === "object" && typeof item.tourId === "string" && /^[a-fA-F0-9]{24}$/.test(item.tourId)
+          && validQuantity(item.quantityAdult) && validQuantity(item.quantityChildren) && validQuantity(item.quantityBaby);
+        const tourExists = validShape && await Tour.exists({_id: item.tourId, status: "active", deleted: false});
+        if (!tourExists) {
+          itemsValid = false;
+          break;
+        }
+        totalQuantity += item.quantityAdult + item.quantityChildren + item.quantityBaby;
+      }
+    }
+    if (!itemsValid || totalQuantity < 1) {
+      res.json({
+        code: "error",
+        message: "Thông tin tour hoặc số lượng không hợp lệ, vui lòng chọn lại"
+      })
+      return;
+    }
+
     req.body.orderCode = "OD" + gererateHelper.generateRandomNumber(10);
 
     // Danh sách tour
