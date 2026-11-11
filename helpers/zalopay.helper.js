@@ -7,6 +7,8 @@ const text = value => typeof value === 'string' && value.trim().length > 0;
 const amountValid = value => Number.isSafeInteger(value) && value > 0;
 // Helper dùng chung cho order/topup; từng controller kiểm identity nghiệp vụ riêng.
 const appUserValid = value => typeof value === 'string' && /^[A-Za-z0-9+_-]{1,50}$/.test(value);
+// Số điện thoại nhập tự do: bỏ khoảng trắng, dấu chấm, gạch ngang và ngoặc trước khi dựng/so khớp app_user.
+module.exports.normalizePhone = value => typeof value === 'string' ? value.replace(/[\s.()-]/g, '') : '';
 
 module.exports.createOrder = async ({appUser,amount,description,redirectUrl,callbackPath,expireSeconds} = {}) => {
   // Đọc cấu hình lúc gọi, không chụp secret khi require module.

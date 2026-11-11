@@ -157,3 +157,17 @@ integration('hai entrypoint chỉ khởi tạo payment đúng method, không can
     }
   }
 });
+// L2: số điện thoại nhập tự do ("0901 234 567", "(090) 123.4567") vẫn thanh toán ZaloPay; callback so khớp chặt trên số đã chuẩn hoá.
+integration('ZaloPay chuẩn hoá số điện thoại tự do và callback chỉ khớp số đã chuẩn hoá',async()=> {
+  let sent; axios.post=async(url,body,options)=>{sent=options.params;return {data:{return_code:1,order_url:'https://zalo.example.invalid/checkout'}};};
+  try {
+    for(const [phone,normalized] of [['0901 234 567','0901234567'],['(090) 123.45-67','0901234567'],['+84 901 234 567','+84901234567']]) {
+      const order=await makeOrder({phone}); const res=response(); sent=undefined;
+      await controller.paymentZaloPay({query:{orderId:order.id}},res);
+      assert.deepEqual(res.redirects,['https://zalo.example.invalid/checkout']); assert.equal(sent.app_user,`${normalized}-${order.id}`);
+      for(const app_user of [`0999999999-${order.id}`,`${phone}-${order.id}`]) {const bad=response(); await controller.paymentZaloPayResultPost({body:zaloBody(order,{app_user})},bad); assert.notEqual(bad.jsons[0].return_code,1); await assertUnpaid(order);}
+      const ok=response(); await controller.paymentZaloPayResultPost({body:zaloBody(order,{app_user:sent.app_user})},ok);
+      assert.equal(ok.jsons[0].return_code,1); assert.equal((await Order.findById(order.id)).paymentStatus,'paid');
+    }
+  } finally {axios.post=async()=>({data:{return_code:1,order_url:'https://zalo.example.invalid/checkout'}});}
+});

@@ -222,11 +222,12 @@ module.exports.paymentZaloPay = async (req, res) => {
       _id: orderId, paymentStatus: 'unpaid', paymentMethod: 'zalopay', deleted: false, status: {$ne: 'cancel'}
     });
     if (!orderDetail) return res.redirect('/');
+    // Số điện thoại nhập tự do ("0901 234 567") được chuẩn hoá trước khi đưa vào app_user của ZaloPay.
     const url = await zalopayHelper.createOrder({
-      appUser: `${orderDetail.phone}-${orderDetail.id}`,
+      appUser: `${zalopayHelper.normalizePhone(orderDetail.phone)}-${orderDetail.id}`,
       amount: orderDetail.total,
       description: `Thanh toán đơn hàng ${orderDetail.orderCode}`,
-      redirectUrl: `${process.env.DOMAIN_WEBSITE}/order/success?orderId=${orderDetail.id}&phone=${orderDetail.phone}`,
+      redirectUrl: `${process.env.DOMAIN_WEBSITE}/order/success?orderId=${orderDetail.id}&phone=${encodeURIComponent(orderDetail.phone)}`,
       callbackPath: '/order/payment-zalopay-result'
     });
     return res.redirect(url || '/');
@@ -242,12 +243,16 @@ module.exports.paymentZaloPayResultPost = async (req, res) => {
     const data = verified.data;
     if (!/^\+?\d{8,15}-[a-fA-F0-9]{24}$/.test(data.app_user)) return res.json({return_code: -1, return_message: 'invalid payment'});
     const [phone, orderId] = data.app_user.split('-');
-    const identity = {
-      _id: orderId, phone, total: data.amount, paymentMethod: 'zalopay', deleted: false, status: {$ne: 'cancel'}
+    const reference = {
+      _id: orderId, total: data.amount, paymentMethod: 'zalopay', deleted: false, status: {$ne: 'cancel'}
     };
-    const order = await Order.findOne(identity);
-    if (!order || !['unpaid', 'paid'].includes(order.paymentStatus)) return res.json({return_code: -1, return_message: 'invalid payment'});
-    const changed = await orderPaymentHelper.markOrderPaid({_id: orderId, phone, deleted: false, total: data.amount}, 'zalopay');
+    const found = await Order.findOne(reference);
+    // So khớp chặt: số trong app_user phải đúng bằng số điện thoại của đơn sau khi chuẩn hoá.
+    if (!found || zalopayHelper.normalizePhone(found.phone) !== phone) return res.json({return_code: -1, return_message: 'invalid payment'});
+    const identity = {...reference, phone: found.phone};
+    const order = found;
+    if (!['unpaid', 'paid'].includes(order.paymentStatus)) return res.json({return_code: -1, return_message: 'invalid payment'});
+    const changed = await orderPaymentHelper.markOrderPaid({_id: orderId, phone: found.phone, deleted: false, total: data.amount}, 'zalopay');
     // Callback lặp chỉ được ACK khi cùng identity/amount vẫn là đơn paid hợp lệ.
     if (!changed && !await Order.findOne({...identity, paymentStatus: 'paid'})) return res.json({return_code: -1, return_message: 'invalid payment'});
     return res.json({return_code: 1, return_message: 'success'});
