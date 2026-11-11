@@ -33,6 +33,7 @@ const schemas={
     sw:hex(4)
   }).required().unknown(false)
 };
+const HANDLER_ACTIONS={next:'card-sync-op',sign:'card-op-sign',confirm:'card-op-confirm',receipt:'card-receipt-recovery'};
 const problem=(res,status,errorCode,message='Yêu cầu thẻ không hợp lệ hoặc không được phép.')=>res.status(status).json({code:'error',errorCode,message});
 function handler(schema,fn) {
   return async(req,res)=> {
@@ -57,6 +58,16 @@ function handler(schema,fn) {
     catch(error) {
       const code=error instanceof E.CardOpError?error.code:'INTERNAL';
       const status=code==='OP_NOT_FOUND'?404:code==='OP_FORBIDDEN'?403:code==='INTERNAL'?500:409;
+      // Từ chối trước khi engine chạy (xác thực, quyền...) vẫn phải có nhật ký; engine đã ghi thì không ghi trùng.
+      if(!error?.logged)
+        await cardLog.write({
+          action:HANDLER_ACTIONS[schema],
+          cardId:value.cardId?.toUpperCase(),
+          actorType:req.cookies?.customerToken?'customer':req.cookies?.token?'admin':'system',
+          result:'fail',
+          detail:{...(value.opId?{opId:value.opId}:{}),...(value.txRef?{txRef:value.txRef.toUpperCase()}:{}),errorCode:code},
+          req
+        });
       problem(res,status,code);
     }
   };
@@ -205,13 +216,15 @@ module.exports.next=handler('next',async(req,res,body)=> {
     actorType:'system',
     actorId:binding?`${binding.actorType}:${binding.actorId}`:undefined
   });
-  const {apdu}=await E.signOp({opId:op.id,challengeHex:body.challenge,...(binding||{actorType:'system'})});
+  // Op đồng bộ hết hạn sau 5 phút: nhật ký giữ lại loại bước và tham số an toàn (vé nào, trạng thái nào, giao dịch nào).
+  await cardLog.write({action:'card-sync-op',cardId:card.cardId,actorType:binding?.actorType||'system',actorId:binding?.actorId,result:'success',detail:{opId:op.id,...E.opLogDetail(op)},req});
+  const {apdu}=await E.signOp({opId:op.id,challengeHex:body.challenge,...(binding||{actorType:'system'}),req});
   res.json({code:'success',message:'Đã chuẩn bị bước đồng bộ.',step:{kind:'op',opId:op.id,apdu}});
 });
 module.exports.sign=handler('sign',async(req,res,body)=> {
   const ctx=await owned(req,res,body.opId,false);
   if(ctx)
-    res.json({code:'success',message:'Đã ký thao tác thẻ.',...await E.signOp({opId:body.opId,challengeHex:body.challenge,...ctx.actor})});
+    res.json({code:'success',message:'Đã ký thao tác thẻ.',...await E.signOp({opId:body.opId,challengeHex:body.challenge,...ctx.actor,req})});
 });
 function confirm(publicSync) {
   return handler('confirm',async(req,res,body)=> {
@@ -244,8 +257,10 @@ module.exports.receipt=handler('receipt',async(req,res,body)=> {
       req
     });
   else
-  if(body.sw.toUpperCase()==='6A88')
+  if(body.sw.toUpperCase()==='6A88') {
     await Tx.updateOne({_id:tx._id,status:{$ne:'done'},signedOpId:tx.signedOpId},{$set:{status:'failed'}});
+    await cardLog.write({action:'card-receipt-recovery',cardId:card.cardId,actorType:'system',result:'fail',detail:{txRef:tx.txRef,sw:'6A88',applied:false},req});
+  }
   res.json({
     code:ok?'success':'error',
     ok,

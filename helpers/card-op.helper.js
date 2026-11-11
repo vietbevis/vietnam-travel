@@ -24,6 +24,38 @@ const fail=code=> {
   throw new CardOpError(code);
 };
 const objectId=x=>typeof x==='string'&&/^[a-fA-F0-9]{24}$/.test(x);
+// Nhật ký thao tác thẻ chỉ ghi loại op và tham số an toàn; không bao giờ ghi newPin/encryptedPin, dataHex hay customerUpdate.
+const SAFE_PARAMS=['txRef','orderId','itemIndex','state','target'];
+function opLogDetail(op,tx) {
+  const detail={};
+  if(typeof op?.type==='string')
+    detail.type=op.type;
+  for(const key of SAFE_PARAMS)
+    if(op?.params?.[key]!==undefined)
+      detail[key]=op.params[key];
+  if(tx) {
+    detail.txRef=tx.txRef;
+    detail.amount=tx.amount;
+    if(tx.orderId)
+      detail.orderId=tx.orderId;
+  }
+  return detail;
+}
+const errorCodeOf=error=>error instanceof CardOpError?error.code:'INTERNAL';
+// Lỗi ném ra giữa sign/confirm cũng phải có dấu vết; đánh dấu để handler API không ghi trùng.
+async function auditFailure(action,args,audit,error) {
+  await log.write({
+    action,
+    cardId:audit.cardId,
+    actorType:args.actorType||'system',
+    actorId:args.actorId,
+    result:'fail',
+    detail:{opId:String(args.opId),...(typeof args.sw==='string'?{sw:args.sw.slice(0,4)}:{}),...opLogDetail(audit.op,audit.tx),errorCode:errorCodeOf(error)},
+    req:args.req
+  });
+  if(error&&typeof error==='object')
+    error.logged=true;
+}
 const hex=(x,n)=>typeof x==='string'&&new RegExp(`^[a-fA-F0-9]{${n}}$`).test(x);
 const syncTypes=['set-state','credit','delete-ticket','write-ticket'];
 const profileFields=['fullName','dob','gender','phone','idNumber','emergencyName','emergencyPhone','bloodType','allergies'];
@@ -81,12 +113,14 @@ async function transaction(fn) {
     await session.endSession();
   }
 }
-async function loadOp(opId,actor,session,status) {
+async function loadOp(opId,actor,session,status,audit={}) {
   if(!objectId(String(opId)))
     fail('OP_NOT_FOUND');
   const op=await Op.findById(opId).session(session).lean();
   if(!op)
     fail('OP_NOT_FOUND');
+  audit.op=op;
+  audit.cardId=op.cardId;
   actorCheck(op,actor);
   if(op.status!==status||op.expireAt<=new Date()) {
     if(op.expireAt<=new Date())
@@ -265,15 +299,26 @@ async function createOp({cardId,type,params={},actorType,actorId}) {
     return op;
   });
 }
-async function signOp({opId,challengeHex,actorType,actorId}) {
+async function signOp(args) {
+  const audit={};
+  try {
+    return await signOpCore(args,audit);
+  }
+  catch(error) {
+    await auditFailure('card-op-sign',args,audit,error);
+    throw error;
+  }
+}
+async function signOpCore({opId,challengeHex,actorType,actorId},audit) {
   if(!hex(challengeHex,32))
     fail('OP_STATE');
   if(objectId(String(opId)))
     await Op.updateOne({_id:opId,expireAt:{$lte:new Date()}},{$unset:{'params.encryptedPin':1,'params.newPin':1}});
   return transaction(async session=> {
-    const op=await loadOp(String(opId),{actorType,actorId},session,'draft');
+    const op=await loadOp(String(opId),{actorType,actorId},session,'draft',audit);
     const card=await Card.findOne({cardId:op.cardId}).session(session).lean();
     const context=await policy(card,op,session);
+    audit.tx=context.tx;
     if(context.tx) {
       if(context.tx.status!=='pending-card'||context.tx.signedOpId)
         fail('OP_STATE');
@@ -351,18 +396,30 @@ async function applyReceipt(args) {
   });
   return ok;
 }
-async function confirmOp({opId,responseHex='',sw,actorType,actorId,req}) {
-  if(!/^[0-9a-fA-F]{4}$/.test(sw)||typeof responseHex!=='string'||!/^([a-fA-F0-9]{2})*$/.test(responseHex)||responseHex.length>332)
+async function confirmOp(args) {
+  const audit={};
+  try {
+    return await confirmOpCore(args,audit);
+  }
+  catch(error) {
+    await auditFailure('card-op-confirm',args,audit,error);
+    throw error;
+  }
+}
+async function confirmOpCore({opId,responseHex='',sw,actorType,actorId,req},audit) {
+  if(typeof sw!=='string'||!/^[0-9a-fA-F]{4}$/.test(sw)||typeof responseHex!=='string'||!/^([a-fA-F0-9]{2})*$/.test(responseHex)||responseHex.length>332)
     fail('OP_STATE');
   if(objectId(String(opId)))
     await Op.updateOne({_id:opId,expireAt:{$lte:new Date()}},{$unset:{'params.encryptedPin':1,'params.newPin':1}});
-  let notification,logCardId;
+  let notification;
   const output=await transaction(async session=> {
     // Driver có thể chạy lại callback sau write conflict; chỉ lượt commit thắng được giữ PIN/mail.
     notification=undefined;
+    audit.tx=undefined;
     let newPin;
     const found=await Op.findById(objectId(String(opId))?opId:null).session(session).lean();
-    logCardId=found?.cardId;
+    audit.op=found;
+    audit.cardId=found?.cardId;
     if(found&&['done','failed'].includes(found.status)) {
       actorCheck(found,{actorType,actorId});
       // Mất HTTP confirm chỉ được đọc lại kết quả commit đã ghi nhận; không phát APDU mới.
@@ -373,7 +430,7 @@ async function confirmOp({opId,responseHex='',sw,actorType,actorId,req}) {
       }
       return{ok:false,message:'Thao tác đã kết thúc.',result:null};
     }
-    const op=await loadOp(String(opId),{actorType,actorId},session,'prepared');
+    const op=await loadOp(String(opId),{actorType,actorId},session,'prepared',audit);
     const card=await Card.findOne({cardId:op.cardId}).session(session).lean();
     await bindingPolicy(card,op,session);
     let context;
@@ -382,6 +439,7 @@ async function confirmOp({opId,responseHex='',sw,actorType,actorId,req}) {
       context={tx:await Tx.findOne({cardId:op.cardId,txRef:op.params.txRef?.toUpperCase()}).session(session).lean()};
     else
       context=await policy(card,op,session);
+    audit.tx=context.tx;
     if(['credit','debit'].includes(op.type)&&!context.tx)
       fail('OP_STATE');
     // Xoá vé đã không còn trên thẻ (6A88) cũng là kết quả mong muốn: tránh vòng lặp đồng bộ xoá mãi.
@@ -429,11 +487,11 @@ async function confirmOp({opId,responseHex='',sw,actorType,actorId,req}) {
   });
   await log.write({
     action:'card-op-confirm',
-    cardId:logCardId,
+    cardId:audit.cardId,
     actorType:actorType||'system',
     actorId,
     result:output.ok?'success':'fail',
-    detail:{opId:String(opId),sw},
+    detail:{opId:String(opId),sw,...opLogDetail(audit.op,audit.tx)},
     req
   });
   if(output.ok&&output.result?.type==='reset-pin'){
@@ -499,6 +557,7 @@ module.exports={
     return null;
   }},
   CardOpError,
+  opLogDetail,
   createOp,
   signOp,
   confirmOp,

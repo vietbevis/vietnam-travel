@@ -1027,3 +1027,63 @@ it('bound system engine rejects unbound creation and different signer',async()=>
   }),{code:'OP_FORBIDDEN'});
   assert.equal((await Tx.findOne()).signedOpId,undefined);
 });
+it('confirm audit records op type card and safe params but never PIN or key material',async()=> {
+  const{op,order}=await signed('debit');
+  assert.equal((await E.confirmOp({opId:op.id,responseHex:receipt({type:'debit',balance:400000}),sw:'9000',...actor})).ok,true);
+  const entry=await CardLog.findOne({action:'card-op-confirm',result:'success'}).lean();
+  assert.equal(entry.cardId,cardId);
+  assert.deepEqual(entry.detail,{opId:op.id,sw:'9000',type:'debit',txRef,amount:500000,orderId:order.id});
+  const adminId='123456789012345678901234';
+  const reset=await E.createOp({cardId,type:'reset-pin',params:{newPin:'827491'},actorType:'admin',actorId:adminId});
+  await E.signOp({opId:reset.id,challengeHex,actorType:'admin',actorId:adminId});
+  const mail=require('../../helpers/mail.helper'),saved=mail.sendMail;
+  mail.sendMail=()=>({sent:true});
+  try {
+    assert.equal((await E.confirmOp({opId:reset.id,sw:'9000',actorType:'admin',actorId:adminId})).ok,true);
+  }
+  finally {
+    mail.sendMail=saved;
+  }
+  const resetLog=await CardLog.findOne({action:'card-op-confirm','detail.opId':reset.id}).lean();
+  assert.equal(resetLog.detail.type,'reset-pin');assert.equal(resetLog.cardId,cardId);
+  const raw=JSON.stringify(await CardLog.find().lean());
+  for(const secret of ['827491','newPin','encryptedPin','dataHex'])assert.ok(!raw.includes(secret),secret);
+});
+it('failures thrown inside sign and confirm write a fail audit with the error code',async()=> {
+  const{op}=await signed();
+  const stranger={actorType:'customer',actorId:'987654321098765432109876'};
+  await assert.rejects(E.confirmOp({opId:op.id,responseHex:receipt(),sw:'9000',...stranger}),/OP_FORBIDDEN/);
+  const forbidden=await CardLog.findOne({action:'card-op-confirm',result:'fail'}).lean();
+  assert.equal(forbidden.cardId,cardId);assert.equal(forbidden.detail.errorCode,'OP_FORBIDDEN');assert.equal(forbidden.detail.opId,op.id);assert.equal(forbidden.detail.type,'credit');
+  await assert.rejects(E.signOp({opId:op.id,challengeHex,...actor}),/OP_STATE/);
+  const resign=await CardLog.findOne({action:'card-op-sign',result:'fail'}).lean();
+  assert.equal(resign.cardId,cardId);assert.equal(resign.detail.errorCode,'OP_STATE');assert.equal(resign.detail.type,'credit');assert.equal(resign.detail.txRef,txRef);
+  await assert.rejects(E.confirmOp({opId:'0123456789abcdef0123abcd',sw:'9000',...actor}),/OP_NOT_FOUND/);
+  assert.ok(await CardLog.findOne({action:'card-op-confirm',result:'fail','detail.errorCode':'OP_NOT_FOUND'}));
+  // Op hợp lệ vẫn xác nhận được sau các lần từ chối.
+  assert.equal((await E.confirmOp({opId:op.id,responseHex:receipt(),sw:'9000',...actor})).ok,true);
+});
+it('API audits sync step creation and refusals thrown before the engine runs',async()=> {
+  await fixture();
+  process.env.JWT_SECRET='fixture-task5-secret';
+  const cookie=id=>({Cookie:'customerToken='+jwt.sign({customerId:id,cardId},process.env.JWT_SECRET,{expiresIn:'1d'})});
+  await http(async post=> {
+    const out=await post('/sync/next',{cardId,cardState:2,challenge:challengeHex},cookie(ownerId));
+    assert.equal(out.status,200);
+    const created=await CardLog.findOne({action:'card-sync-op',result:'success'}).lean();
+    assert.equal(created.cardId,cardId);assert.equal(created.actorType,'customer');assert.equal(created.actorId,ownerId);
+    assert.deepEqual(created.detail,{opId:out.body.step.opId,type:'credit',txRef});
+    const refused=await post('/op/sign',{opId:out.body.step.opId,challenge:challengeHex},cookie('987654321098765432109876'));
+    assert.equal(refused.status,403);
+    const entry=await CardLog.findOne({action:'card-op-sign',result:'fail'}).lean();
+    assert.equal(entry.detail.errorCode,'OP_FORBIDDEN');assert.equal(entry.detail.opId,out.body.step.opId);
+    const stranger=await post('/sync/confirm',{opId:out.body.step.opId,response:receipt(),sw:'9000'},cookie('987654321098765432109876'));
+    assert.equal(stranger.status,403);
+    assert.equal(await CardLog.countDocuments({action:'card-op-confirm',result:'fail','detail.errorCode':'OP_FORBIDDEN'}),1);
+    // Lỗi đã được engine ghi (op nháp chưa ký) thì handler không ghi trùng.
+    const draft=await E.createOp({cardId,type:'credit',params:{txRef},...actor});
+    const early=await post('/op/confirm',{opId:draft.id,response:receipt(),sw:'9000'},cookie(ownerId));
+    assert.equal(early.status,409);
+    assert.equal(await CardLog.countDocuments({action:'card-op-confirm',result:'fail','detail.opId':draft.id}),1);
+  });
+});
