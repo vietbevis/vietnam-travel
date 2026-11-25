@@ -90,7 +90,7 @@ block main
                   td(data-label="Thời gian")= tx.createdAt.toLocaleString('vi-VN', {timeZone:'Asia/Ho_Chi_Minh'})
                   td(data-label="Mã giao dịch")= tx.txRef
                   td(data-label="Loại")
-                    span.card-badge(class=tx.type === 'credit' ? 'card-badge-credit' : 'card-badge-debit')= tx.type === 'credit' ? 'Nạp' : 'Trừ'
+                    span.card-badge(class=tx.type === 'credit' ? 'card-badge-credit' : 'card-badge-debit')= tx.type === 'credit' ? (tx.source === 'refund' ? 'Hoàn tiền' : 'Nạp') : 'Trừ'
                   td(data-label="Số tiền")= money(tx.amount)
                   td(data-label="Trạng thái")
                     span.card-badge(class=`card-badge-status-${tx.status}`)= ({'awaiting-payment':'Chờ thanh toán','pending-card':'Chờ ghi thẻ',sent:'Đang đối soát',done:'Hoàn tất',failed:'Chưa hoàn tất',reconciliation:'Đã nhận tiền — chờ đối soát'})[tx.status]

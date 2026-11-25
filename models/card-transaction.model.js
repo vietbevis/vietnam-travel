@@ -34,4 +34,6 @@ const schema = new mongoose.Schema({
 },{timestamps:true});
 schema.index({txRef:1},{unique:true});
 schema.index({cashRequestId:1},{unique:true,partialFilterExpression:{cashRequestId:{$type:'string'}}});
+// Mỗi đơn huỷ chỉ được hoàn về ví thẻ đúng một lần (double-click/retry không tạo khoản hoàn thứ hai).
+schema.index({orderId:1},{unique:true,partialFilterExpression:{type:'credit',source:'refund',orderId:{$type:'string'}}});
 module.exports=mongoose.model('CardTransaction',schema,'card-transactions');

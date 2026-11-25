@@ -5,6 +5,7 @@ if (loginForm) {
   const button = loginForm.querySelector('button[type="submit"]');
   let busy = false;
   const message = text => { if (status) status.textContent = text; else showTravelNotice(text, "error"); };
+  try { if (new URLSearchParams(window.location.search).get('notice') === 'card-required') message('Tài khoản đã được yêu cầu đăng nhập bằng thẻ nhân viên. Vui lòng đăng nhập lại bằng mật khẩu và thẻ.'); } catch {}
   async function submitLogin(event) {
     event.preventDefault();
     if (busy) return;
@@ -30,14 +31,27 @@ if (loginForm) {
           pin = await client.askPin(info.mustChangePin ? 'Nhập PIN ban đầu của thẻ nhân viên' : 'Nhập PIN thẻ nhân viên');
           await client.verifyPin(pin);
           if (info.mustChangePin) {
-            // PIN yếu / nhập lại không khớp: giữ modal và yêu cầu nhập lại ngay trong modal.
             const shared = window.CardShared;
-            newPin = await client.askPin('Đặt PIN mới (không dùng mã yếu hoặc ngày sinh)', { validate: value => shared && shared.isWeakPin(value) ? 'PIN quá yếu (không dùng 6 số giống nhau hoặc dãy số liên tiếp). Vui lòng nhập mã khác.' : '' });
-            const firstPin = newPin;
-            confirmation = await client.askPin('Nhập lại PIN mới', { validate: value => value !== firstPin ? 'PIN nhập lại không khớp. Vui lòng nhập lại.' : '' });
-            if (newPin !== confirmation) throw new Error('PIN xác nhận không khớp. Hãy thử đăng nhập lại.');
-            await client.changePin(pin, newPin);
-            await client.verifyPin(newPin);
+            const weakHint = 'PIN quá yếu (không dùng 6 số giống nhau, dãy số liên tiếp hoặc ngày sinh DDMMYY). Vui lòng nhập mã khác.';
+            // Thẻ mới có thể chặn READ_DATA (6985) trước CHANGE_PIN: khi đó chưa biết ngày sinh, kiểm lại sau khi đổi.
+            let dob;
+            try { dob = (await client.readProfile()).dob; }
+            catch (error) { if (!error || error.sw !== '6985') throw error; }
+            for (;;) {
+              // PIN yếu (kể cả ngày sinh DDMMYY) / nhập lại không khớp: giữ modal và yêu cầu nhập lại ngay trong modal.
+              newPin = await client.askPin('Đặt PIN mới (không dùng mã yếu hoặc ngày sinh)', { validate: value => shared && shared.isWeakPin(value, dob) ? weakHint : '' });
+              const firstPin = newPin;
+              confirmation = await client.askPin('Nhập lại PIN mới', { validate: value => value !== firstPin ? 'PIN nhập lại không khớp. Vui lòng nhập lại.' : '' });
+              if (newPin !== confirmation) throw new Error('PIN xác nhận không khớp. Hãy thử đăng nhập lại.');
+              await client.changePin(pin, newPin, dob);
+              await client.verifyPin(newPin);
+              // Sau khi đổi mới đọc được hồ sơ: kiểm lại PIN vừa chọn không trùng ngày sinh.
+              if (dob === undefined) dob = (await client.readProfile()).dob;
+              if (!shared || !shared.isWeakPin(newPin, dob)) break;
+              pin = await client.askPin('PIN vừa chọn trùng ngày sinh. Nhập PIN hiện tại để đổi lại');
+              await client.verifyPin(pin);
+              newPin = ''; confirmation = '';
+            }
           }
         } finally { pin = ''; newPin = ''; confirmation = ''; }
         const verified = await client.authenticate({challengeUrl:`/${pathAdmin}/account/login-card/challenge`,verifyUrl:`/${pathAdmin}/account/login-card/verify`});
@@ -52,9 +66,23 @@ if (loginForm) {
         AUTH_REQUIRED:'Phiên xác thực hết hạn. Hãy đăng nhập lại.',
         AGENT_HTTP:'Card Agent chưa sẵn sàng hoặc khe đọc không có thẻ.',
         CARD_RESPONSE:'Không đọc được thẻ. Hãy kiểm tra khe đọc.',
-        OP_FORBIDDEN:'Thẻ không được phép đăng nhập tài khoản này.'
+        OP_FORBIDDEN:'Thẻ không được phép đăng nhập tài khoản này.',
+        OP_STATE:'Yêu cầu đã hết hạn hoặc thay đổi. Hãy đăng nhập lại.',
+        PIN_BUSY:'Đang có hộp nhập PIN khác mở. Hãy đóng hộp đó rồi thử lại.',
+        PIN_FORMAT:'PIN phải gồm đúng 6 chữ số.',
+        REQUEST_TIMEOUT:'Yêu cầu quá thời gian. Hãy kiểm tra kết nối và Card Agent rồi thử lại.',
+        SERVER_UNAVAILABLE:'Không kết nối được máy chủ. Hãy kiểm tra mạng và thử lại.',
+        SERVER_HTTP:'Máy chủ từ chối yêu cầu. Hãy thử lại sau.',
+        SERVER_REJECTED:'Máy chủ từ chối xác thực thẻ. Hãy thử lại.',
+        AGENT_RESPONSE:'Card Agent trả về dữ liệu không hợp lệ. Hãy kiểm tra Card Agent.',
+        CLIENT_STALE:'Trang đã thay đổi. Hãy tải lại trang và đăng nhập lại.',
+        CLIENT_SUSPENDED:'Trang đã tạm dừng. Hãy tải lại trang và đăng nhập lại.',
+        CLIENT_DISPOSED:'Trang đã đóng. Hãy tải lại trang và đăng nhập lại.',
+        PIN_MODAL_UNAVAILABLE:'Không mở được hộp nhập PIN. Hãy tải lại trang.'
       };
-      message(fallback[error.code] || error.message || 'Không thể đăng nhập. Hãy kiểm tra Card Agent và thẻ.');
+      const raw = error && typeof error.message === 'string' ? error.message : '';
+      const unknownCode = error && error.code && !fallback[error.code] && !/[À-ỹ]/.test(raw) ? ' (' + error.code + ')' : '';
+      message(fallback[error && error.code] || (/[À-ỹ]/.test(raw) ? raw : (error && error.sw ? raw : 'Không thể đăng nhập. Hãy kiểm tra Card Agent và thẻ.' + unknownCode)));
     } finally {
       loginForm.password.value = ''; busy = false; if (button) button.disabled = false;
     }

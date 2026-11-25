@@ -3,12 +3,15 @@ const Order = require("../../models/order.model");
 const City = require("../../models/city.model");
 const Tour = require("../../models/tour.model");
 const Tx = require("../../models/card-transaction.model");
+const Card = require("../../models/card.model");
+const Customer = require("../../models/customer.model");
 const variableConfig = require("../../config/variable");
 const moment = require("moment");
 const ticketHelper = require("../../helpers/ticket.helper");
 const orderPaymentHelper = require("../../helpers/order-payment.helper");
 const cardOpHelper = require("../../helpers/card-op.helper");
 const cardLogHelper = require("../../helpers/card-log.helper");
+const cardCrypto = require("../../helpers/card-crypto.helper");
 
 // Debit ví thẻ đã gửi/đã ký mà chưa done: thẻ có thể đã trừ tiền, chỉ biên nhận của thẻ mới kết thúc được giao dịch.
 const IN_FLIGHT_MESSAGE = "Đơn đang có giao dịch ví thẻ chưa đối soát; hãy để khách cắm thẻ đồng bộ trước";
@@ -22,7 +25,197 @@ const FIELD_OPTIONS = {
   status: variableConfig.orderStatus
 };
 
+const PAID_REFUND_MANUAL_MESSAGE = "Đơn đã thanh toán cần xử lý hoàn tiền và đối soát riêng.";
+const REFUND_EVIDENCE_MESSAGE = "Không tìm thấy giao dịch trừ ví thẻ đã hoàn tất của đơn; cần đối soát thủ công trước khi huỷ.";
+const ALREADY_REFUNDED_MESSAGE = "Đơn đã được hoàn tiền vào ví thẻ, không hoàn lần hai.";
+const NO_ACTIVE_CARD_MESSAGE = "Khách hàng không còn thẻ đang hoạt động để nhận hoàn tiền. Hãy cấp lại thẻ cho khách rồi huỷ đơn, hoặc xử lý hoàn tiền thủ công.";
+const CARD_LOCKED_MESSAGE = "Thẻ hiện tại của khách đang bị khoá. Hãy mở khoá hoặc cấp lại thẻ trước khi huỷ đơn để hoàn tiền vào ví thẻ.";
+const CARD_ISSUING_MESSAGE = "Thẻ của khách đang trong quá trình phát hành/cấp lại. Hãy hoàn tất phát hành thẻ trước khi huỷ đơn để hoàn tiền vào ví thẻ.";
+const CARD_CHANGED_MESSAGE = "Trạng thái thẻ của khách vừa thay đổi. Hãy tải lại trang.";
+const USED_TICKET_MESSAGE = "Đơn có vé đã check-in, không thể huỷ và hoàn tiền tự động. Vui lòng xử lý thủ công.";
+// Vé đã check-in (use-ticket ghi ticketStatus used + checkedInAt): tour đã được dùng, không huỷ/hoàn tự động.
+const hasUsedTicket = order => Array.isArray(order?.items) && order.items.some(item => item?.ticketStatus === "used" || !!item?.checkedInAt);
+// Trần số dư chip (applet từ chối credit vượt mức); đồng bộ sẽ giữ khoản vượt trần chờ đối soát.
+const WALLET_CAP = 50_000_000;
+const OBJECT_ID = /^[a-fA-F0-9]{24}$/;
+const validAmount = value => Number.isSafeInteger(value) && value > 0 && value <= WALLET_CAP;
+const formatMoney = value => value.toLocaleString("vi-VN");
+
 class EditRefusal extends Error { }
+
+// Huỷ đơn đã trừ ví thẻ: kiểm chứng cứ debit đã có biên nhận và chọn thẻ nhận hoàn tiền (trong transaction của caller).
+// Tiền hoàn về thẻ HIỆN TẠI của khách: thẻ thanh toán có thể đã bị thu hồi/cấp lại (số dư đã chuyển sang thẻ mới).
+async function prepareCardRefund(current, session) {
+  const orderId = String(current._id);
+
+  if (!validAmount(current.total) || !OBJECT_ID.test(String(current.customerId || "")) || typeof current.cardTxRef !== "string") {
+    throw new EditRefusal(REFUND_EVIDENCE_MESSAGE);
+  }
+
+  // Debit chỉ thành done khi biên nhận chữ ký thẻ đã được kiểm (receiptInSession).
+  const debit = await Tx.findOne({
+    orderId,
+    txRef: current.cardTxRef.toUpperCase(),
+    type: "debit",
+    source: "order",
+    status: "done"
+  }).session(session).lean();
+
+  if (!debit || debit.amount !== current.total || !debit.signedOpId || !debit.receiptHex) {
+    throw new EditRefusal(REFUND_EVIDENCE_MESSAGE);
+  }
+
+  if (await Tx.exists({ orderId, type: "credit", source: "refund" }).session(session)) {
+    throw new EditRefusal(ALREADY_REFUNDED_MESSAGE);
+  }
+
+  const card = await Card.findOne({
+    ownerId: current.customerId,
+    cardType: "customer",
+    isCurrent: true
+  }).session(session).lean();
+
+  if (!card) {
+    throw new EditRefusal(NO_ACTIVE_CARD_MESSAGE);
+  }
+
+  if (card.status === "locked") {
+    throw new EditRefusal(CARD_LOCKED_MESSAGE);
+  }
+
+  if (card.status !== "active" || !card.publicKeyModulus) {
+    throw new EditRefusal(CARD_ISSUING_MESSAGE);
+  }
+
+  // Khoá ví như nạp tiền mặt: ghi Card cùng ký/xác nhận/thu hồi/cấp lại để không lọt snapshot cũ.
+  const locked = await Card.findOneAndUpdate(
+    { _id: card._id, status: "active", isCurrent: true },
+    { $inc: { __v: 1 } },
+    { session, new: true }
+  ).lean();
+
+  if (!locked) {
+    throw new EditRefusal(CARD_CHANGED_MESSAGE);
+  }
+
+  // Cùng cách tính nghĩa vụ credit chờ ghi thẻ như nạp tiền mặt.
+  const [pending] = await Tx.aggregate([
+    {
+      $match: {
+        cardId: locked.cardId,
+        type: "credit",
+        $or: [
+          { status: { $in: ["pending-card", "sent"] } },
+          { status: "failed", signedOpId: { $exists: true } }
+        ]
+      }
+    },
+    { $group: { _id: null, sum: { $sum: "$amount" } } }
+  ]).session(session);
+
+  const pendingSum = pending?.sum || 0;
+  const balance = Number.isSafeInteger(locked.balance) ? locked.balance : WALLET_CAP;
+
+  return {
+    debit,
+    card: locked,
+    amount: debit.amount,
+    txRef: cardCrypto.randomHex(8),
+    pendingSum,
+    // Không từ chối: khoản hoàn vẫn được ghi nhận pending-card; đồng bộ giữ lại (capHeldAt + nhật ký)
+    // cho tới khi ví còn đủ hạn mức hoặc được đối soát thủ công.
+    overCap: balance + pendingSum + debit.amount > WALLET_CAP
+  };
+}
+
+// Ghi credit hoàn tiền (pending-card: lần cắm thẻ tiếp theo đồng bộ sẽ ký CREDIT), trừ lại chi tiêu và ghi nhật ký.
+async function applyCardRefund(current, refund, req, session) {
+  const orderId = String(current._id);
+
+  await Tx.create([{
+    txRef: refund.txRef,
+    cardId: refund.card.cardId,
+    type: "credit",
+    source: "refund",
+    amount: refund.amount,
+    orderId,
+    status: "pending-card",
+    createdBy: req.account?.id
+  }], { session });
+
+  // Thanh toán ví đã cộng total vào totalSpent (settlement); hoàn tiền trừ lại đúng phần đó, không âm.
+  let spent = null;
+  const owner = await Customer.findOne({ _id: current.customerId }).session(session).lean();
+
+  if (owner && Number.isSafeInteger(owner.totalSpent) && owner.totalSpent >= 0) {
+    const after = Math.max(0, owner.totalSpent - refund.amount);
+    const result = await Customer.updateOne(
+      { _id: owner._id, totalSpent: owner.totalSpent },
+      { $set: { totalSpent: after } },
+      { session, runValidators: true }
+    );
+
+    if (result.matchedCount !== 1) {
+      throw new Error("Không thể cập nhật chi tiêu khách hàng.");
+    }
+
+    spent = { before: owner.totalSpent, after };
+  }
+
+  // Nhật ký trong transaction: lỗi ghi nhật ký rollback cả hoàn tiền.
+  await cardLogHelper.write({
+    action: "card-refund",
+    cardId: refund.card.cardId,
+    actorType: "admin",
+    actorId: req.account?.id,
+    result: "success",
+    detail: {
+      orderId,
+      orderCode: current.orderCode,
+      txRef: refund.txRef,
+      amount: refund.amount,
+      debitTxRef: refund.debit.txRef,
+      paidCardId: refund.debit.cardId,
+      reason: "order-cancel",
+      ...(refund.overCap
+        ? { overCap: true, balance: refund.card.balance, pendingSum: refund.pendingSum }
+        : {}),
+      ...(spent
+        ? { totalSpentBefore: spent.before, totalSpentAfter: spent.after }
+        : {})
+    },
+    req
+  }, { session });
+}
+
+function refundMessage(refund) {
+  let message = `Đã huỷ đơn và hoàn ${formatMoney(refund.amount)} đ vào ví thẻ. Tiền sẽ được ghi lên thẻ ở lần cắm thẻ tiếp theo.`;
+
+  if (refund.card.cardId !== refund.debit.cardId) {
+    message += " Khoản hoàn được ghi vào thẻ hiện tại của khách (thẻ đã dùng thanh toán không còn hoạt động).";
+  }
+
+  if (refund.overCap) {
+    message += ` Lưu ý: số dư ví cộng khoản hoàn vượt hạn mức ${formatMoney(WALLET_CAP)} đ nên khi đồng bộ khoản này sẽ được giữ lại cho tới khi ví còn đủ hạn mức hoặc được đối soát thủ công.`;
+  }
+
+  return message;
+}
+
+const REFUND_STATUS_LABELS = {
+  "pending-card": "Chờ ghi lên thẻ ở lần cắm thẻ tiếp theo",
+  sent: "Đang ghi lên thẻ, chờ biên nhận",
+  done: "Đã ghi lên thẻ",
+  reconciliation: "Chờ đối soát"
+};
+
+function refundStatusLabel(tx) {
+  if (!tx) return "Không tìm thấy giao dịch hoàn tiền";
+  if (tx.status === "failed" && tx.failReason === "moved") return "Đã chuyển sang thẻ mới khi cấp lại thẻ";
+  if (tx.status === "failed" && tx.failReason === "refunded") return "Đã hoàn tiền mặt khi thu hồi thẻ";
+  if (tx.status === "pending-card" && tx.capHeldAt) return "Đang giữ do vượt hạn mức ví, chờ đối soát";
+  return REFUND_STATUS_LABELS[tx.status] || tx.status;
+}
 
 module.exports.list = async (req, res) => {
   try {
@@ -199,9 +392,45 @@ module.exports.edit = async (req, res) => {
       item.departureDateFormat = moment(item.departureDate).format("DD/MM/YYYY");
     }
 
+    // Đơn có vé đã check-in: không cho huỷ (và hoàn tiền tự động) từ form.
+    const usedTicket = orderDetail.status !== "cancel" && hasUsedTicket(orderDetail);
+
+    // Đơn đã trừ ví thẻ (debit có biên nhận): huỷ đơn sẽ tự hoàn tiền về ví thẻ của khách.
+    let cardRefund = null;
+    if (
+      !usedTicket &&
+      orderDetail.paymentMethod === "card" &&
+      orderDetail.paymentStatus === "paid" &&
+      orderDetail.status !== "cancel" &&
+      orderDetail.cardTxRef
+    ) {
+      const debit = await Tx.findOne({
+        orderId: String(orderDetail._id),
+        txRef: orderDetail.cardTxRef,
+        type: "debit",
+        source: "order",
+        status: "done"
+      }).select("amount").lean();
+      if (debit) cardRefund = { amount: debit.amount };
+    }
+
+    let refundInfo = null;
+    if (orderDetail.refundTxRef) {
+      const refundTx = await Tx.findOne({ txRef: orderDetail.refundTxRef })
+        .select("amount status failReason capHeldAt").lean();
+      refundInfo = {
+        txRef: orderDetail.refundTxRef,
+        amount: refundTx?.amount,
+        statusLabel: refundStatusLabel(refundTx)
+      };
+    }
+
     res.render("admin/pages/order-edit", {
       pageTitle: `Đơn hàng: ${orderDetail.orderCode}`,
       orderDetail: orderDetail,
+      cardRefund,
+      refundInfo,
+      usedTicket,
       paymentMethod: variableConfig.paymentMethod,
       paymentStatus: variableConfig.paymentStatus,
       orderStatus: variableConfig.orderStatus
@@ -264,7 +493,7 @@ module.exports.editPatch = async (req, res) => {
     }
 
 
-    // Hủy đơn và hoàn tồn kho trong cùng transaction.
+    // Hủy đơn, hoàn tồn kho, hoàn tiền ví thẻ (nếu đơn đã trừ ví) và dọn vé trong cùng một transaction.
     if (update.status === "cancel") {
       if (!req.permissions?.includes("order-edit")) {
         return res.status(403).json({
@@ -286,10 +515,13 @@ module.exports.editPatch = async (req, res) => {
 
       const session = await mongoose.startSession();
       let voided = [];
+      let refund = null;
 
       try {
         await session.withTransaction(async () => {
+          // Driver có thể chạy lại callback khi write conflict: tính lại mọi thứ từ đầu.
           voided = [];
+          refund = null;
 
           // Đọc trạng thái mới nhất bên trong transaction.
           const current = await Order.findOne({
@@ -307,36 +539,53 @@ module.exports.editPatch = async (req, res) => {
             );
           }
 
-          // Không tự hoàn tiền khi hủy.
-          if (current.paymentStatus !== "unpaid") {
-            throw new EditRefusal(
-              "Đơn đã thanh toán cần xử lý hoàn tiền và đối soát riêng."
-            );
-          }
-
-          // Tránh hủy giao dịch cổng đang chờ callback.
-          if (!["money", "bank", "card"].includes(current.paymentMethod)) {
-            throw new EditRefusal(
-              "Phương thức thanh toán này cần đối soát trước khi hủy."
-            );
-          }
-
           const orderId = String(current._id);
 
-          // Debit đã ký hoặc đã gửi có thể đã tới chip.
-          const unsafeDebit = await Tx.exists({
-            orderId,
-            type: "debit",
-            $or: [
-              { signedOpId: { $exists: true } },
-              { status: { $in: ["sent", "done", "reconciliation"] } }
-            ]
-          }).session(session);
+          // Debit đã ký hoặc đã gửi mà chưa có biên nhận: thẻ có thể đã trừ tiền,
+          // chỉ lần cắm thẻ đồng bộ tiếp theo mới kết thúc được giao dịch.
+          if (await Tx.exists(cardOpHelper.unresolvedFilter({ orderId, type: "debit" })).session(session)) {
+            throw new EditRefusal(IN_FLIGHT_MESSAGE);
+          }
 
-          if (unsafeDebit) {
-            throw new EditRefusal(
-              "Giao dịch ví thẻ cần đối soát trước khi hủy."
-            );
+          if (current.paymentStatus === "paid") {
+            // Chỉ ví thẻ được hoàn tự động; tiền mặt/chuyển khoản/cổng vẫn đối soát thủ công.
+            if (current.paymentMethod !== "card") {
+              throw new EditRefusal(PAID_REFUND_MANUAL_MESSAGE);
+            }
+            // Đọc trong transaction: check-in đồng thời ghi cùng document đơn nên sẽ write-conflict, không lọt qua.
+            if (hasUsedTicket(current)) {
+              throw new EditRefusal(USED_TICKET_MESSAGE);
+            }
+            refund = await prepareCardRefund(current, session);
+          } else {
+            if (current.paymentStatus !== "unpaid") {
+              throw new EditRefusal(PAID_REFUND_MANUAL_MESSAGE);
+            }
+
+            // Đơn chưa thanh toán không thể có vé check-in (vé chỉ ghi/dùng khi đã paid); dữ liệu legacy lệch vẫn bị chặn.
+            if (hasUsedTicket(current)) {
+              throw new EditRefusal(USED_TICKET_MESSAGE);
+            }
+
+            // Tránh hủy giao dịch cổng đang chờ callback.
+            if (!["money", "bank", "card"].includes(current.paymentMethod)) {
+              throw new EditRefusal(
+                "Phương thức thanh toán này cần đối soát trước khi hủy."
+              );
+            }
+
+            // Đơn chưa thanh toán mà đã có debit hoàn tất: dữ liệu lệch, cần đối soát.
+            const unsafeDebit = await Tx.exists({
+              orderId,
+              type: "debit",
+              status: { $in: ["sent", "done", "reconciliation"] }
+            }).session(session);
+
+            if (unsafeDebit) {
+              throw new EditRefusal(
+                "Giao dịch ví thẻ cần đối soát trước khi hủy."
+              );
+            }
           }
 
           if (!Array.isArray(current.items) || !current.items.length) {
@@ -398,7 +647,7 @@ module.exports.editPatch = async (req, res) => {
           }
 
           // Chỉ chuyển trạng thái nếu đơn chưa hủy
-          // và chưa từng ghi nhận hoàn tồn kho.
+          // và chưa từng ghi nhận hoàn tồn kho / hoàn tiền.
           const fieldsToSet = {
             status: "cancel",
             stockRestoredAt: new Date(),
@@ -411,15 +660,27 @@ module.exports.editPatch = async (req, res) => {
             }
           }
 
+          const compare = {
+            _id: id,
+            deleted: false,
+            status: current.status,
+            paymentStatus: current.paymentStatus,
+            paymentMethod: current.paymentMethod,
+            stockRestoredAt: { $exists: false },
+            // Chốt lại trong điều kiện ghi: không phần tử nào đã check-in.
+            "items.ticketStatus": { $ne: "used" },
+            "items.checkedInAt": { $exists: false }
+          };
+
+          if (refund) {
+            compare.cardTxRef = refund.debit.txRef;
+            compare.total = refund.amount;
+            compare.refundTxRef = { $exists: false };
+            fieldsToSet.refundTxRef = refund.txRef;
+          }
+
           const changed = await Order.updateOne(
-            {
-              _id: id,
-              deleted: false,
-              status: current.status,
-              paymentStatus: "unpaid",
-              paymentMethod: current.paymentMethod,
-              stockRestoredAt: { $exists: false }
-            },
+            compare,
             { $set: fieldsToSet },
             { session }
           );
@@ -451,18 +712,34 @@ module.exports.editPatch = async (req, res) => {
             }
           }
 
+          if (refund) {
+            await applyCardRefund(current, refund, req, session);
+          }
+
           // Debit chưa ký được đóng trong cùng transaction.
           voided = await cardOpHelper.voidUnsignedDebits(
             { orderId },
             session
           );
+
+          // Vé: written -> pending-delete, pending -> none; commit/rollback cùng đơn.
+          await ticketHelper.onOrderCancelled(
+            { _id: current._id },
+            req.account?.id,
+            session
+          );
         });
+      } catch (error) {
+        // Unique index hoàn tiền theo đơn: lượt thứ hai (double-click/retry) không tạo khoản hoàn mới.
+        if (error?.code === 11000) {
+          throw new EditRefusal(ALREADY_REFUNDED_MESSAGE);
+        }
+        throw error;
       } finally {
         await session.endSession();
       }
 
       // Transaction đã commit.
-      // Các thao tác ghi log / đồng bộ vé thực hiện sau commit.
       if (voided.length) {
         try {
           await cardLogHelper.write({
@@ -483,26 +760,26 @@ module.exports.editPatch = async (req, res) => {
         }
       }
 
-      let ticketSyncWarning = false;
-
-      try {
-        await ticketHelper.onOrderCancelled(
-          order,
-          req.account?.id
-        );
-      } catch (error) {
-        ticketSyncWarning = true;
-        console.error("Ticket cancellation sync failed:", error);
+      if (refund) {
+        const message = refundMessage(refund);
+        req.flash("success", message);
+        return res.json({
+          code: "success",
+          message,
+          refund: {
+            amount: refund.amount,
+            txRef: refund.txRef,
+            cardId: refund.card.cardId,
+            overCap: refund.overCap
+          }
+        });
       }
 
       req.flash("success", "Đã hủy đơn và hoàn số chỗ.");
 
       return res.json({
         code: "success",
-        message: "Đã hủy đơn và hoàn tồn kho.",
-        ...(ticketSyncWarning
-          ? { warning: "Cần kiểm tra đồng bộ vé Smart Card." }
-          : {})
+        message: "Đã hủy đơn và hoàn tồn kho."
       });
     }
 

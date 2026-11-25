@@ -10,7 +10,7 @@ const customer=Joi.object({
 module.exports.schemas={
   profile:Joi.object({cardId,fields:Joi.object({fullName:Joi.string().min(1).max(60),phone:text(15),dob:Joi.string().pattern(/^\d{8}$/),gender:Joi.string().valid('male','female','other'),idNumber:text(20),emergencyName:text(60),emergencyPhone:text(15),bloodType:text(3),allergies:text(120)}).min(1).unknown(false),photoBase64:Joi.string().max(13463)}).or('fields','photoBase64').unknown(false),
   replace:Joi.object({cardId,reason:Joi.string().trim().min(1).max(500).required()}).unknown(false),
-  cash:Joi.object({cardId,amount:Joi.number().integer().min(10000).max(50000000).required()}).unknown(false),
+  cash:Joi.object({cardId,amount:Joi.number().integer().min(10000).max(20000000).required()}).unknown(false),
   status:Joi.object({cardId,action:Joi.string().valid('lock','unlock','revoke').required(),reason:Joi.string().max(500).allow(''),refunded:Joi.boolean()}).unknown(false).custom((value,helpers)=>{
     if(value.action==='revoke'&&!(value.reason||'').trim())return helpers.error('any.invalid');
     return value;

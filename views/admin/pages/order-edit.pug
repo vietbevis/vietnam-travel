@@ -4,7 +4,7 @@ block main
   h1.box-title Đơn hàng: #{orderDetail.orderCode}
 
   .section-8
-    form#order-edit-form
+    form#order-edit-form(data-card-refund=(cardRefund ? cardRefund.amount : undefined))
       .inner-group(style="display: none;")
         label(class="inner-label" for="id") Id
         input(type="text" id="id" name="id" value=orderDetail.id)
@@ -43,6 +43,7 @@ block main
             option(
               value=item.value
               selected=(item.value == orderDetail.status ? true : false)
+              disabled=(usedTicket && item.value == "cancel")
             ) #{item.label}
       .inner-group
         label(class="inner-label") Danh sách tour
@@ -65,6 +66,23 @@ block main
           div Giảm: #{orderDetail.discount.toLocaleString("vi-VN")}đ
           //- div Mã giảm: TOURMUAHE2024
           div Thanh toán: <span class="inner-order-price">#{orderDetail.total.toLocaleString("vi-VN")}đ</span>
+      if usedTicket
+        .inner-group.inner-two-col
+          .inner-order-refund-note
+            | Đơn có vé đã check-in nên không thể huỷ và hoàn tiền tự động. Vui lòng xử lý thủ công.
+      if cardRefund
+        .inner-group.inner-two-col
+          .inner-order-refund-note
+            | Đơn đã thanh toán bằng ví thẻ: nếu huỷ đơn, hệ thống sẽ tự hoàn
+            |  #[strong #{cardRefund.amount.toLocaleString("vi-VN")}đ]
+            |  vào ví thẻ của khách (ghi lên thẻ ở lần cắm thẻ tiếp theo).
+      if refundInfo
+        .inner-group.inner-two-col
+          .inner-order-refund-note
+            | Đã hoàn
+            if refundInfo.amount
+              |  #[strong #{refundInfo.amount.toLocaleString("vi-VN")}đ]
+            |  vào ví thẻ (mã giao dịch #{refundInfo.txRef}): #{refundInfo.statusLabel}.
       .inner-button.inner-two-col
         button Cập nhật
     .inner-back

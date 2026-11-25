@@ -129,6 +129,20 @@ async function loadOp(opId,actor,session,status,audit={}) {
   }
   return op;
 }
+// Nguồn credit được phép ghi lên chip. Hoàn tiền huỷ đơn (refund) chỉ hợp lệ khi gắn đúng đơn đã huỷ của chủ thẻ
+// và đơn trỏ lại đúng txRef này; bản đã chuyển sang thẻ mới khi cấp lại (movedFrom) giữ nguồn nhưng không mang orderId.
+const CREDIT_SOURCES=['cash','zalopay','vnpay','transfer','refund'];
+async function creditSourceAllowed(card,tx,session) {
+  if(!CREDIT_SOURCES.includes(tx.source))
+    return false;
+  if(tx.source!=='refund')
+    return true;
+  if(hex(tx.movedFrom,16)&&tx.orderId==null)
+    return true;
+  if(!objectId(tx.orderId))
+    return false;
+  return !!await Order.exists({_id:tx.orderId,customerId:card.ownerId,status:'cancel',paymentMethod:'card',refundTxRef:tx.txRef}).session(session||null);
+}
 async function policy(card,op,session,creating=false) {
   // Cho tạo op nháp trước INIT; bước ký và xác nhận vẫn bắt buộc modulus.
   const issuanceDraft=creating&&card?.status==='issuing'&&card.isCurrent&&op.type==='commit-write'&&op.actorType==='admin'&&op.actorId===card.issuedBy;
@@ -173,7 +187,7 @@ async function policy(card,op,session,creating=false) {
         fail('OP_STATE');
     }
     else
-    if(!['cash','zalopay','vnpay','transfer'].includes(tx.source))
+    if(!await creditSourceAllowed(card,tx,session))
       fail('OP_STATE');
     return{tx};
   }
@@ -391,7 +405,7 @@ async function receiptInSession({card,tx,responseHex},session) {
   const r=A.parseReceipt(responseHex);
   if(!card||!tx||!tx.signedOpId||tx.status==='done'||!r||!C.verifyCardSignature(card.publicKeyModulus,r.message,r.signature)||r.cardId!==card.cardId||r.txRef!==tx.txRef||r.type!==tx.type||r.amount!==tx.amount||r.txCounter!==card.txCounter+1||r.balanceAfter!==card.balance+(tx.type==='credit'?tx.amount:-tx.amount)||r.balanceAfter<0||r.balanceAfter>50000000)
     return false;
-  if(tx.type==='credit'&&!['cash','zalopay','vnpay','transfer'].includes(tx.source))
+  if(tx.type==='credit'&&!await creditSourceAllowed(card,tx,session))
     return false;
   if(tx.type==='debit') {
     if(tx.source!=='order'||!objectId(tx.orderId))

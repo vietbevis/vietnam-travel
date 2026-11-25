@@ -7,7 +7,8 @@
     "start": "nodemon --inspect index.js",
     "test": "node --test \"test/*.test.js\"",
     "test:integration": "node --test --test-concurrency=1 \"test/integration/*.test.js\"",
-    "card:keygen": "node scripts/generate-card-key.js"
+    "card:keygen": "node scripts/generate-card-key.js",
+    "card:recover-admin": "node scripts/admin-card-recover.js"
   },
   "resolutions": {
     "jwa": "1.4.2"
