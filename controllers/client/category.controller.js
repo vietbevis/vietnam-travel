@@ -15,7 +15,7 @@ module.exports.list = async (req, res) => {
     status: "active"
   })
 
-  if(category) {
+  if (category) {
     // Breadcrumb
     const breadcrumb = {
       image: category.avatar,
@@ -29,14 +29,14 @@ module.exports.list = async (req, res) => {
     };
 
     // Tìm danh mục cha
-    if(category.parent) {
+    if (category.parent) {
       const parentCategory = await Category.findOne({
         _id: category.parent,
         deleted: false,
         status: "active"
       })
 
-      if(parentCategory) {
+      if (parentCategory) {
         breadcrumb.list.push({
           link: `/category/${parentCategory.slug}`,
           title: parentCategory.name
@@ -52,7 +52,9 @@ module.exports.list = async (req, res) => {
     // End Breadcrumb
 
     // Danh sách tour
-    const listCategoryId = await categoryHelper.getAllSubcategoryIds(category.id);
+    const listCategoryId =
+      await categoryHelper.getAllSubcategoryIds(category.id);
+
     const find = {
       category: { $in: listCategoryId },
       deleted: false,
@@ -61,15 +63,100 @@ module.exports.list = async (req, res) => {
 
     const totalTour = await Tour.countDocuments(find);
 
-    const tourList = await Tour
-      .find(find)
-      .sort({
-        position: "desc"
-      })
+    // Phân trang
+    const limit = 9;
+    const totalPages = Math.ceil(totalTour / limit);
 
-    for(const item of tourList) {
-      item.departureDateFormat = moment(item.departureDate).format("DD/MM/YYYY");
+    const requestedPage = Number(req.query.page);
+
+    const page = Number.isSafeInteger(requestedPage) &&
+      requestedPage > 0
+      ? Math.min(requestedPage, Math.max(1, totalPages))
+      : 1;
+
+    const startPage = Math.max(
+      1,
+      Math.min(page - 2, totalPages - 4)
+    );
+
+    // Tạo mảng số trang
+    const pageNumbers = Array.from(
+      { length: Math.min(5, totalPages) },
+      (_, index) => startPage + index
+    );
+
+    // Sắp xếp
+    const allowedSorts = [
+      "price_asc",
+      "price_desc",
+      "discount_desc",
+      "views_desc"
+    ];
+
+    const sortKey = allowedSorts.includes(req.query.sort)
+      ? req.query.sort
+      : "discount_desc";
+
+    const sortOptions = {
+      price_asc: {
+        priceNewAdult: 1,
+        _id: 1
+      },
+      price_desc: {
+        priceNewAdult: -1,
+        _id: 1
+      },
+      discount_desc: {
+        discountRate: -1,
+        position: -1,
+        _id: 1
+      },
+      views_desc: {
+        viewCount: -1,
+        position: -1,
+        _id: 1
+      }
+    };
+
+    // Tính tỷ lệ giảm giá từ giá gốc và giá mới
+    const tourList = await Tour.aggregate([
+      { $match: find },
+      {
+        $addFields: {
+          discountRate: {
+            $cond: [
+              { $gt: ["$priceAdult", 0] },
+              {
+                $divide: [
+                  {
+                    $subtract: [
+                      "$priceAdult",
+                      {
+                        $ifNull: [
+                          "$priceNewAdult",
+                          "$priceAdult"
+                        ]
+                      }
+                    ]
+                  },
+                  "$priceAdult"
+                ]
+              },
+              0
+            ]
+          }
+        }
+      },
+      { $sort: sortOptions[sortKey] },
+      { $skip: (page - 1) * limit },
+      { $limit: limit }
+    ]);
+
+    for (const item of tourList) {
+      item.departureDateFormat =
+        moment(item.departureDate).format("DD/MM/YYYY");
     }
+
     // Hết Danh sách tour
 
     // Danh sách thành phố
@@ -82,7 +169,11 @@ module.exports.list = async (req, res) => {
       category: category,
       tourList: tourList,
       totalTour: totalTour,
-      cityList: cityList
+      cityList: cityList,
+      page: page,
+      totalPages: totalPages,
+      pageNumbers: pageNumbers,
+      sortKey: sortKey
     });
   } else {
     res.redirect("/");

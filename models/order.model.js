@@ -29,6 +29,10 @@ const schema = new mongoose.Schema(
     paymentMethod: String,
     paymentStatus: String,
     status: String,
+    stockRestoredAt: {
+      type: Date,
+      default: undefined
+    },
     updatedBy: String,
     deleted: {
       type: Boolean,

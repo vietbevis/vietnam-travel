@@ -7,13 +7,21 @@ module.exports.detail = async (req, res) => {
   const slug = req.params.slug;
 
   // Tìm tour theo slug
-  const tourDetail = await Tour.findOne({
-    slug: slug,
-    status: "active",
-    deleted: false
-  })
+  const tourDetail = await Tour.findOneAndUpdate(
+    {
+      slug: slug,
+      status: "active",
+      deleted: false
+    },
+    {
+      $inc: { viewCount: 1 }
+    },
+    {
+      new: true
+    }
+  );
 
-  if(tourDetail) {
+  if (tourDetail) {
     // Breadcrumb
     const breadcrumb = {
       image: tourDetail.avatar,
@@ -32,16 +40,16 @@ module.exports.detail = async (req, res) => {
       status: "active"
     })
 
-    if(category) {
+    if (category) {
       // Tìm danh mục cha
-      if(category.parent) {
+      if (category.parent) {
         const parentCategory = await Category.findOne({
           _id: category.parent,
           deleted: false,
           status: "active"
         })
 
-        if(parentCategory) {
+        if (parentCategory) {
           breadcrumb.list.push({
             link: `/category/${parentCategory.slug}`,
             title: parentCategory.name

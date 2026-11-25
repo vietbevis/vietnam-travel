@@ -32,6 +32,11 @@ const schema = new mongoose.Schema(
       slug: "name",
       unique: true
     },
+    viewCount: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
     deleted: {
       type: Boolean,
       default: false

@@ -3,43 +3,81 @@ extends ../layouts/default.pug
 block main
   h1.box-title Quản lý đơn hàng
 
-  //- Section 4
-  .section-4
-    .inner-wrap
-      .inner-item.inner-label
-        <i class="fa-solid fa-filter"></i> Bộ lọc
-      .inner-item
-        select
-          option(value="") Trạng thái
-          option(value="") Khởi tạo
-          option(value="") Hoàn thành
-          option(value="") Hủy
-      .inner-item.inner-date
-        input(type="date")
-        span -
-        input(type="date")
-      .inner-item
-        select
-          option(value="") Phương thức thanh toán
-          option(value="") Ví Momo
-          option(value="") VNPay
-          option(value="") ZaloPay
-      .inner-item
-        select
-          option(value="") Trạng thái thanh toán
-          option(value="") Đã thanh toán
-          option(value="") Chưa thanh toán
-      .inner-item.inner-reset
-        <i class="fa-solid fa-rotate-left"></i> Xóa bộ lọc
-  //- End Section 4
+  form#order-filter-form(
+    method="GET"
+    action=`/${pathAdmin}/order/list`
+  )
+    //- Section 4
+    .section-4
+      .inner-wrap
+        .inner-item.inner-label
+          i.fa-solid.fa-filter
+          | Bộ lọc
 
-  //- Section 5
-  .section-5
-    .inner-wrap
-      .inner-search
-        <i class="fa-solid fa-magnifying-glass"></i>
-        input(type="text" placeholder="Tìm kiếm")
-  //- End Section 5
+        .inner-item
+          select(name="status")
+            option(value="") Tất cả trạng thái
+            each item in orderStatuses
+              option(
+                value=item.value
+                selected=(filters.status === item.value)
+              )= item.label
+
+        .inner-item.inner-date
+          input(
+            type="date"
+            name="startDate"
+            value=filters.startDate
+          )
+          span -
+          input(
+            type="date"
+            name="endDate"
+            value=filters.endDate
+          )
+
+        .inner-item
+          select(name="paymentMethod")
+            option(value="") Tất cả phương thức
+            each item in paymentMethods
+              option(
+                value=item.value
+                selected=(filters.paymentMethod === item.value)
+              )= item.label
+
+        .inner-item
+          select(name="paymentStatus")
+            option(value="") Tất cả thanh toán
+            each item in paymentStatuses
+              option(
+                value=item.value
+                selected=(filters.paymentStatus === item.value)
+              )= item.label
+
+        .inner-item
+          button.inner-button-apply(type="submit")
+            i.fa-solid.fa-check
+            |  Áp dụng
+
+        .inner-item.inner-reset
+          a(href=`/${pathAdmin}/order/list`)
+            i.fa-solid.fa-rotate-left
+            | Xóa bộ lọc
+
+    //- Section 5
+    .section-5
+      .inner-wrap
+        .inner-search
+          i.fa-solid.fa-magnifying-glass
+          input(
+            type="search"
+            name="q"
+            value=filters.q
+            placeholder="Mã đơn, tên khách, SĐT"
+            maxlength="80"
+          )
+        .inner-button-create
+          button(type="submit") Tìm kiếm
 
   //- Section 6
   .section-6
@@ -55,7 +93,11 @@ block main
             th(class="inner-center") Ngày đặt
             th Hành động
         tbody
-          each orderDetail in orderList
+          if orderList.length === 0
+            tr
+              td(colspan="7") Không tìm thấy đơn hàng phù hợp.
+
+          each orderDetail in orderList                
             tr
               td
                 .inner-code #{orderDetail.orderCode}
@@ -96,14 +138,29 @@ block main
                     href=`/${pathAdmin}/order/edit/${orderDetail.id}`
                     class="inner-edit"
                   ) <i class="fa-regular fa-pen-to-square"></i>
-                  button(class="inner-delete") <i class="fa-regular fa-trash-can"></i>
+                  if permissions.includes("order-delete") && orderDetail.status === "cancel" && orderDetail.paymentStatus === "unpaid" && !orderDetail.customerId && !orderDetail.cardTxRef
+                    button.inner-delete(
+                      type="button"
+                      data-order-soft-delete=orderDetail.id
+                      title="Ẩn đơn đã hủy"
+                    )
+                      i.fa-regular.fa-trash-can
   //- End Section 6
 
   //- Section 7
   .section-7
-    span(class="inner-label") Hiển thị 1 - 9 của 78
-    select(class="inner-pagination")
-      option Trang 1
-      option Trang 2
-      option Trang 3
+    span.inner-label
+      | Hiển thị #{startRecord} - #{endRecord} của #{totalOrders}
+
+    if totalPages > 1
+      select.inner-pagination(
+        data-order-page
+        aria-label="Chọn trang"
+      )
+        each number in pages
+          option(
+            value=number
+            selected=(page === number)
+          ) Trang #{number}
+
   //- End Section 7

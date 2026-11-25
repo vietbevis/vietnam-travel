@@ -1,271 +1,185 @@
 const moment = require("moment");
-const slugify = require('slugify');
-const Category = require("../../models/category.model")
-const AccountAdmin = require("../../models/account-admin.model")
+const slugify = require("slugify");
+const Category = require("../../models/category.model");
+const AccountAdmin = require("../../models/account-admin.model");
+const Tour = require("../../models/tour.model");
+const { uploadCategoryAvatar } = require("../../helpers/cloudinary.helper");
+const {
+  buildCategoryTree, isCategoryId, liveCategory, validateParent, withCategoryWrite
+} = require("../../helpers/category.helper");
 
-const categoryHelper = require("../../helpers/category.helper");
+const statuses = ["active", "inactive"];
+const existingCategoryMessage = "Danh mục đã bị xóa hoặc không tồn tại!";
+const permissionMessage = "Không có quyền sử dụng tính năng này!";
+const respondError = (res, status, message) => res.status(status).json({ code: "error", message });
+const escapeRegex = value => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+function listFilters({ status, createdBy, startDate, endDate, keyword }) {
+  const filter = { ...liveCategory };
+  if (status !== undefined && status !== "") {
+    if (!statuses.includes(status)) return { error: "Bộ lọc trạng thái không hợp lệ!" };
+    filter.status = status;
+  }
+  if (createdBy !== undefined && createdBy !== "") {
+    if (!isCategoryId(createdBy)) return { error: "Bộ lọc người tạo không hợp lệ!" };
+    filter.createdBy = createdBy.toLowerCase();
+  }
+
+  const dateFilter = {};
+  for (const [value, bound, day] of [[startDate, "$gte", "startOf"], [endDate, "$lte", "endOf"]]) {
+    if (value === undefined || value === "") continue;
+    const date = typeof value === "string" && moment(value, "YYYY-MM-DD", true);
+    if (!date || !date.isValid()) return { error: "Ngày lọc danh mục không hợp lệ!" };
+    dateFilter[bound] = date[day]("day").toDate();
+  }
+  if (dateFilter.$gte && dateFilter.$lte && dateFilter.$gte > dateFilter.$lte) {
+    return { error: "Ngày bắt đầu phải trước hoặc bằng ngày kết thúc!" };
+  }
+  if (Object.keys(dateFilter).length) filter.createdAt = dateFilter;
+
+  if (keyword !== undefined) {
+    if (typeof keyword !== "string") return { error: "Từ khóa tìm kiếm không hợp lệ!" };
+    const text = keyword.trim();
+    if (text) {
+      const slug = slugify(text, { lower: true, locale: "vi" });
+      filter.$or = [{ name: new RegExp(escapeRegex(text), "i") }];
+      if (slug) filter.$or.push({ slug: new RegExp(escapeRegex(slug), "i") });
+    }
+  }
+  return { filter };
+}
 
 module.exports.list = async (req, res) => {
-  const find = {
-    deleted: false
-  };
-  
-  // Lọc theo trạng thái
-  if(req.query.status) {
-    find.status = req.query.status;
-  }
-  // Hết Lọc theo trạng thái
+  const { filter, error } = listFilters(req.query);
+  const accountAdminList = await AccountAdmin.find({}).select("fullName");
+  const limit = 5;
+  const totalRecord = error ? 0 : await Category.countDocuments(filter);
+  const totalPage = Math.ceil(totalRecord / limit);
+  const requestedPage = typeof req.query.page === "string" && /^\d+$/.test(req.query.page)
+    ? Number(req.query.page)
+    : 1;
+  const page = Math.max(1, Math.min(requestedPage, totalPage));
+  const skip = (page - 1) * limit;
+  const categoryList = totalRecord
+    ? await Category.find(filter).sort({ position: -1, _id: -1 }).skip(skip).limit(limit)
+    : [];
 
-  // Lọc theo người tạo
-  if(req.query.createdBy) {
-    find.createdBy = req.query.createdBy;
-  }
-  // Hết Lọc theo người tạo
-
-  // Lọc theo ngày tạo
-  const dateFilter = {};
-
-  if(req.query.startDate) {
-    const startDate = moment(req.query.startDate).startOf("date").toDate();
-    dateFilter.$gte = startDate;
-  }
-
-  if(req.query.endDate) {
-    const endDate = moment(req.query.endDate).endOf("date").toDate();
-    dateFilter.$lte = endDate;
-  }
-
-  if(Object.keys(dateFilter).length > 0) {
-    find.createdAt = dateFilter;
-  }
-  // Hết Lọc theo ngày tạo
-
-  // Tìm kiếm
-  if(req.query.keyword) {
-    const keyword = slugify(req.query.keyword, {
-      lower: true
-    });
-    const keywordRegex = new RegExp(keyword);
-    find.slug = keywordRegex;
-  }
-  // Hết Tìm kiếm
-
-  // Phân trang
-  const limitItems = 3;
-  let page = 1;
-  if(req.query.page) {
-    const currentPage = parseInt(req.query.page);
-    if(currentPage > 0) {
-      page = currentPage;
-    }
-  }
-  const totalRecord = await Category.countDocuments(find);
-  const totalPage = Math.ceil(totalRecord/limitItems);
-  if(page > totalPage) {
-    page = totalPage;
-  }
-  const skip = (page - 1) * limitItems;
-  const pagination = {
-    skip: skip,
-    totalRecord: totalRecord,
-    totalPage: totalPage
-  };
-  // Hết Phân trang
-  
-  const categoryList = await Category
-    .find(find)
-    .sort({
-      position: "desc"
-    })
-    .limit(limitItems)
-    .skip(skip)
-
+  const adminNames = new Map(accountAdminList.map(item => [item.id, item.fullName]));
   for (const item of categoryList) {
-    if(item.createdBy) {
-      const infoAccountCreated = await AccountAdmin.findOne({
-        _id: item.createdBy
-      })
-      item.createdByFullName = infoAccountCreated.fullName;
-    }
-
-    if(item.updatedBy) {
-      const infoAccountUpdated = await AccountAdmin.findOne({
-        _id: item.updatedBy
-      })
-      item.updatedByFullName = infoAccountUpdated.fullName;
-    }
-
-    item.createdAtFormat = moment(item.createdAt).format("HH:mm - DD/MM/YYYY");
-    item.updatedAtFormat = moment(item.updatedAt).format("HH:mm - DD/MM/YYYY");
+    item.createdByFullName = adminNames.get(item.createdBy?.toLowerCase());
+    item.updatedByFullName = adminNames.get(item.updatedBy?.toLowerCase());
+    item.createdAtFormat = item.createdAt && moment(item.createdAt).format("HH:mm - DD/MM/YYYY");
+    item.updatedAtFormat = item.updatedAt && moment(item.updatedAt).format("HH:mm - DD/MM/YYYY");
   }
 
-  // Danh sách tài khoản quản trị
-  const accountAdminList = await AccountAdmin
-    .find({})
-    .select("id fullName");
-  // Hết Danh sách tài khoản quản trị
-
-  res.render("admin/pages/category-list", {
+  res.status(error ? 400 : 200).render("admin/pages/category-list", {
     pageTitle: "Quản lý danh mục",
-    categoryList: categoryList,
-    accountAdminList: accountAdminList,
-    pagination: pagination
-  })
-}
+    categoryList,
+    accountAdminList,
+    listError: error,
+    pagination: { page, skip, totalRecord, totalPage }
+  });
+};
 
 module.exports.create = async (req, res) => {
-  const categoryList = await Category.find({
-    deleted: false
-  })
-
-  const categoryTree = categoryHelper.buildCategoryTree(categoryList);
-
+  const categories = await Category.find(liveCategory);
   res.render("admin/pages/category-create", {
     pageTitle: "Tạo danh mục",
-    categoryList: categoryTree
-  })
-}
-
-module.exports.createPost = async (req, res) => {
-  if(req.body.position) {
-    req.body.position = parseInt(req.body.position);
-  } else {
-    const totalRecord = await Category.countDocuments({});
-    req.body.position = totalRecord + 1;
-  }
-
-  req.body.createdBy = req.account.id;
-  req.body.updatedBy = req.account.id;
-  req.body.avatar = req.file ? req.file.path : "";
-
-  const newRecord = new Category(req.body);
-  await newRecord.save();
-
-  req.flash("success", "Tạo danh mục thành công!");
-
-  res.json({
-    code: "success"
-  })
-}
+    categoryList: buildCategoryTree(categories)
+  });
+};
 
 module.exports.edit = async (req, res) => {
-  try {
-    const categoryList = await Category.find({
-      deleted: false
-    })
-  
-    const categoryTree = categoryHelper.buildCategoryTree(categoryList);
-  
-    const id = req.params.id;
-    const categoryDetail = await Category.findOne({
-      _id: id,
-      deleted: false
-    })
-  
-    res.render("admin/pages/category-edit", {
-      pageTitle: "Chỉnh sửa danh mục",
-      categoryList: categoryTree,
-      categoryDetail: categoryDetail
-    })
-  } catch (error) {
-    res.redirect(`/${pathAdmin}/category/list`);
+  const id = req.params.id;
+  const categoryDetail = isCategoryId(id) && await Category.findOne({ _id: id, ...liveCategory });
+  if (!categoryDetail) {
+    return res.status(404).render("admin/pages/error-404", { pageTitle: "Danh mục không tồn tại" });
   }
-}
+  const candidates = await Category.find({ _id: { $ne: categoryDetail.id }, ...liveCategory });
+  res.render("admin/pages/category-edit", {
+    pageTitle: "Chỉnh sửa danh mục",
+    categoryList: buildCategoryTree(candidates),
+    categoryDetail,
+    selectedParent: categoryDetail.parent?.toLowerCase()
+  });
+};
 
-module.exports.editPatch = async (req, res) => {
-  try {
-    const id = req.params.id;
+function saveCategory(editing) {
+  return (req, res) => withCategoryWrite(async () => {
+    const id = editing ? req.params.id.toLowerCase() : null;
+    if (editing && !await Category.exists({ _id: id, ...liveCategory })) {
+      return respondError(res, 404, existingCategoryMessage);
+    }
+    const data = { ...req.categoryInput, updatedBy: req.account.id };
+    const parentError = await validateParent(data.parent, id);
+    if (parentError) return respondError(res, 400, parentError);
+    if (data.position === "") data.position = await Category.countDocuments({}) + 1;
 
-    if(req.body.position) {
-      req.body.position = parseInt(req.body.position);
+    if (req.file) {
+      try {
+        data.avatar = await uploadCategoryAvatar(req.file.buffer);
+      } catch (error) {
+        return respondError(res, 502, "Không thể tải ảnh đại diện lên. Vui lòng thử lại!");
+      }
+    }
+
+    if (editing) {
+      const result = await Category.updateOne({ _id: id, ...liveCategory }, { $set: data });
+      if (!result.matchedCount) return respondError(res, 404, existingCategoryMessage);
     } else {
-      const totalRecord = await Category.countDocuments({});
-      req.body.position = totalRecord + 1;
+      await Category.create({ ...data, createdBy: req.account.id, avatar: data.avatar || "" });
+    }
+    req.flash("success", editing ? "Cập nhật danh mục thành công!" : "Tạo danh mục thành công!");
+    return res.json({ code: "success" });
+  });
+}
+
+module.exports.createPost = saveCategory(false);
+module.exports.editPatch = saveCategory(true);
+
+function changeCategories(req, res, option, ids) {
+  return withCategoryWrite(async () => {
+    const filter = { _id: { $in: ids }, ...liveCategory };
+    if (await Category.countDocuments(filter) !== ids.length) {
+      return respondError(res, 404, existingCategoryMessage);
     }
 
-    req.body.updatedBy = req.account.id;
-    if(req.file) {
-      req.body.avatar = req.file.path;
+    let changes;
+    let success;
+    if (option === "delete") {
+      const child = await Category.exists({ parent: { $in: ids }, ...liveCategory })
+        .collation({ locale: "en", strength: 2 });
+      if (child) {
+        return respondError(res, 409, "Không thể xóa danh mục khi còn danh mục con chưa xóa. Vui lòng xử lý danh mục con trước!");
+      }
+      const tour = await Tour.exists({ category: { $in: ids }, ...liveCategory })
+        .collation({ locale: "en", strength: 2 });
+      if (tour) {
+        return respondError(res, 409, "Không thể xóa danh mục khi còn tour chưa xóa. Vui lòng chuyển tour sang danh mục khác hoặc xử lý tour trước!");
+      }
+      changes = { deleted: true, deletedBy: req.account.id, deletedAt: new Date() };
+      success = "Xóa danh mục thành công!";
     } else {
-      delete req.body.avatar;
+      changes = { status: option, updatedBy: req.account.id };
+      success = "Đổi trạng thái thành công!";
     }
-
-    await Category.updateOne({
-      _id: id,
-      deleted: false
-    }, req.body)
-
-    req.flash("success", "Cập nhật danh mục thành công!");
-
-    res.json({
-      code: "success"
-    })
-  } catch (error) {
-    res.json({
-      code: "error",
-      message: "Id không hợp lệ!"
-    })
-  }
+    await Category.updateMany(filter, { $set: changes });
+    req.flash("success", success);
+    return res.json({ code: "success" });
+  });
 }
 
-module.exports.deletePatch = async (req, res) => {
-  try {
-    const id = req.params.id;
-    
-    await Category.updateOne({
-      _id: id
-    }, {
-      deleted: true,
-      deletedBy: req.account.id,
-      deletedAt: Date.now()
-    })
+module.exports.deletePatch = (req, res) => changeCategories(req, res, "delete", [req.params.id.toLowerCase()]);
 
-    req.flash("success", "Xóa danh mục thành công!");
-
-    res.json({
-      code: "success"
-    })
-  } catch (error) {
-    res.json({
-      code: "error",
-      message: "Id không hợp lệ!"
-    })
+module.exports.changeMultiPatch = (req, res) => {
+  const { option, ids } = req.body || {};
+  if (option !== "delete" && !statuses.includes(option)) {
+    return respondError(res, 400, "Hành động hàng loạt không hợp lệ!");
   }
-}
-
-module.exports.changeMultiPatch = async (req, res) => {
-  try {
-    const { option, ids } = req.body;
-
-    switch (option) {
-      case "active":
-      case "inactive":
-        await Category.updateMany({
-          _id: { $in: ids }
-        }, {
-          status: option
-        });
-        req.flash("success", "Đổi trạng thái thành công!");
-        break;
-      case "delete":
-        await Category.updateMany({
-          _id: { $in: ids }
-        }, {
-          deleted: true,
-          deletedBy: req.account.id,
-          deletedAt: Date.now()
-        });
-        req.flash("success", "Xóa thành công!");
-        break;
-    }
-
-    res.json({
-      code: "success"
-    })
-  } catch (error) {
-    res.json({
-      code: "error",
-      message: "Id không tồn tại trong hệ thông!"
-    })
+  const permission = option === "delete" ? "category-delete" : "category-edit";
+  if (!req.permissions.includes(permission)) return respondError(res, 403, permissionMessage);
+  if (!Array.isArray(ids) || !ids.length || !ids.every(isCategoryId)) {
+    return respondError(res, 400, "Vui lòng chọn danh mục hợp lệ để thực hiện!");
   }
-}
+  return changeCategories(req, res, option, [...new Set(ids.map(id => id.toLowerCase()))]);
+};

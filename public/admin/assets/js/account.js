@@ -4,7 +4,7 @@ if (loginForm) {
   const status = document.querySelector('[card-login-status]');
   const button = loginForm.querySelector('button[type="submit"]');
   let busy = false;
-  const message = text => { if (status) status.textContent = text; else alert(text); };
+  const message = text => { if (status) status.textContent = text; else showTravelNotice(text, "error"); };
   async function submitLogin(event) {
     event.preventDefault();
     if (busy) return;
@@ -145,7 +145,7 @@ if(registerForm) {
         .then(res => res.json())
         .then(data => {
           if(data.code == "error") {
-            alert(data.message);
+            showTravelNotice(data.message, "error");
           }
 
           if(data.code == "success") {
@@ -190,7 +190,7 @@ if(forgotPasswordForm) {
         .then(res => res.json())
         .then(data => {
           if(data.code == "error") {
-            alert(data.message);
+            showTravelNotice(data.message, "error");
           }
 
           if(data.code == "success") {
@@ -235,7 +235,7 @@ if(otpPasswordForm) {
         .then(res => res.json())
         .then(data => {
           if(data.code == "error") {
-            alert(data.message);
+            showTravelNotice(data.message, "error");
           }
 
           if(data.code == "success") {
@@ -309,7 +309,7 @@ if(resetPasswordForm) {
         .then(res => res.json())
         .then(data => {
           if(data.code == "error") {
-            alert(data.message);
+            showTravelNotice(data.message, "error");
           }
 
           if(data.code == "success") {

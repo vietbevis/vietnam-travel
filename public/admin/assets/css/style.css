@@ -1614,3 +1614,43 @@ a {
   background-color: #a3e0a3;
 }
 /* End Alert */
+
+
+/* Order Filter - Apply Button */
+#order-filter-form .inner-button-apply {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+
+  padding: 11px 20px;
+  min-height: 42px;
+
+  background-color: var(--color-primary);
+  color: #ffffff;
+
+  border: none;
+  border-radius: 8px;
+
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+
+  transition: background-color 0.2s ease,
+              transform 0.2s ease;
+}
+
+#order-filter-form .inner-button-apply:hover {
+  background-color: #3267d6;
+  transform: translateY(-1px);
+}
+
+#order-filter-form .inner-button-apply:active {
+  transform: translateY(0);
+}
+
+#order-filter-form .inner-button-apply:focus-visible {
+  outline: 3px solid #93c5fd;
+  outline-offset: 2px;
+}

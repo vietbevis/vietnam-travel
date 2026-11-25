@@ -1,51 +1,57 @@
 extends ../layouts/default.pug
 
 block main
+  - const canEdit = permissions.includes("category-edit");
+  - const canDelete = permissions.includes("category-delete");
   h1.box-title Quản lý danh mục
 
   //- Section 4
-  .section-4
+  .section-4(data-category-list)
     .inner-wrap
       .inner-item.inner-label
         <i class="fa-solid fa-filter"></i> Bộ lọc
       .inner-item
-        select(filter-status)
+        select(filter-status aria-label="Lọc theo trạng thái")
           option(value="") Trạng thái
           option(value="active") Hoạt động
           option(value="inactive") Tạm dừng
       .inner-item
-        select(filter-created-by)
+        select(filter-created-by aria-label="Lọc theo người tạo")
           option(value="") Người tạo
           each item in accountAdminList
             option(value=item.id) #{item.fullName}
       .inner-item.inner-date
-        input(type="date" filter-start-date)
+        input(type="date" filter-start-date aria-label="Từ ngày tạo")
         span -
-        input(type="date" filter-end-date)
-      .inner-item.inner-reset(filter-reset)
+        input(type="date" filter-end-date aria-label="Đến ngày tạo")
+      a.inner-item.inner-reset(href=`/${pathAdmin}/category/list`)
         <i class="fa-solid fa-rotate-left"></i> Xóa bộ lọc
   //- End Section 4
 
   //- Section 5
   .section-5
     .inner-wrap
-      .inner-change-status(
-        change-multi
-        data-api=`/${pathAdmin}/category/change-multi`
-      )
-        .inner-item
-          select
-            option(value="") -- Hành động --
-            option(value="active") Hoạt động
-            option(value="inactive") Dừng hoạt động
-            option(value="delete") Xóa
-        .inner-item
-          button Áp dụng
+      if canEdit || canDelete
+        .inner-change-status(
+          category-change-multi
+          data-api=`/${pathAdmin}/category/change-multi`
+        )
+          .inner-item
+            select(aria-label="Hành động hàng loạt" disabled=!categoryList.length)
+              option(value="") -- Hành động --
+              if canEdit
+                option(value="active") Hoạt động
+                option(value="inactive") Dừng hoạt động
+              if canDelete
+                option(value="delete") Xóa
+          .inner-item
+            button(type="button" disabled=!categoryList.length) Áp dụng
       .inner-search
         <i class="fa-solid fa-magnifying-glass"></i>
-        input(type="text" placeholder="Tìm kiếm" search)
-      .inner-button-create
-        a(href=`/${pathAdmin}/category/create`) + Tạo mới
+        input(type="text" placeholder="Tìm kiếm" aria-label="Tìm kiếm danh mục" search)
+      if permissions.includes("category-create")
+        .inner-button-create
+          a(href=`/${pathAdmin}/category/create`) + Tạo mới
   //- End Section 5
 
   //- Section 6
@@ -55,7 +61,8 @@ block main
         thead
           tr
             th(class="inner-center")
-              input(type="checkbox" class="inner-check" check-all)
+              if canEdit || canDelete
+                input(type="checkbox" class="inner-check" aria-label="Chọn tất cả danh mục đang hiển thị" check-all disabled=!categoryList.length)
             th Tên danh mục
             th Ảnh đại diện
             th(class="inner-center") Vị trí
@@ -64,13 +71,18 @@ block main
             th Cập nhật bởi
             th Hành động
         tbody
+          if categoryList.length === 0
+            tr
+              td.inner-center(colspan="8" role="status") #{listError || "Không tìm thấy danh mục phù hợp"}
           each item in categoryList
             tr
               td(class="inner-center")
-                input(type="checkbox" class="inner-check" check-item=item.id)
+                if canEdit || canDelete
+                  input(type="checkbox" class="inner-check" aria-label=`Chọn ${item.name}` check-item=item.id)
               td #{item.name}
               td
-                img(src=item.avatar class="inner-avatar")
+                if item.avatar
+                  img(src=item.avatar class="inner-avatar" alt="")
               td(class="inner-center") #{item.position}
               td(class="inner-center")
                 if (item.status == "active")
@@ -85,21 +97,27 @@ block main
                 div.inner-time #{item.updatedAtFormat}
               td
                 .inner-buttons
-                  a(
-                    href=`/${pathAdmin}/category/edit/${item.id}`
-                    class="inner-edit"
-                  ) <i class="fa-regular fa-pen-to-square"></i>
-                  button(
-                    class="inner-delete"
-                    button-delete
-                    data-api=`/${pathAdmin}/category/delete/${item.id}`
-                  ) <i class="fa-regular fa-trash-can"></i>
+                  if canEdit
+                    a(
+                      href=`/${pathAdmin}/category/edit/${item.id}`
+                      class="inner-edit"
+                      aria-label=`Sửa ${item.name}`
+                    ) <i class="fa-regular fa-pen-to-square"></i>
+                  if canDelete
+                    button(
+                      type="button"
+                      class="inner-delete"
+                      aria-label=`Xóa ${item.name}`
+                      category-delete
+                      data-api=`/${pathAdmin}/category/delete/${item.id}`
+                    ) <i class="fa-regular fa-trash-can"></i>
   //- End Section 6
 
   //- Section 7
   .section-7
-    span(class="inner-label") Hiển thị #{pagination.skip + 1} - #{pagination.skip + categoryList.length} của #{pagination.totalRecord}
-    select(class="inner-pagination" pagination)
-      - for (let i = 1; i <= pagination.totalPage; i++)
-        option(value=i) Trang #{i}
+    span(class="inner-label") Hiển thị #{categoryList.length ? pagination.skip + 1 : 0} - #{categoryList.length ? pagination.skip + categoryList.length : 0} của #{pagination.totalRecord}
+    if pagination.totalPage > 0
+      select(class="inner-pagination" pagination aria-label="Trang danh mục")
+        - for (let i = 1; i <= pagination.totalPage; i++)
+          option(value=i selected=(i === pagination.page)) Trang #{i}
   //- End Section 7

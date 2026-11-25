@@ -1,6 +1,6 @@
 // Menu Mobile
 const buttonMenuMobile = document.querySelector(".header .inner-menu-mobile");
-if(buttonMenuMobile) {
+if (buttonMenuMobile) {
   const menu = document.querySelector(".header .inner-menu");
 
   // Click vào button mở menu
@@ -10,7 +10,7 @@ if(buttonMenuMobile) {
 
   // Click vào overlay đóng menu
   const overlay = menu.querySelector(".inner-overlay");
-  if(overlay) {
+  if (overlay) {
     overlay.addEventListener("click", () => {
       menu.classList.remove("active");
     });
@@ -28,7 +28,7 @@ if(buttonMenuMobile) {
 
 // Box Address Section 1
 const boxAddressSection1 = document.querySelector(".section-1 .inner-form .inner-box.inner-address");
-if(boxAddressSection1) {
+if (boxAddressSection1) {
   // Ẩn/hiện box suggest
   const input = boxAddressSection1.querySelector(".inner-input");
 
@@ -45,7 +45,7 @@ if(boxAddressSection1) {
   listItem.forEach(item => {
     item.addEventListener("mousedown", () => {
       const title = item.querySelector(".inner-item-title").innerHTML.trim();
-      if(title) {
+      if (title) {
         input.value = title;
       }
     })
@@ -55,7 +55,7 @@ if(boxAddressSection1) {
 
 // Box User Section 1
 const boxUserSection1 = document.querySelector(".section-1 .inner-form .inner-box.inner-user");
-if(boxUserSection1) {
+if (boxUserSection1) {
   // Hiện box quantity
   const input = boxUserSection1.querySelector(".inner-input");
 
@@ -103,7 +103,7 @@ if(boxUserSection1) {
       const parent = button.parentNode;
       const boxNumber = parent.querySelector(".inner-number");
       const number = parseInt(boxNumber.innerHTML.trim());
-      if(number > 0) {
+      if (number > 0) {
         const numberUpdate = number - 1;
         boxNumber.innerHTML = numberUpdate;
         updateQuantityInput();
@@ -115,7 +115,7 @@ if(boxUserSection1) {
 
 // Clock Expire
 const clockExpire = document.querySelector("[clock-expire]");
-if(clockExpire) {
+if (clockExpire) {
   const expireDateTimeString = clockExpire.getAttribute("clock-expire");
 
   // Chuyển đổi chuỗi thời gian thành đối tượng Date
@@ -125,7 +125,7 @@ if(clockExpire) {
   const updateClock = () => {
     const now = new Date();
     const remainingTime = expireDateTime - now; // quy về đơn vị mili giây
-    
+
     if (remainingTime > 0) {
       const days = Math.floor(remainingTime / (24 * 60 * 60 * 1000));
       // Tính số ngày, 24 * 60 * 60 * 1000 Tích của các số này = số mili giây trong 1 ngày
@@ -161,7 +161,7 @@ if(clockExpire) {
 
 // Box Filter
 const buttonFilterMobile = document.querySelector(".section-9 .inner-filter-mobile");
-if(buttonFilterMobile) {
+if (buttonFilterMobile) {
   const boxLeft = document.querySelector(".section-9 .inner-left");
   buttonFilterMobile.addEventListener("click", () => {
     boxLeft.classList.add("active");
@@ -176,7 +176,7 @@ if(buttonFilterMobile) {
 
 // Box Tour Info
 const boxTourInfo = document.querySelector(".box-tour-info");
-if(boxTourInfo) {
+if (boxTourInfo) {
   const buttonReadMore = boxTourInfo.querySelector(".inner-read-more button");
   buttonReadMore.addEventListener("click", () => {
     boxTourInfo.classList.add("active");
@@ -192,7 +192,7 @@ AOS.init();
 
 // Swiper Section 2
 const swiperSection2 = document.querySelector(".swiper-section-2");
-if(swiperSection2) {
+if (swiperSection2) {
   new Swiper('.swiper-section-2', {
     slidesPerView: 1,
     spaceBetween: 20,
@@ -214,7 +214,7 @@ if(swiperSection2) {
 
 // Swiper Section 3
 const swiperSection3 = document.querySelector(".swiper-section-3");
-if(swiperSection3) {
+if (swiperSection3) {
   new Swiper('.swiper-section-3', {
     slidesPerView: 1,
     spaceBetween: 20,
@@ -240,7 +240,7 @@ if(swiperSection3) {
 
 // Swiper Box Images
 const boxImages = document.querySelector(".box-images");
-if(boxImages) {
+if (boxImages) {
   const swiperBoxImagesThumb = new Swiper(".swiper-box-images-thumb", {
     spaceBetween: 5,
     slidesPerView: 4,
@@ -262,21 +262,21 @@ if(boxImages) {
 
 // Zoom Box Images Main
 const boxImagesMain = document.querySelector(".box-images .inner-images-main");
-if(boxImagesMain) {
+if (boxImagesMain) {
   new Viewer(boxImagesMain);
 }
 // End Zoom Box Images Main
 
 // Box Tour Schedule
 const boxTourSchedule = document.querySelector(".box-tour-schedule");
-if(boxTourSchedule) {
+if (boxTourSchedule) {
   new Viewer(boxTourSchedule);
 }
 // End Box Tour Schedule
 
 // Email Form
 const emailForm = document.querySelector("#email-form");
-if(emailForm) {
+if (emailForm) {
   const validation = new JustValidate('#email-form');
 
   validation
@@ -292,11 +292,11 @@ if(emailForm) {
     ])
     .onSuccess((event) => {
       const email = event.target.email.value;
-      
+
       const dataFinal = {
         email: email,
       };
-      
+
       fetch(`/contact/create`, {
         method: "POST",
         headers: {
@@ -306,22 +306,22 @@ if(emailForm) {
       })
         .then(res => res.json())
         .then(data => {
-          if(data.code == "error") {
-            alert(data.message);
+          if (data.code == "error") {
+            showTravelNotice(data.message, "error");
           }
 
-          if(data.code == "success") {
+          if (data.code == "success") {
             window.location.reload();
           }
         })
     })
-  ;
+    ;
 }
 // End Email Form
 
 // Coupon Form
 const couponForm = document.querySelector("#coupon-form");
-if(couponForm) {
+if (couponForm) {
   const validation = new JustValidate('#coupon-form');
 
   validation
@@ -329,13 +329,13 @@ if(couponForm) {
       const coupon = event.target.coupon.value;
       console.log(coupon);
     })
-  ;
+    ;
 }
 // End Email Form
 
 // Order Form
 const orderForm = document.querySelector("#order-form");
-if(orderForm) {
+if (orderForm) {
   const validation = new JustValidate('#order-form');
 
   validation
@@ -387,7 +387,7 @@ if(orderForm) {
         }
       })
 
-      if(cart.length > 0) {
+      if (cart.length > 0) {
         const dataFinal = {
           fullName: fullName,
           phone: phone,
@@ -405,11 +405,17 @@ if(orderForm) {
         })
           .then(res => res.json())
           .then(data => {
-            if(data.code == "error") {
-              alert(data.message);
+            if (data.code == "error") {
+              showTravelNotice(data.message, "error");
+
+              if (data.errorCode === "OUT_OF_STOCK") {
+                drawCart();
+              }
+
+              return;
             }
-  
-            if(data.code == "success") {
+
+            if (data.code == "success") {
               // Cập nhật lại giỏ hàng
               let cart = JSON.parse(localStorage.getItem("cart"));
               cart = cart.filter(item => item.checked == false);
@@ -437,10 +443,10 @@ if(orderForm) {
             }
           })
       } else {
-        alert("Vui lòng đặt ít nhất 1 tour!");
+        showTravelNotice("Vui lòng đặt ít nhất 1 tour!");
       }
     })
-  ;
+    ;
 
   // List Input Method
   const listInputMethod = orderForm.querySelectorAll("input[name='method']");
@@ -461,7 +467,7 @@ if(orderForm) {
 
 // Alert
 const alertTime = document.querySelector("[alert-time]");
-if(alertTime) {
+if (alertTime) {
   let time = alertTime.getAttribute("alert-time");
   time = time ? parseInt(time) : 4000;
   setTimeout(() => {
@@ -472,7 +478,7 @@ if(alertTime) {
 
 // Box Filter
 const boxFilter = document.querySelector(".box-filter");
-if(boxFilter) {
+if (boxFilter) {
   const url = new URL(`${window.location.origin}/search`);
 
   const buttonApply = boxFilter.querySelector(".inner-button");
@@ -490,7 +496,7 @@ if(boxFilter) {
   buttonApply.addEventListener("click", () => {
     filterList.forEach(name => {
       const value = boxFilter.querySelector(`[name="${name}"]`).value;
-      if(value) {
+      if (value) {
         url.searchParams.set(name, value);
       } else {
         url.searchParams.delete(name);
@@ -504,7 +510,7 @@ if(boxFilter) {
 
 // Form Search
 const formSearch = document.querySelector("[form-search]");
-if(formSearch) {
+if (formSearch) {
   const url = new URL(`${window.location.origin}/search`);
 
   formSearch.addEventListener("submit", (event) => {
@@ -512,7 +518,7 @@ if(formSearch) {
 
     // Điểm đến
     const locationTo = formSearch.locationTo.value;
-    if(locationTo) {
+    if (locationTo) {
       url.searchParams.set("locationTo", locationTo);
     } else {
       url.searchParams.delete("locationTo");
@@ -520,21 +526,21 @@ if(formSearch) {
 
     // Số lượng
     const stockAdult = parseInt(formSearch.querySelector("[stock-adult]").innerHTML);
-    if(stockAdult > 0) {
+    if (stockAdult > 0) {
       url.searchParams.set("stockAdult", stockAdult);
     } else {
       url.searchParams.delete("stockAdult");
     }
 
     const stockChildren = parseInt(formSearch.querySelector("[stock-children]").innerHTML);
-    if(stockChildren > 0) {
+    if (stockChildren > 0) {
       url.searchParams.set("stockChildren", stockChildren);
     } else {
       url.searchParams.delete("stockChildren");
     }
 
     const stockBaby = parseInt(formSearch.querySelector("[stock-baby]").innerHTML);
-    if(stockBaby > 0) {
+    if (stockBaby > 0) {
       url.searchParams.set("stockBaby", stockBaby);
     } else {
       url.searchParams.delete("stockBaby");
@@ -542,7 +548,7 @@ if(formSearch) {
 
     // Ngày khởi hành
     const departureDate = formSearch.departureDate.value;
-    if(departureDate) {
+    if (departureDate) {
       url.searchParams.set("departureDate", departureDate);
     } else {
       url.searchParams.delete("departureDate");
@@ -553,9 +559,46 @@ if(formSearch) {
 }
 // End Form Search
 
+// Show Alert
+const showTravelNotice = (message, icon = "warning") => {
+  return Swal.fire({
+    icon: icon,
+    title: icon === "warning"
+      ? "Thông báo"
+      : "Kết quả",
+    text: message,
+    confirmButtonText: "Đã hiểu",
+    confirmButtonColor: "#2563eb",
+    heightAuto: false
+  });
+};
+// End Show Alert
+
+// Validation số lượng hành khách
+const readPassengerQuantity = (value, maximum) => {
+  const raw = String(value).trim();
+  const limit = Number(maximum);
+
+  if (!/^\d+$/.test(raw)) return null;
+
+  const quantity = Number(raw);
+
+  if (
+    !Number.isSafeInteger(quantity) ||
+    !Number.isSafeInteger(limit) ||
+    limit < 0 ||
+    quantity > limit
+  ) {
+    return null;
+  }
+
+  return quantity;
+};
+// End Validation số lượng hành khách
+
 // Box Tour Detail
 const boxTourDetail = document.querySelector(".box-tour-detail");
-if(boxTourDetail) {
+if (boxTourDetail) {
   // Bước 1
   const inputStockAdult = document.querySelector("[input-stock-adult]");
   const inputStockChildren = document.querySelector("[input-stock-children]");
@@ -563,9 +606,19 @@ if(boxTourDetail) {
 
   // Bước 3
   const drawBoxDetail = () => {
-    const quantityAdult = parseInt(inputStockAdult.value);
-    const quantityChildren = parseInt(inputStockChildren.value);
-    const quantityBaby = parseInt(inputStockBaby.value);
+    const quantityAdult = readPassengerQuantity(
+      inputStockAdult.value, inputStockAdult.max
+    );
+    const quantityChildren = readPassengerQuantity(
+      inputStockChildren.value, inputStockChildren.max
+    );
+    const quantityBaby = readPassengerQuantity(
+      inputStockBaby.value, inputStockBaby.max
+    );
+
+    if ([quantityAdult, quantityChildren, quantityBaby].includes(null)) {
+      return;
+    }
 
     const stockAdult = document.querySelector("[stock-adult]");
     const stockChildren = document.querySelector("[stock-children]");
@@ -584,20 +637,67 @@ if(boxTourDetail) {
   }
 
   // Bước 2
-  inputStockAdult.addEventListener("change", drawBoxDetail);
-  inputStockChildren.addEventListener("change", drawBoxDetail);
-  inputStockBaby.addEventListener("change", drawBoxDetail);
+
+  const passengerInputs = [
+    inputStockAdult,
+    inputStockChildren,
+    inputStockBaby
+  ];
+
+  passengerInputs.forEach(input => {
+    input.dataset.lastValid =
+      readPassengerQuantity(input.value, input.max) ?? 0;
+
+    input.addEventListener("change", () => {
+      const quantity = readPassengerQuantity(
+        input.value,
+        input.max
+      );
+
+      if (quantity === null) {
+        showTravelNotice(
+          `Số khách không hợp lệ. ` +
+          `Số chỗ còn tối đa: ${input.max}`
+        );
+
+        input.value = input.dataset.lastValid;
+      } else {
+        input.dataset.lastValid = quantity;
+      }
+
+      drawBoxDetail();
+    });
+  });
+
 
   // Bước 4
   const buttonAddToCart = boxTourDetail.querySelector(".inner-button-add-cart");
   buttonAddToCart.addEventListener("click", () => {
     const tourId = buttonAddToCart.getAttribute("tour-id");
-    const quantityAdult = parseInt(inputStockAdult.value);
-    const quantityChildren = parseInt(inputStockChildren.value);
-    const quantityBaby = parseInt(inputStockBaby.value);
+
+    const quantityAdult = readPassengerQuantity(
+      inputStockAdult.value, inputStockAdult.max
+    );
+    const quantityChildren = readPassengerQuantity(
+      inputStockChildren.value, inputStockChildren.max
+    );
+    const quantityBaby = readPassengerQuantity(
+      inputStockBaby.value, inputStockBaby.max
+    );
+
+    if ([quantityAdult, quantityChildren, quantityBaby].includes(null)) {
+      showTravelNotice("Số lượng hành khách không hợp lệ hoặc vượt số chỗ còn lại!");
+      return;
+    }
+
+    if (quantityAdult + quantityChildren + quantityBaby === 0) {
+      showTravelNotice("Vui lòng chọn ít nhất một hành khách!");
+      return;
+    }
+
     const locationFrom = boxTourDetail.querySelector("[location-from]").value;
 
-    if(quantityAdult > 0 || quantityChildren > 0 || quantityBaby > 0) {
+    if (quantityAdult > 0 || quantityChildren > 0 || quantityBaby > 0) {
       const cartItem = {
         tourId: tourId,
         quantityAdult: quantityAdult,
@@ -608,9 +708,9 @@ if(boxTourDetail) {
       };
 
       const cart = JSON.parse(localStorage.getItem("cart"));
-      
+
       const indexItemExist = cart.findIndex(item => item.tourId == tourId);
-      if(indexItemExist != -1) {
+      if (indexItemExist != -1) {
         cart[indexItemExist] = cartItem;
       } else {
         cart.push(cartItem);
@@ -625,14 +725,14 @@ if(boxTourDetail) {
 
 // Initial Cart
 const cart = localStorage.getItem("cart");
-if(!cart) {
+if (!cart) {
   localStorage.setItem("cart", JSON.stringify([]));
 }
 // End Initial Cart
 
 // Mini Cart
 const miniCart = document.querySelector("[mini-cart]");
-if(miniCart) {
+if (miniCart) {
   const cart = JSON.parse(localStorage.getItem("cart"));
   miniCart.innerHTML = cart.length;
 }
@@ -651,7 +751,7 @@ const drawCart = () => {
   })
     .then(res => res.json())
     .then(data => {
-      if(data.code == "success") {
+      if (data.code == "success") {
         // Hiển thị các item
         const htmlCart = data.cart.map(item => `
           <div class="inner-tour-item">
@@ -683,6 +783,23 @@ const drawCart = () => {
                   </div>
                   <div class="inner-meta-item">Khởi Hành Tại: <b>${item.locationFromName}</b>
                   </div>
+                  <div class="inner-meta-item">
+                    Chỗ còn hiện tại:
+                    <b>
+                      Người lớn ${item.stockAdult},
+                      Trẻ em ${item.stockChildren},
+                      Em bé ${item.stockBaby}
+                    </b>
+                  </div>
+
+                  ${item.quantityAdult > item.stockAdult ||
+            item.quantityChildren > item.stockChildren ||
+            item.quantityBaby > item.stockBaby
+            ? `<div style="color:#dc2626;font-weight:600">
+                          Số khách đã chọn vượt số chỗ còn lại.
+                          Vui lòng điều chỉnh số lượng.
+                        </div>`
+            : ""}
                 </div>
               </div>
             </div>
@@ -694,7 +811,8 @@ const drawCart = () => {
                   <div class="inner-item-input">
                     <input 
                       value="${item.quantityAdult}" 
-                      min="0" 
+                      min="0"
+                      max="${item.stockAdult}" step="1"
                       type="number"
                       input-quantity="quantityAdult"
                       tour-id="${item.tourId}"
@@ -713,7 +831,8 @@ const drawCart = () => {
                   <div class="inner-item-input">
                     <input 
                       value="${item.quantityChildren}" 
-                      min="0" 
+                      min="0"
+                      max="${item.stockChildren}" step="1"
                       type="number"
                       input-quantity="quantityChildren"
                       tour-id="${item.tourId}"
@@ -732,7 +851,8 @@ const drawCart = () => {
                   <div class="inner-item-input">
                     <input 
                       value="${item.quantityBaby}" 
-                      min="0" 
+                      min="0"
+                      max="${item.stockBaby}" step="1"
                       type="number"
                       input-quantity="quantityBaby"
                       tour-id="${item.tourId}"
@@ -762,7 +882,7 @@ const drawCart = () => {
 
         // Tính tổng tiền
         const subTotalPrice = data.cart.reduce((sum, item) => {
-          if(item.checked) {
+          if (item.checked) {
             return sum + ((item.priceNewAdult * item.quantityAdult) + (item.priceNewChildren * item.quantityChildren) + (item.priceNewBaby * item.quantityBaby));
           } else {
             return sum;
@@ -772,7 +892,7 @@ const drawCart = () => {
         const discountPercent = parseInt(document.querySelector("[page-cart]")?.getAttribute("data-discount-percent")) || 0;
         const discount = Math.round(subTotalPrice * discountPercent / 100);
         const totalPrice = subTotalPrice - discount;
-        
+
         const cartSubTotal = document.querySelector("[cart-sub-total]");
         cartSubTotal.innerHTML = subTotalPrice.toLocaleString("vi-VN");
 
@@ -780,24 +900,72 @@ const drawCart = () => {
         cartTotal.innerHTML = totalPrice.toLocaleString("vi-VN");
 
         const cartDiscount = document.querySelector("[cart-discount]");
-        if(cartDiscount) cartDiscount.innerHTML = discount.toLocaleString("vi-VN");
+        if (cartDiscount) cartDiscount.innerHTML = discount.toLocaleString("vi-VN");
         // Hết Tính tổng tiền
 
         // Sự kiện cập nhật số lượng
-        const listInputQuantity = document.querySelectorAll("[input-quantity]");
+        const listInputQuantity = document.querySelectorAll(
+          "[input-quantity]"
+        );
+
         listInputQuantity.forEach(input => {
           input.addEventListener("change", () => {
             const tourId = input.getAttribute("tour-id");
             const name = input.getAttribute("input-quantity");
-            const quantity = parseInt(input.value);
 
-            const cart = JSON.parse(localStorage.getItem("cart"));
-            const itemUpdate = cart.find(item => item.tourId == tourId);
+            const quantity = readPassengerQuantity(
+              input.value,
+              input.max
+            );
+
+            if (quantity === null) {
+              showTravelNotice(
+                `Số lượng không hợp lệ hoặc vượt tồn kho. ` +
+                `Tối đa: ${input.max} chỗ.`
+              );
+              drawCart();
+              return;
+            }
+
+            const cart = JSON.parse(
+              localStorage.getItem("cart") || "[]"
+            );
+
+            const itemUpdate = cart.find(
+              item => item.tourId === tourId
+            );
+
+            if (!itemUpdate) {
+              drawCart();
+              return;
+            }
+
+            const updated = {
+              ...itemUpdate,
+              [name]: quantity
+            };
+
+            const totalPassengers =
+              updated.quantityAdult +
+              updated.quantityChildren +
+              updated.quantityBaby;
+
+            if (totalPassengers === 0) {
+              showTravelNotice("Mỗi tour phải có ít nhất một hành khách!");
+              drawCart();
+              return;
+            }
+
             itemUpdate[name] = quantity;
-            localStorage.setItem("cart", JSON.stringify(cart));
+
+            localStorage.setItem(
+              "cart",
+              JSON.stringify(cart)
+            );
+
             drawCart();
-          })
-        })
+          });
+        });
         // Hết Sự kiện cập nhật số lượng
 
         // Sự kiện xóa item
@@ -835,7 +1003,38 @@ const drawCart = () => {
 }
 
 const pageCart = document.querySelector("[page-cart]");
-if(pageCart) {
+if (pageCart) {
   drawCart();
 }
 // End Page Cart
+
+
+// Sắp xếp và phân trang tour
+const tourListPage = document.querySelector(".section-9");
+
+if (tourListPage) {
+  const navigate = (key, value) => {
+    const url = new URL(window.location.href);
+    url.searchParams.set(key, value);
+
+    if (key === "sort") {
+      url.searchParams.set("page", "1");
+    }
+
+    window.location.href = url.toString();
+  };
+
+  tourListPage.querySelectorAll("[data-sort]")
+    .forEach(button => {
+      button.addEventListener("click", () => {
+        navigate("sort", button.dataset.sort);
+      });
+    });
+
+  tourListPage.querySelectorAll("[data-page]")
+    .forEach(button => {
+      button.addEventListener("click", () => {
+        navigate("page", button.dataset.page);
+      });
+    });
+}

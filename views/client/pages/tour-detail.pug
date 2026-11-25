@@ -2,6 +2,7 @@ extends ../layouts/default.pug
 include ../mixins/box-breadcrumb.pug
 
 block main
+  - const defaultAdult = tourDetail.stockAdult > 0 ? 1 : 0
   // Breadcrumb
   +box-breadcrumb(breadcrumb)
   // End Breadcrumb
@@ -85,6 +86,10 @@ block main
               select(location-from)
                 each item in cityList
                   option(value=item.id) #{item.name}
+            .inner-stock-info
+              div Người lớn còn: #{tourDetail.stockAdult} chỗ
+              div Trẻ em còn: #{tourDetail.stockChildren} chỗ
+              div Em bé còn: #{tourDetail.stockBaby} chỗ
             .inner-quantity
               label.inner-label Số Lượng Hành Khách
               .inner-list
@@ -92,7 +97,7 @@ block main
                   .inner-item-label Người lớn:
                   .inner-item-input
                     input(
-                      value="1" 
+                      value=defaultAdult
                       min="0" 
                       max=tourDetail.stockAdult
                       type="number"
@@ -100,7 +105,7 @@ block main
                       price=tourDetail.priceNewAdult
                       )
                   .inner-item-price
-                    span(stock-adult) 1
+                    span(stock-adult) #{defaultAdult}
                     span x
                     span.inner-highlight #{tourDetail.priceNewAdult.toLocaleString("vi-VN")}
                 .inner-item
@@ -136,7 +141,7 @@ block main
             .inner-total
               .inner-total-label Tổng cộng:
               .inner-total-price
-                span(total-price) #{tourDetail.priceNewAdult.toLocaleString("vi-VN")}
+                span(total-price) #{(defaultAdult * tourDetail.priceNewAdult).toLocaleString("vi-VN")}
                 span đ
             button.inner-button-add-cart(tour-id=tourDetail.id) Thêm Vào Giỏ Hàng
   // End Section 10

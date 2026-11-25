@@ -1,6 +1,6 @@
 // Menu Mobile
 const buttonMenuMobile = document.querySelector(".header .inner-button-menu");
-if(buttonMenuMobile) {
+if (buttonMenuMobile) {
   const sider = document.querySelector(".sider");
   const siderOverlay = document.querySelector(".sider-overlay");
 
@@ -18,12 +18,12 @@ if(buttonMenuMobile) {
 
 // Schedule Section 8
 const scheduleSection8 = document.querySelector(".section-8 .inner-schedule");
-if(scheduleSection8) {
+if (scheduleSection8) {
   const buttonCreate = scheduleSection8.querySelector(".inner-schedule-create");
   const listItem = scheduleSection8.querySelector(".inner-schedule-list");
 
   // Tạo mới
-  if(buttonCreate) {
+  if (buttonCreate) {
     buttonCreate.addEventListener("click", () => {
       const firstItem = listItem.querySelector(".inner-schedule-item");
       const cloneItem = firstItem.cloneNode(true);
@@ -41,7 +41,7 @@ if(scheduleSection8) {
 
   listItem.addEventListener("click", (event) => {
     // Đóng/mở item
-    if(event.target.closest('.inner-more')) {
+    if (event.target.closest('.inner-more')) {
       const parentItem = event.target.closest('.inner-schedule-item');
       if (parentItem) {
         parentItem.classList.toggle('hidden');
@@ -49,7 +49,7 @@ if(scheduleSection8) {
     }
 
     // Xóa item
-    if(event.target.closest('.inner-remove')) {
+    if (event.target.closest('.inner-remove')) {
       const parentItem = event.target.closest('.inner-schedule-item');
       const totalItem = listItem.querySelectorAll(".inner-schedule-item").length;
       if (parentItem && totalItem > 1) {
@@ -79,16 +79,16 @@ if(scheduleSection8) {
 // Filepond Image
 const listFilepondImage = document.querySelectorAll("[filepond-image]");
 let filePond = {};
-if(listFilepondImage.length > 0) {
+if (listFilepondImage.length > 0 && window.FilePond && window.FilePondPluginImagePreview && window.FilePondPluginFileValidateType) {
   listFilepondImage.forEach(filepondImage => {
     FilePond.registerPlugin(FilePondPluginImagePreview);
     FilePond.registerPlugin(FilePondPluginFileValidateType);
 
     let files = null;
     const elementImageDefault = filepondImage.closest("[image-default]");
-    if(elementImageDefault) {
+    if (elementImageDefault) {
       const imageDefault = elementImageDefault.getAttribute("image-default");
-      if(imageDefault) {
+      if (imageDefault) {
         files = [
           {
             source: imageDefault, // Đường dẫn ảnh
@@ -108,16 +108,16 @@ if(listFilepondImage.length > 0) {
 // Filepond Image Multi
 const listFilepondImageMulti = document.querySelectorAll("[filepond-image-multi]");
 let filePondMulti = {};
-if(listFilepondImageMulti.length > 0) {
+if (listFilepondImageMulti.length > 0) {
   listFilepondImageMulti.forEach(filepondImage => {
     FilePond.registerPlugin(FilePondPluginImagePreview);
     FilePond.registerPlugin(FilePondPluginFileValidateType);
 
     let files = null;
     const elementListImageDefault = filepondImage.closest("[list-image-default]");
-    if(elementListImageDefault) {
+    if (elementListImageDefault) {
       let listImageDefault = elementListImageDefault.getAttribute("list-image-default");
-      if(listImageDefault) {
+      if (listImageDefault) {
         listImageDefault = JSON.parse(listImageDefault);
         files = [];
         listImageDefault.forEach(image => {
@@ -138,99 +138,99 @@ if(listFilepondImageMulti.length > 0) {
 
 // Biểu đồ doanh thu
 const revenueChart = document.querySelector("#revenue-chart");
-if(revenueChart) {
+if (revenueChart) {
   let chart = null;
   const drawChart = (date) => {
     // Lấy tháng và năm hiện tại
-      const currentMonth = date.getMonth() + 1; // getMonth() trả về giá trị từ 0 đến 11, nên cần +1
-      const currentYear = date.getFullYear();
+    const currentMonth = date.getMonth() + 1; // getMonth() trả về giá trị từ 0 đến 11, nên cần +1
+    const currentYear = date.getFullYear();
 
-      // Tạo một đối tượng Date mới cho tháng trước
-      // Nếu hiện tại là tháng 1 thì new Date(currentYear, 0 - 1, 1) sẽ tự động chuyển thành tháng 12 của năm trước.
-      const previousMonthDate = new Date(currentYear, date.getMonth() - 1, 1);
+    // Tạo một đối tượng Date mới cho tháng trước
+    // Nếu hiện tại là tháng 1 thì new Date(currentYear, 0 - 1, 1) sẽ tự động chuyển thành tháng 12 của năm trước.
+    const previousMonthDate = new Date(currentYear, date.getMonth() - 1, 1);
 
-      // Lấy tháng và năm từ đối tượng previousMonthDate
-      const previousMonth = previousMonthDate.getMonth() + 1;
-      const previousYear = previousMonthDate.getFullYear();
+    // Lấy tháng và năm từ đối tượng previousMonthDate
+    const previousMonth = previousMonthDate.getMonth() + 1;
+    const previousYear = previousMonthDate.getFullYear();
 
-      // Lấy ra tổng số ngày
-      const daysInMonthCurrent = new Date(currentYear, currentMonth, 0).getDate();
-      const daysInMonthPrevious = new Date(previousYear, previousMonth, 0).getDate();
-      const days = daysInMonthCurrent > daysInMonthPrevious ? daysInMonthCurrent : daysInMonthPrevious;
-      const arrayDay = [];
-      for(let i = 1; i <= days; i++) {
-        arrayDay.push(i);
-      }
+    // Lấy ra tổng số ngày
+    const daysInMonthCurrent = new Date(currentYear, currentMonth, 0).getDate();
+    const daysInMonthPrevious = new Date(previousYear, previousMonth, 0).getDate();
+    const days = daysInMonthCurrent > daysInMonthPrevious ? daysInMonthCurrent : daysInMonthPrevious;
+    const arrayDay = [];
+    for (let i = 1; i <= days; i++) {
+      arrayDay.push(i);
+    }
 
-      const dataFinal = {
-        currentMonth: currentMonth,
-        currentYear: currentYear,
-        previousMonth: previousMonth,
-        previousYear: previousYear,
-        arrayDay: arrayDay
-      };
+    const dataFinal = {
+      currentMonth: currentMonth,
+      currentYear: currentYear,
+      previousMonth: previousMonth,
+      previousYear: previousYear,
+      arrayDay: arrayDay
+    };
 
-      fetch(`/${pathAdmin}/dashboard/revenue-chart`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(dataFinal),
-      })
-        .then(res => res.json())
-        .then(data => {
-          if(data.code == "error") {
-            alert(data.message);
+    fetch(`/${pathAdmin}/dashboard/revenue-chart`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(dataFinal),
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.code == "error") {
+          showTravelNotice(data.message, "error");
+        }
+
+        if (data.code == "success") {
+          if (chart) {
+            chart.destroy();
           }
-
-          if(data.code == "success") {
-            if(chart) {
-              chart.destroy();
-            }
-            chart = new Chart(revenueChart, {
-              type: 'line',
-              data: {
-                labels: arrayDay,
-                datasets: [
-                  {
-                    label: `Tháng ${currentMonth}/${currentYear}`, // Nhãn của dataset
-                    data: data.dataMonthCurrent, // Dữ liệu
-                    borderColor: '#4379EE', // Màu viền
-                    borderWidth: 1.5, // Độ dày của đường
-                  },
-                  {
-                    label: `Tháng ${previousMonth}/${previousYear}`, // Nhãn của dataset
-                    data: data.dataMonthPrevious, // Dữ liệu
-                    borderColor: '#EF3826', // Màu viền
-                    borderWidth: 1.5, // Độ dày của đường
-                  }
-                ]
+          chart = new Chart(revenueChart, {
+            type: 'line',
+            data: {
+              labels: arrayDay,
+              datasets: [
+                {
+                  label: `Tháng ${currentMonth}/${currentYear}`, // Nhãn của dataset
+                  data: data.dataMonthCurrent, // Dữ liệu
+                  borderColor: '#4379EE', // Màu viền
+                  borderWidth: 1.5, // Độ dày của đường
+                },
+                {
+                  label: `Tháng ${previousMonth}/${previousYear}`, // Nhãn của dataset
+                  data: data.dataMonthPrevious, // Dữ liệu
+                  borderColor: '#EF3826', // Màu viền
+                  borderWidth: 1.5, // Độ dày của đường
+                }
+              ]
+            },
+            options: {
+              plugins: {
+                legend: {
+                  position: 'bottom'
+                }
               },
-              options: {
-                plugins: {
-                  legend: {
-                    position: 'bottom'
+              scales: {
+                x: {
+                  title: {
+                    display: true,
+                    text: 'Ngày'
                   }
                 },
-                scales: {
-                  x: {
-                    title: {
-                      display: true,
-                      text: 'Ngày'
-                    }
-                  },
-                  y: {
-                    title: {
-                      display: true,
-                      text: 'Doanh thu (VND)'
-                    }
+                y: {
+                  title: {
+                    display: true,
+                    text: 'Doanh thu (VND)'
                   }
-                },
-                maintainAspectRatio: false, // Không giữ tỷ lệ khung hình mặc định
-              }
-            });
-          }
-        })
+                }
+              },
+              maintainAspectRatio: false, // Không giữ tỷ lệ khung hình mặc định
+            }
+          });
+        }
+      })
   }
 
   // Lấy ngày hiện tại
@@ -245,119 +245,143 @@ if(revenueChart) {
 }
 // Hết Biểu đồ doanh thu
 
-// Category Create Form
-const categoryCreateForm = document.querySelector("#category-create-form");
-if(categoryCreateForm) {
-  const validation = new JustValidate('#category-create-form');
+// Category management
+const categorySection = document.querySelector("[data-category-list]");
+const categoryForm = document.querySelector("#category-create-form, #category-edit-form");
 
-  validation
-    .addField('#name', [
-      {
-        rule: 'required',
-        errorMessage: 'Vui lòng nhập tên danh mục!'
-      }
-    ])
-    .onSuccess((event) => {
-      const name = event.target.name.value;
-      const parent = event.target.parent.value;
-      const position = event.target.position.value;
-      const status = event.target.status.value;
-      const avatars = filePond.avatar.getFiles();
-      let avatar = null;
-      if(avatars.length > 0) {
-        avatar = avatars[0].file;
-      }
-      const description = tinymce.get("description").getContent();
+async function submitCategoryRequest(button, url, options, onSuccess, confirmDelete) {
+  button.disabled = true;
+  try {
+    if (confirmDelete) {
+      const message = "Bạn có chắc muốn xóa danh mục đã chọn?";
+      const confirmed = window.Swal
+        ? (await Swal.fire({
+          title: "Xác nhận xóa danh mục",
+          text: message,
+          icon: "warning",
+          showCancelButton: true,
+          confirmButtonText: "Xóa",
+          cancelButtonText: "Hủy",
+          focusCancel: true,
+          heightAuto: false
+        })).isConfirmed
+        : window.confirm(message);
+      if (!confirmed) return;
+    }
 
-      // Tạo FormData
-      const formData = new FormData();
-      formData.append("name", name);
-      formData.append("parent", parent);
-      formData.append("position", position);
-      formData.append("status", status);
-      formData.append("avatar", avatar);
-      formData.append("description", description);
-      
-      fetch(`/${pathAdmin}/category/create`, {
-        method: "POST",
-        body: formData
-      })
-        .then(res => res.json())
-        .then(data => {
-          if(data.code == "error") {
-            alert(data.message);
-          }
+    const response = await fetch(url, options);
+    if (response.redirected) {
+      window.location.assign(response.url);
+      return;
+    }
 
-          if(data.code == "success") {
-            window.location.href = `/${pathAdmin}/category/list`;
-          }
-        })
-    })
-  ;
+    const data = await response.json();
+    if (!response.ok || data.code !== "success") {
+      await showTravelNotice(data.message || "Không thể thực hiện thao tác danh mục!", "error");
+      return;
+    }
+    onSuccess();
+  } catch (error) {
+    await showTravelNotice("Không thể xử lý yêu cầu danh mục. Vui lòng thử lại!", "error");
+  } finally {
+    button.disabled = false;
+    button.focus();
+  }
 }
-// End Category Create Form
 
-// Category Edit Form
-const categoryEditForm = document.querySelector("#category-edit-form");
-if(categoryEditForm) {
-  const validation = new JustValidate('#category-edit-form');
+if (categoryForm) {
+  const button = categoryForm.querySelector("button[type=submit]");
+  const listUrl = categoryForm.dataset.list;
+  const originalAvatar = categoryForm.querySelector("[image-default]")?.getAttribute("image-default");
 
-  validation
-    .addField('#name', [
-      {
-        rule: 'required',
-        errorMessage: 'Vui lòng nhập tên danh mục!'
+  categoryForm.addEventListener("submit", async event => {
+    event.preventDefault();
+    if (button.disabled) return;
+    const { name, parent, position, status, description } = categoryForm.elements;
+    if (!name.value.trim()) {
+      await showTravelNotice("Vui lòng nhập tên danh mục!", "error");
+      name.focus();
+      return;
+    }
+    const rawPosition = position.value.trim();
+    if (rawPosition &&
+        (!/^\d+$/.test(rawPosition) || !Number.isSafeInteger(Number(rawPosition)) || Number(rawPosition) < 1)) {
+      await showTravelNotice("Vị trí phải là số nguyên dương!", "error");
+      position.focus();
+      return;
+    }
+
+    const data = new FormData();
+    data.append("name", name.value.trim());
+    data.append("parent", parent.value);
+    data.append("position", rawPosition);
+    data.append("status", status.value);
+    data.append("description", window.tinymce?.get("description")?.getContent() ?? description.value);
+
+    const image = filePond.avatar?.getFile();
+    if (image && image.source !== originalAvatar && !(image.file instanceof Blob)) {
+      await showTravelNotice("Ảnh đại diện chưa tải xong hoặc không hợp lệ. Vui lòng kiểm tra lại!", "error");
+      return;
+    }
+    if (!image || image.source !== originalAvatar) {
+      const file = image?.file ?? categoryForm.querySelector("#avatar")?.files?.[0];
+      if (file) data.append("avatar", file);
+    }
+
+    await submitCategoryRequest(button, categoryForm.dataset.api, {
+      method: listUrl ? "POST" : "PATCH",
+      body: data
+    }, () => {
+      if (listUrl) window.location.assign(listUrl);
+      else window.location.reload();
+    });
+  });
+}
+
+if (categorySection) {
+  const reload = () => window.location.reload();
+  for (const button of document.querySelectorAll("[category-delete]")) {
+    button.addEventListener("click", () => {
+      submitCategoryRequest(button, button.dataset.api, { method: "PATCH" }, reload, true);
+    });
+  }
+
+  const bulk = document.querySelector("[category-change-multi]");
+  if (bulk) {
+    const select = bulk.querySelector("select");
+    const button = bulk.querySelector("button");
+    const checkAllCategories = document.querySelector("[check-all]");
+    const checkboxes = [...document.querySelectorAll("[check-item]")];
+
+    for (const checkbox of checkboxes) {
+      checkbox.addEventListener("change", () => {
+        const selected = checkboxes.filter(item => item.checked).length;
+        checkAllCategories.checked = selected === checkboxes.length;
+        checkAllCategories.indeterminate = selected > 0 && selected < checkboxes.length;
+      });
+    }
+
+    button.addEventListener("click", () => {
+      const option = select.value;
+      const ids = checkboxes.filter(item => item.checked).map(item => item.getAttribute("check-item"));
+      if (!option || !ids.length) {
+        showTravelNotice("Vui lòng chọn hành động và ít nhất một danh mục!");
+        return;
       }
-    ])
-    .onSuccess((event) => {
-      const id = event.target.id.value;
-      const name = event.target.name.value;
-      const parent = event.target.parent.value;
-      const position = event.target.position.value;
-      const status = event.target.status.value;
-      const avatars = filePond.avatar.getFiles();
-      let avatar = null;
-      if(avatars.length > 0) {
-        avatar = avatars[0].file;
-        const elementImageDefault = event.target.avatar.closest("[image-default]");
-        const imageDefault = elementImageDefault.getAttribute("image-default");
-        if(imageDefault.includes(avatar.name)) {
-          avatar = null;
-        }
-      }
-      const description = tinymce.get("description").getContent();
 
-      // Tạo FormData
-      const formData = new FormData();
-      formData.append("name", name);
-      formData.append("parent", parent);
-      formData.append("position", position);
-      formData.append("status", status);
-      formData.append("avatar", avatar);
-      formData.append("description", description);
-      
-      fetch(`/${pathAdmin}/category/edit/${id}`, {
+      submitCategoryRequest(button, bulk.dataset.api, {
         method: "PATCH",
-        body: formData
-      })
-        .then(res => res.json())
-        .then(data => {
-          if(data.code == "error") {
-            alert(data.message);
-          }
-
-          if(data.code == "success") {
-            window.location.reload();
-          }
-        })
-    })
-  ;
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ option, ids })
+      }, reload, option === "delete");
+    });
+  }
 }
-// End Category Edit Form
+// End Category management
 
 // Tour Create Form
 const tourCreateForm = document.querySelector("#tour-create-form");
-if(tourCreateForm) {
+if (tourCreateForm) {
   const validation = new JustValidate('#tour-create-form');
 
   validation
@@ -374,7 +398,7 @@ if(tourCreateForm) {
       const status = event.target.status.value;
       const avatars = filePond.avatar.getFiles();
       let avatar = null;
-      if(avatars.length > 0) {
+      if (avatars.length > 0) {
         avatar = avatars[0].file;
       }
       const priceAdult = event.target.priceAdult.value;
@@ -441,7 +465,7 @@ if(tourCreateForm) {
       formData.append("schedules", JSON.stringify(schedules));
 
       // images
-      if(filePondMulti.images.getFiles().length > 0) {
+      if (filePondMulti.images.getFiles().length > 0) {
         filePondMulti.images.getFiles().forEach(item => {
           formData.append("images", item.file);
         })
@@ -454,22 +478,22 @@ if(tourCreateForm) {
       })
         .then(res => res.json())
         .then(data => {
-          if(data.code == "error") {
-            alert(data.message);
+          if (data.code == "error") {
+            showTravelNotice(data.message, "error");
           }
 
-          if(data.code == "success") {
+          if (data.code == "success") {
             window.location.href = `/${pathAdmin}/tour/list`;
           }
         })
     })
-  ;
+    ;
 }
 // End Tour Create Form
 
 // Tour Edit Form
 const tourEditForm = document.querySelector("#tour-edit-form");
-if(tourEditForm) {
+if (tourEditForm) {
   const validation = new JustValidate('#tour-edit-form');
 
   validation
@@ -487,11 +511,11 @@ if(tourEditForm) {
       const status = event.target.status.value;
       const avatars = filePond.avatar.getFiles();
       let avatar = null;
-      if(avatars.length > 0) {
+      if (avatars.length > 0) {
         avatar = avatars[0].file;
         const elementImageDefault = event.target.avatar.closest("[image-default]");
         const imageDefault = elementImageDefault.getAttribute("image-default");
-        if(imageDefault.includes(avatar.name)) {
+        if (imageDefault.includes(avatar.name)) {
           avatar = null;
         }
       }
@@ -559,7 +583,7 @@ if(tourEditForm) {
       formData.append("schedules", JSON.stringify(schedules));
 
       // images
-      if(filePondMulti.images.getFiles().length > 0) {
+      if (filePondMulti.images.getFiles().length > 0) {
         filePondMulti.images.getFiles().forEach(item => {
           formData.append("images", item.file);
         })
@@ -572,22 +596,22 @@ if(tourEditForm) {
       })
         .then(res => res.json())
         .then(data => {
-          if(data.code == "error") {
-            alert(data.message);
+          if (data.code == "error") {
+            showTravelNotice(data.message, "error");
           }
 
-          if(data.code == "success") {
+          if (data.code == "success") {
             window.location.reload();
           }
         })
     })
-  ;
+    ;
 }
 // End Tour Edit Form
 
 // Order Edit Form
 const orderEditForm = document.querySelector("#order-edit-form");
-if(orderEditForm) {
+if (orderEditForm) {
   const validation = new JustValidate('#order-edit-form');
 
   validation
@@ -645,22 +669,22 @@ if(orderEditForm) {
       })
         .then(res => res.json())
         .then(data => {
-          if(data.code == "error") {
-            alert(data.message);
+          if (data.code == "error") {
+            showTravelNotice(data.message, "error");
           }
 
-          if(data.code == "success") {
+          if (data.code == "success") {
             window.location.reload();
           }
         })
     })
-  ;
+    ;
 }
 // End Order Edit Form
 
 // Setting Website Info Form
 const settingWebsiteInfoForm = document.querySelector("#setting-website-info-form");
-if(settingWebsiteInfoForm) {
+if (settingWebsiteInfoForm) {
   const validation = new JustValidate('#setting-website-info-form');
 
   validation
@@ -683,21 +707,21 @@ if(settingWebsiteInfoForm) {
       const address = event.target.address.value;
       const logos = filePond.logo.getFiles();
       let logo = null;
-      if(logos.length > 0) {
+      if (logos.length > 0) {
         logo = logos[0].file;
         const elementImageDefault = event.target.logo.closest("[image-default]");
         const imageDefault = elementImageDefault.getAttribute("image-default");
-        if(imageDefault.includes(logo.name)) {
+        if (imageDefault.includes(logo.name)) {
           logo = null;
         }
       }
       const favicons = filePond.favicon.getFiles();
       let favicon = null;
-      if(favicons.length > 0) {
+      if (favicons.length > 0) {
         favicon = favicons[0].file;
         const elementImageDefault = event.target.favicon.closest("[image-default]");
         const imageDefault = elementImageDefault.getAttribute("image-default");
-        if(imageDefault.includes(favicon.name)) {
+        if (imageDefault.includes(favicon.name)) {
           favicon = null;
         }
       }
@@ -717,22 +741,22 @@ if(settingWebsiteInfoForm) {
       })
         .then(res => res.json())
         .then(data => {
-          if(data.code == "error") {
-            alert(data.message);
+          if (data.code == "error") {
+            showTravelNotice(data.message, "error");
           }
 
-          if(data.code == "success") {
+          if (data.code == "success") {
             window.location.reload();
           }
         })
     })
-  ;
+    ;
 }
 // End Setting Website Info Form
 
 // Setting Account Admin Create Form
 const settingAccountAdminCreateForm = document.querySelector("#setting-account-admin-create-form");
-if(settingAccountAdminCreateForm) {
+if (settingAccountAdminCreateForm) {
   const validation = new JustValidate('#setting-account-admin-create-form');
 
   validation
@@ -815,7 +839,7 @@ if(settingAccountAdminCreateForm) {
       const password = event.target.password.value;
       const avatars = filePond.avatar.getFiles();
       let avatar = null;
-      if(avatars.length > 0) {
+      if (avatars.length > 0) {
         avatar = avatars[0].file;
       }
 
@@ -836,22 +860,22 @@ if(settingAccountAdminCreateForm) {
       })
         .then(res => res.json())
         .then(data => {
-          if(data.code == "error") {
-            alert(data.message);
+          if (data.code == "error") {
+            showTravelNotice(data.message, "error");
           }
 
-          if(data.code == "success") {
+          if (data.code == "success") {
             window.location.href = `/${pathAdmin}/setting/account-admin/list`;
           }
         })
     })
-  ;
+    ;
 }
 // End Setting Account Admin Create Form
 
 // Setting Account Admin Edit Form
 const settingAccountAdminEditForm = document.querySelector("#setting-account-admin-edit-form");
-if(settingAccountAdminEditForm) {
+if (settingAccountAdminEditForm) {
   const validation = new JustValidate('#setting-account-admin-edit-form');
 
   validation
@@ -927,11 +951,11 @@ if(settingAccountAdminEditForm) {
       const password = event.target.password.value;
       const avatars = filePond.avatar.getFiles();
       let avatar = null;
-      if(avatars.length > 0) {
+      if (avatars.length > 0) {
         avatar = avatars[0].file;
         const elementImageDefault = event.target.avatar.closest("[image-default]");
         const imageDefault = elementImageDefault.getAttribute("image-default");
-        if(imageDefault.includes(avatar.name)) {
+        if (imageDefault.includes(avatar.name)) {
           avatar = null;
         }
       }
@@ -944,7 +968,7 @@ if(settingAccountAdminEditForm) {
       formData.append("role", role);
       formData.append("positionCompany", positionCompany);
       formData.append("status", status);
-      if(password) {
+      if (password) {
         formData.append("password", password);
       }
       formData.append("avatar", avatar);
@@ -955,22 +979,22 @@ if(settingAccountAdminEditForm) {
       })
         .then(res => res.json())
         .then(data => {
-          if(data.code == "error") {
-            alert(data.message);
+          if (data.code == "error") {
+            showTravelNotice(data.message, "error");
           }
 
-          if(data.code == "success") {
+          if (data.code == "success") {
             window.location.reload();
           }
         })
     })
-  ;
+    ;
 }
 // End Setting Account Admin Edit Form
 
 // Setting Role Create Form
 const settingRoleCreateForm = document.querySelector("#setting-role-create-form");
-if(settingRoleCreateForm) {
+if (settingRoleCreateForm) {
   const validation = new JustValidate('#setting-role-create-form');
 
   validation
@@ -1007,22 +1031,22 @@ if(settingRoleCreateForm) {
       })
         .then(res => res.json())
         .then(data => {
-          if(data.code == "error") {
-            alert(data.message);
+          if (data.code == "error") {
+            showTravelNotice(data.message, "error");
           }
 
-          if(data.code == "success") {
+          if (data.code == "success") {
             window.location.href = `/${pathAdmin}/setting/role/list`;
           }
         })
     })
-  ;
+    ;
 }
 // End Setting Role Create Form
 
 // Setting Role Edit Form
 const settingRoleEditForm = document.querySelector("#setting-role-edit-form");
-if(settingRoleEditForm) {
+if (settingRoleEditForm) {
   const validation = new JustValidate('#setting-role-edit-form');
 
   validation
@@ -1060,22 +1084,22 @@ if(settingRoleEditForm) {
       })
         .then(res => res.json())
         .then(data => {
-          if(data.code == "error") {
-            alert(data.message);
+          if (data.code == "error") {
+            showTravelNotice(data.message, "error");
           }
 
-          if(data.code == "success") {
+          if (data.code == "success") {
             window.location.reload();
           }
         })
     })
-  ;
+    ;
 }
 // End Setting Role Edit Form
 
 // Profile Edit Form
 const profileEditForm = document.querySelector("#profile-edit-form");
-if(profileEditForm) {
+if (profileEditForm) {
   const validation = new JustValidate('#profile-edit-form');
 
   validation
@@ -1122,11 +1146,11 @@ if(profileEditForm) {
       const phone = event.target.phone.value;
       const avatars = filePond.avatar.getFiles();
       let avatar = null;
-      if(avatars.length > 0) {
+      if (avatars.length > 0) {
         avatar = avatars[0].file;
         const elementImageDefault = event.target.avatar.closest("[image-default]");
         const imageDefault = elementImageDefault.getAttribute("image-default");
-        if(imageDefault.includes(avatar.name)) {
+        if (imageDefault.includes(avatar.name)) {
           avatar = null;
         }
       }
@@ -1144,22 +1168,22 @@ if(profileEditForm) {
       })
         .then(res => res.json())
         .then(data => {
-          if(data.code == "error") {
-            alert(data.message);
+          if (data.code == "error") {
+            showTravelNotice(data.message, "error");
           }
 
-          if(data.code == "success") {
+          if (data.code == "success") {
             window.location.reload();
           }
         })
     })
-  ;
+    ;
 }
 // End Profile Edit Form
 
 // Profile Change Password Form
 const profileChangePasswordForm = document.querySelector("#profile-change-password-form");
-if(profileChangePasswordForm) {
+if (profileChangePasswordForm) {
   const validation = new JustValidate('#profile-change-password-form');
 
   validation
@@ -1204,7 +1228,7 @@ if(profileChangePasswordForm) {
     ])
     .onSuccess((event) => {
       const password = event.target.password.value;
-      
+
       const dataFinal = {
         password: password
       }
@@ -1218,22 +1242,22 @@ if(profileChangePasswordForm) {
       })
         .then(res => res.json())
         .then(data => {
-          if(data.code == "error") {
-            alert(data.message);
+          if (data.code == "error") {
+            showTravelNotice(data.message, "error");
           }
 
-          if(data.code == "success") {
+          if (data.code == "success") {
             window.location.reload();
           }
         })
     })
-  ;
+    ;
 }
 // End Profile Change Password Form
 
 // Sider
 const sider = document.querySelector(".sider");
-if(sider) {
+if (sider) {
   const pathNameCurrent = window.location.pathname;
   const splitPathNameCurrent = pathNameCurrent.split("/");
   const menuList = sider.querySelectorAll("a");
@@ -1241,7 +1265,7 @@ if(sider) {
     const href = item.href;
     const pathName = new URL(href).pathname;
     const splitPathName = pathName.split("/");
-    if(splitPathNameCurrent[1] == splitPathName[1] && splitPathNameCurrent[2] == splitPathName[2]) {
+    if (splitPathNameCurrent[1] == splitPathName[1] && splitPathNameCurrent[2] == splitPathName[2]) {
       item.classList.add("active");
     }
   })
@@ -1250,14 +1274,14 @@ if(sider) {
 
 // Logout
 const buttonLogout = document.querySelector(".sider .inner-logout");
-if(buttonLogout) {
+if (buttonLogout) {
   buttonLogout.addEventListener("click", () => {
     fetch(`/${pathAdmin}/account/logout`, {
       method: "POST"
     })
       .then(res => res.json())
       .then(data => {
-        if(data.code == "success") {
+        if (data.code == "success") {
           window.location.href = `/${pathAdmin}/account/login`;
         }
       })
@@ -1267,7 +1291,7 @@ if(buttonLogout) {
 
 // Alert
 const alertTime = document.querySelector("[alert-time]");
-if(alertTime) {
+if (alertTime) {
   let time = alertTime.getAttribute("alert-time");
   time = time ? parseInt(time) : 4000;
   setTimeout(() => {
@@ -1278,21 +1302,21 @@ if(alertTime) {
 
 // Button Delete
 const listButtonDelete = document.querySelectorAll("[button-delete]");
-if(listButtonDelete.length > 0) {
+if (listButtonDelete.length > 0) {
   listButtonDelete.forEach(button => {
     button.addEventListener("click", () => {
       const dataApi = button.getAttribute("data-api");
-      
+
       fetch(dataApi, {
         method: "PATCH"
       })
         .then(res => res.json())
         .then(data => {
-          if(data.code == "error") {
-            alert(data.message);
+          if (data.code == "error") {
+            showTravelNotice(data.message, "error");
           }
 
-          if(data.code == "success") {
+          if (data.code == "success") {
             window.location.reload();
           }
         })
@@ -1303,24 +1327,25 @@ if(listButtonDelete.length > 0) {
 
 // Filter Status
 const filterStatus = document.querySelector("[filter-status]");
-if(filterStatus) {
+if (filterStatus) {
   const url = new URL(window.location.href);
 
   // Lắng nghe thay đổi lựa chọn
   filterStatus.addEventListener("change", () => {
     const value = filterStatus.value;
-    if(value) {
+    if (value) {
       url.searchParams.set("status", value);
     } else {
       url.searchParams.delete("status");
     }
 
+    if (categorySection) url.searchParams.delete("page");
     window.location.href = url.href;
   })
 
   // Hiển thị lựa chọn mặc định
   const valueCurrent = url.searchParams.get("status");
-  if(valueCurrent) {
+  if (valueCurrent) {
     filterStatus.value = valueCurrent;
   }
 }
@@ -1328,24 +1353,25 @@ if(filterStatus) {
 
 // Filter Created By
 const filterCreatedBy = document.querySelector("[filter-created-by]");
-if(filterCreatedBy) {
+if (filterCreatedBy) {
   const url = new URL(window.location.href);
 
   // Lắng nghe thay đổi lựa chọn
   filterCreatedBy.addEventListener("change", () => {
     const value = filterCreatedBy.value;
-    if(value) {
+    if (value) {
       url.searchParams.set("createdBy", value);
     } else {
       url.searchParams.delete("createdBy");
     }
 
+    if (categorySection) url.searchParams.delete("page");
     window.location.href = url.href;
   })
 
   // Hiển thị lựa chọn mặc định
   const valueCurrent = url.searchParams.get("createdBy");
-  if(valueCurrent) {
+  if (valueCurrent) {
     filterCreatedBy.value = valueCurrent;
   }
 }
@@ -1353,24 +1379,25 @@ if(filterCreatedBy) {
 
 // Filter Start Date
 const filterStartDate = document.querySelector("[filter-start-date]");
-if(filterStartDate) {
+if (filterStartDate) {
   const url = new URL(window.location.href);
 
   // Lắng nghe thay đổi lựa chọn
   filterStartDate.addEventListener("change", () => {
     const value = filterStartDate.value;
-    if(value) {
+    if (value) {
       url.searchParams.set("startDate", value);
     } else {
       url.searchParams.delete("startDate");
     }
 
+    if (categorySection) url.searchParams.delete("page");
     window.location.href = url.href;
   })
 
   // Hiển thị lựa chọn mặc định
   const valueCurrent = url.searchParams.get("startDate");
-  if(valueCurrent) {
+  if (valueCurrent) {
     filterStartDate.value = valueCurrent;
   }
 }
@@ -1378,24 +1405,25 @@ if(filterStartDate) {
 
 // Filter End Date
 const filterEndDate = document.querySelector("[filter-end-date]");
-if(filterEndDate) {
+if (filterEndDate) {
   const url = new URL(window.location.href);
 
   // Lắng nghe thay đổi lựa chọn
   filterEndDate.addEventListener("change", () => {
     const value = filterEndDate.value;
-    if(value) {
+    if (value) {
       url.searchParams.set("endDate", value);
     } else {
       url.searchParams.delete("endDate");
     }
 
+    if (categorySection) url.searchParams.delete("page");
     window.location.href = url.href;
   })
 
   // Hiển thị lựa chọn mặc định
   const valueCurrent = url.searchParams.get("endDate");
-  if(valueCurrent) {
+  if (valueCurrent) {
     filterEndDate.value = valueCurrent;
   }
 }
@@ -1403,7 +1431,7 @@ if(filterEndDate) {
 
 // Filter Reset
 const filterReset = document.querySelector("[filter-reset]");
-if(filterReset) {
+if (filterReset) {
   const url = new URL(window.location.href);
 
   filterReset.addEventListener("click", () => {
@@ -1415,7 +1443,7 @@ if(filterReset) {
 
 // Check All
 const checkAll = document.querySelector("[check-all]");
-if(checkAll) {
+if (checkAll) {
   checkAll.addEventListener("click", () => {
     const listCheckItem = document.querySelectorAll("[check-item]");
     listCheckItem.forEach(item => {
@@ -1427,7 +1455,7 @@ if(checkAll) {
 
 // Change Multi
 const changeMulti = document.querySelector("[change-multi]");
-if(changeMulti) {
+if (changeMulti) {
   const dataApi = changeMulti.getAttribute("data-api");
   const select = changeMulti.querySelector("select");
   const button = changeMulti.querySelector("button");
@@ -1435,7 +1463,7 @@ if(changeMulti) {
   button.addEventListener("click", () => {
     const option = select.value;
     const listInputChecked = document.querySelectorAll("[check-item]:checked");
-    if(option && listInputChecked.length > 0) {
+    if (option && listInputChecked.length > 0) {
       const ids = [];
       listInputChecked.forEach(inputChecked => {
         const id = inputChecked.getAttribute("check-item");
@@ -1456,16 +1484,16 @@ if(changeMulti) {
       })
         .then(res => res.json())
         .then(data => {
-          if(data.code == "error") {
-            alert(data.message);
+          if (data.code == "error") {
+            showTravelNotice(data.message, "error");
           }
 
-          if(data.code == "success") {
+          if (data.code == "success") {
             window.location.reload();
           }
         })
     } else {
-      alert("Vui lòng chọn option và bản ghi muốn thực hiện!");
+      showTravelNotice("Vui lòng chọn option và bản ghi muốn thực hiện!");
     }
   })
 }
@@ -1473,26 +1501,27 @@ if(changeMulti) {
 
 // Search
 const search = document.querySelector("[search]");
-if(search) {
+if (search) {
   const url = new URL(window.location.href);
 
   // Lắng nghe phím đang gõ
   search.addEventListener("keyup", (event) => {
-    if(event.code == "Enter") {
+    if (event.key === "Enter") {
       const value = search.value;
-      if(value) {
+      if (value) {
         url.searchParams.set("keyword", value.trim());
       } else {
         url.searchParams.delete("keyword");
       }
 
+      if (categorySection) url.searchParams.delete("page");
       window.location.href = url.href;
     }
   })
 
   // Hiển thị lựa chọn mặc định
   const valueCurrent = url.searchParams.get("keyword");
-  if(valueCurrent) {
+  if (valueCurrent) {
     search.value = valueCurrent;
   }
 }
@@ -1500,13 +1529,13 @@ if(search) {
 
 // Pagination
 const pagination = document.querySelector("[pagination]");
-if(pagination) {
+if (pagination) {
   const url = new URL(window.location.href);
 
   // Lắng nghe thay đổi lựa chọn
   pagination.addEventListener("change", () => {
     const value = pagination.value;
-    if(value) {
+    if (value) {
       url.searchParams.set("page", value);
     } else {
       url.searchParams.delete("page");
@@ -1517,8 +1546,82 @@ if(pagination) {
 
   // Hiển thị lựa chọn mặc định
   const valueCurrent = url.searchParams.get("page");
-  if(valueCurrent) {
+  if (valueCurrent && !categorySection) {
     pagination.value = valueCurrent;
   }
 }
 // End Filter Status
+
+
+// Phân trang danh sách đơn hàng
+const orderPageSelect = document.querySelector(
+  "[data-order-page]"
+);
+
+if (orderPageSelect) {
+  orderPageSelect.addEventListener("change", () => {
+    const url = new URL(window.location.href);
+
+    url.searchParams.set(
+      "page",
+      orderPageSelect.value
+    );
+
+    window.location.href = url.toString();
+  });
+}
+
+
+document.querySelectorAll("[data-order-soft-delete]")
+  .forEach(button => {
+    button.addEventListener("click", async () => {
+      const id = button.dataset.orderSoftDelete;
+
+      const confirm = await Swal.fire({
+        icon: "warning",
+        title: "Ẩn đơn hàng này?",
+        text: "Chỉ áp dụng cho đơn đã hủy, chưa thanh toán. Dữ liệu vẫn được giữ trong MongoDB.",
+        showCancelButton: true,
+        confirmButtonText: "Xác nhận",
+        cancelButtonText: "Quay lại",
+        confirmButtonColor: "#dc2626"
+      });
+
+      if (!confirm.isConfirmed) return;
+
+      button.disabled = true;
+
+      try {
+        const response = await fetch(
+          `/${pathAdmin}/order/delete/${id}`,
+          { method: "PATCH" }
+        );
+
+        const result = await response.json();
+
+        if (!response.ok || result.code !== "success") {
+          showTravelNotice(
+            result.message || "Không thể ẩn đơn.",
+            "error"
+          );
+          return;
+        }
+
+        await Swal.fire({
+          icon: "success",
+          title: "Đã ẩn đơn hàng",
+          text: result.message,
+          confirmButtonText: "Đóng"
+        });
+
+        window.location.reload();
+      } catch {
+        showTravelNotice(
+          "Không kết nối được máy chủ.",
+          "error"
+        );
+      } finally {
+        button.disabled = false;
+      }
+    });
+  });

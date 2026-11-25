@@ -1,0 +1,32 @@
+/** Read-only validation for the Vietnam Travel synthetic demo DB. */
+'use strict';
+require('dotenv').config();
+const mongoose=require('mongoose');
+const uri=process.env.DATABASE||'';
+const DENY=msg=>{throw new Error('DỪNG: '+msg);};
+(async()=>{
+ if(!/^mongodb:\/\/127\.0\.0\.1:27019\/vietnam-travel-smartcard-demo\?(?:[^\s]*)directConnection=true(?:[^\s]*)$/.test(uri))DENY('DATABASE phải trỏ tới MongoDB demo 127.0.0.1:27019');
+ await mongoose.connect(uri,{serverSelectionTimeoutMS:9000});
+ if(mongoose.connection.name!=='vietnam-travel-smartcard-demo')DENY('Sai tên database');
+ const db=mongoose.connection.db, hello=await db.admin().command({hello:1});
+ if(hello.setName!=='rsdemo'||!hello.isWritablePrimary)DENY('Không đúng rsdemo PRIMARY');
+ const collections={categories:'categories',cities:'cities',tours:'tours',customers:'customers',orders:'orders',contacts:'contacts',roles:'roles',cards:'cards','card-transactions':'card-transactions'};
+ const counts={};
+ for(const [label,col]of Object.entries(collections)) counts[label]=await db.collection(col).countDocuments({});
+ const tagged={};
+ for(const col of ['categories','cities','tours','customers','orders','contacts'])tagged[col]=await db.collection(col).countDocuments({demoSeed:'VT_SMARTCARD_DEMO_2026_V1'});
+ const homeRoot=await db.collection('categories').findOne({_id:new mongoose.Types.ObjectId('67fd050210c7084c1076f7cf')},{projection:{_id:1,name:1,slug:1}});
+ const sample=await db.collection('tours').find({status:'active',deleted:false}).sort({position:-1}).limit(3).project({name:1,slug:1,stockAdult:1,departureDate:1}).toArray();
+ const tier=await db.collection('customers').aggregate([{$match:{deleted:false}},{$group:{_id:{$switch:{branches:[{case:{$gte:['$totalSpent',80000000]},then:'platinum'},{case:{$gte:['$totalSpent',30000000]},then:'gold'},{case:{$gte:['$totalSpent',10000000]},then:'silver'}],default:'standard'}},n:{$sum:1}}}]).toArray();
+ const payments=await db.collection('orders').aggregate([{$group:{_id:{method:'$paymentMethod',status:'$paymentStatus'},count:{$sum:1},total:{$sum:'$total'}}}]).toArray();
+ console.log('MONGO:',hello.setName,mongoose.connection.name);
+ console.log('COUNT:',JSON.stringify(counts,null,2));
+ console.log('SEED-ONLY COUNT:',JSON.stringify(tagged,null,2));
+ console.log('DOMESTIC HOME:',JSON.stringify(homeRoot));
+ console.log('SAMPLE ACTIVE TOUR:',JSON.stringify(sample,null,2));
+ console.log('MEMBER TIERS:',JSON.stringify(tier,null,2));
+ console.log('PAYMENT SUMMARIES:',JSON.stringify(payments,null,2));
+ if(!homeRoot)DENY('Chưa tìm thấy ID danh mục nội địa hardcoded');
+ if(!counts.categories||!counts.tours||!counts.orders)DENY('Thiếu dữ liệu nghiệp vụ');
+ console.log('✓ VERIFY OK (chỉ đọc, không ghi dữ liệu).');
+})().catch(e=>{console.error(e.message);process.exitCode=1;}).finally(async()=>{if(mongoose.connection.readyState!==0)await mongoose.disconnect()});

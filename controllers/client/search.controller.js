@@ -9,13 +9,13 @@ module.exports.list = async (req, res) => {
   };
 
   // Điểm đi
-  if(req.query.locationFrom) {
+  if (req.query.locationFrom) {
     find.locations = req.query.locationFrom;
   }
   // Hết Điểm đi
 
   // Điểm đến
-  if(req.query.locationTo) {
+  if (req.query.locationTo) {
     const keyword = slugify(req.query.locationTo, {
       lower: true
     });
@@ -24,29 +24,47 @@ module.exports.list = async (req, res) => {
   }
   // Hết Điểm đến
 
-  // Ngày khởi hành  
-  if(req.query.departureDate) {
-    find.departureDate = new Date(req.query.departureDate);
+
+  // Tìm tour theo ngày khởi hành (giờ Việt Nam)
+  if (req.query.departureDate) {
+    const dateString = req.query.departureDate;
+
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
+      const startDate = new Date(
+        `${dateString}T00:00:00+07:00`
+      );
+
+      if (!Number.isNaN(startDate.getTime())) {
+        const endDate = new Date(
+          startDate.getTime() + 24 * 60 * 60 * 1000
+        );
+
+        find.departureDate = {
+          $gte: startDate,
+          $lt: endDate
+        };
+      }
+    }
   }
   // Hết Ngày khởi hành
 
   // Số lượng hành khách
   // Người lớn
-  if(req.query.stockAdult) {
+  if (req.query.stockAdult) {
     find.stockAdult = {
       $gte: parseInt(req.query.stockAdult)
     }
   }
 
   // Trẻ em
-  if(req.query.stockChildren) {
+  if (req.query.stockChildren) {
     find.stockChildren = {
       $gte: parseInt(req.query.stockChildren)
     }
   }
 
   // Em bé
-  if(req.query.stockBaby) {
+  if (req.query.stockBaby) {
     find.stockBaby = {
       $gte: parseInt(req.query.stockBaby)
     }
@@ -55,9 +73,9 @@ module.exports.list = async (req, res) => {
   // Hết Số lượng hành khách
 
   // Mức giá
-  if(req.query.price) {
+  if (req.query.price) {
     const [priceMin, priceMax] = req.query.price.split("-").map(item => parseInt(item));
-    
+
     find.priceNewAdult = {
       $gte: priceMin,
       $lte: priceMax
@@ -71,7 +89,7 @@ module.exports.list = async (req, res) => {
       position: "desc"
     })
 
-  for(const item of tourList) {
+  for (const item of tourList) {
     item.departureDateFormat = moment(item.departureDate).format("DD/MM/YYYY");
   }
 

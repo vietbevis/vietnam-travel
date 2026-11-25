@@ -79,16 +79,35 @@ block main
             .inner-sort
               .inner-label Sắp xếp:
               .inner-list
-                button
+                button(
+                  type="button"
+                  data-sort="price_asc"
+                  class=(sortKey === "price_asc" ? "active" : "")
+                )
                   | Giá tăng dần
                   i.fa-solid.fa-square-caret-up
-                button
+
+                button(
+                  type="button"
+                  data-sort="price_desc"
+                  class=(sortKey === "price_desc" ? "active" : "")
+                )
                   | Giá giảm dần
                   i.fa-solid.fa-square-caret-down
-                button.active
+
+                button(
+                  type="button"
+                  data-sort="discount_desc"
+                  class=(sortKey === "discount_desc" ? "active" : "")
+                )
                   | Khuyến Mại Hot
                   i.fa-solid.fa-tag
-                button
+
+                button(
+                  type="button"
+                  data-sort="views_desc"
+                  class=(sortKey === "views_desc" ? "active" : "")
+                )
                   | Xem Nhiều
                   i.fa-solid.fa-eye
             .inner-count-record
@@ -103,14 +122,27 @@ block main
               +product-item(item)
               // End Product Item
           // Pagination
-          .box-pagination
-            button
-              i.fa-solid.fa-angles-left
-            button.active 1
-            button 2
-            button 3
-            button 4
-            button
-              i.fa-solid.fa-angles-right
+          if totalPages > 1
+            .box-pagination
+              button(
+                type="button"
+                data-page=1
+                disabled=(page === 1)
+              )
+                i.fa-solid.fa-angles-left
+
+              each number in pageNumbers
+                button(
+                  type="button"
+                  data-page=number
+                  class=(page === number ? "active" : "")
+                )= number
+
+              button(
+                type="button"
+                data-page=totalPages
+                disabled=(page === totalPages)
+              )
+                i.fa-solid.fa-angles-right
           // End Pagination
   // End Section 9

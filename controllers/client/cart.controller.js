@@ -30,6 +30,9 @@ module.exports.detail = async (req, res) => {
       item.priceNewAdult = tourInfo.priceNewAdult;
       item.priceNewChildren = tourInfo.priceNewChildren;
       item.priceNewBaby = tourInfo.priceNewBaby;
+      item.stockAdult = tourInfo.stockAdult;
+      item.stockChildren = tourInfo.stockChildren;
+      item.stockBaby = tourInfo.stockBaby;
 
       const city = await City.findOne({
         _id: item.locationFrom

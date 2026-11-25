@@ -6,6 +6,18 @@ const AccountAdmin = require("../../models/account-admin.model");
 
 const categoryHelper = require("../../helpers/category.helper");
 
+const canLinkCategory = id => !id || categoryHelper.isAvailableCategory(id);
+const saveTourLink = (data, save) => categoryHelper.withCategoryWrite(async () => {
+  if (!await canLinkCategory(data.category)) return false;
+  if (data.category) data.category = data.category.toLowerCase();
+  await save();
+  return true;
+});
+const invalidTourCategory = res => res.json({
+  code: "error",
+  message: "Danh mục của tour đã bị xóa hoặc không tồn tại. Vui lòng chọn danh mục hợp lệ!"
+});
+
 module.exports.list = async (req, res) => {
   const find = {
     deleted: false
@@ -67,42 +79,46 @@ module.exports.createPost = async (req, res) => {
     return;
   }
 
-  if(req.body.position) {
-    req.body.position = parseInt(req.body.position);
-  } else {
-    const totalRecord = await Tour.countDocuments({});
-    req.body.position = totalRecord + 1;
+  try {
+    if(req.body.position) {
+      req.body.position = parseInt(req.body.position);
+    } else {
+      const totalRecord = await Tour.countDocuments({});
+      req.body.position = totalRecord + 1;
+    }
+
+    req.body.createdBy = req.account.id;
+    req.body.updatedBy = req.account.id;
+    if(req.files && req.files.avatar) {
+      req.body.avatar = req.files.avatar[0].path;
+    } else {
+      delete req.body.avatar;
+    }
+
+    req.body.priceAdult = req.body.priceAdult ? parseInt(req.body.priceAdult) : 0;
+    req.body.priceChildren = req.body.priceChildren ? parseInt(req.body.priceChildren) : 0;
+    req.body.priceBaby = req.body.priceBaby ? parseInt(req.body.priceBaby) : 0;
+    req.body.priceNewAdult = req.body.priceNewAdult ? parseInt(req.body.priceNewAdult) : req.body.priceAdult;
+    req.body.priceNewChildren = req.body.priceNewChildren ? parseInt(req.body.priceNewChildren) : req.body.priceChildren;
+    req.body.priceNewBaby = req.body.priceNewBaby ? parseInt(req.body.priceNewBaby) : req.body.priceBaby;
+    req.body.stockAdult = req.body.stockAdult ? parseInt(req.body.stockAdult) : 0;
+    req.body.stockChildren = req.body.stockAdult ? parseInt(req.body.stockChildren) : 0;
+    req.body.stockBaby = req.body.stockBaby ? parseInt(req.body.stockBaby) : 0;
+    req.body.locations = req.body.locations ? JSON.parse(req.body.locations) : [];
+    req.body.departureDate = req.body.departureDate ? new Date(req.body.departureDate) : null;
+    req.body.schedules = req.body.schedules ? JSON.parse(req.body.schedules) : [];
+
+    if(req.files && req.files.images && req.files.images.length > 0) {
+      req.body.images = req.files.images.map(file => file.path);
+    } else {
+      delete req.body.images;
+    }
+
+    const saved = await saveTourLink(req.body, () => Tour.create(req.body));
+    if (!saved) return invalidTourCategory(res);
+  } catch (error) {
+    return res.json({ code: "error", message: "Không thể tạo tour. Vui lòng thử lại!" });
   }
-
-  req.body.createdBy = req.account.id;
-  req.body.updatedBy = req.account.id;
-  if(req.files && req.files.avatar) {
-    req.body.avatar = req.files.avatar[0].path;
-  } else {
-    delete req.body.avatar;
-  }
-
-  req.body.priceAdult = req.body.priceAdult ? parseInt(req.body.priceAdult) : 0;
-  req.body.priceChildren = req.body.priceChildren ? parseInt(req.body.priceChildren) : 0;
-  req.body.priceBaby = req.body.priceBaby ? parseInt(req.body.priceBaby) : 0;
-  req.body.priceNewAdult = req.body.priceNewAdult ? parseInt(req.body.priceNewAdult) : req.body.priceAdult;
-  req.body.priceNewChildren = req.body.priceNewChildren ? parseInt(req.body.priceNewChildren) : req.body.priceChildren;
-  req.body.priceNewBaby = req.body.priceNewBaby ? parseInt(req.body.priceNewBaby) : req.body.priceBaby;
-  req.body.stockAdult = req.body.stockAdult ? parseInt(req.body.stockAdult) : 0;
-  req.body.stockChildren = req.body.stockAdult ? parseInt(req.body.stockChildren) : 0;
-  req.body.stockBaby = req.body.stockBaby ? parseInt(req.body.stockBaby) : 0;
-  req.body.locations = req.body.locations ? JSON.parse(req.body.locations) : [];
-  req.body.departureDate = req.body.departureDate ? new Date(req.body.departureDate) : null;
-  req.body.schedules = req.body.locations ? JSON.parse(req.body.schedules) : [];
-
-  if(req.files && req.files.images && req.files.images.length > 0) {
-    req.body.images = req.files.images.map(file => file.path);
-  } else {
-    delete req.body.images;
-  }
-
-  const newRecord = new Tour(req.body);
-  await newRecord.save();
 
   req.flash("success", "Tạo tour thành công!")
 
@@ -226,10 +242,8 @@ module.exports.editPatch = async (req, res) => {
       delete req.body.images;
     }
 
-    await Tour.updateOne({
-      _id: id,
-      deleted: false
-    }, req.body)
+    const saved = await saveTourLink(req.body, () => Tour.updateOne({ _id: id, deleted: false }, req.body));
+    if (!saved) return invalidTourCategory(res);
 
     req.flash("success", "Cập nhật tour thành công!")
 
@@ -289,11 +303,13 @@ module.exports.undoPatch = async (req, res) => {
   try {
     const id = req.params.id;
     
-    await Tour.updateOne({
-      _id: id
-    }, {
-      deleted: false
-    })
+    const restored = await categoryHelper.withCategoryWrite(async () => {
+      const tour = await Tour.findById(id).select("category");
+      if (!tour || !await canLinkCategory(tour.category)) return false;
+      await Tour.updateOne({ _id: id }, { deleted: false });
+      return true;
+    });
+    if (!restored) return invalidTourCategory(res);
 
     req.flash("success", "Khôi phục tour thành công!");
 
@@ -350,14 +366,20 @@ module.exports.trashChangeMultiPatch = async (req, res) => {
     const { option, ids } = req.body;
 
     switch (option) {
-      case "undo":
-        await Tour.updateMany({
-          _id: { $in: ids }
-        }, {
-          deleted: false
+      case "undo": {
+        const restored = await categoryHelper.withCategoryWrite(async () => {
+          const filter = { _id: { $in: ids }, deleted: true };
+          const categories = await Tour.distinct("category", filter);
+          for (const id of categories) {
+            if (!await canLinkCategory(id)) return false;
+          }
+          await Tour.updateMany(filter, { deleted: false });
+          return true;
         });
+        if (!restored) return invalidTourCategory(res);
         req.flash("success", "Khôi phục thành công!");
         break;
+      }
       case "delete-destroy":
         await Tour.deleteMany({
           _id: { $in: ids }

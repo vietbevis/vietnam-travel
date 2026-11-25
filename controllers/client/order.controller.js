@@ -39,7 +39,7 @@ module.exports.createPost = async (req, res) => {
       for (const item of items) {
         const validShape = item && typeof item === "object" && typeof item.tourId === "string" && /^[a-fA-F0-9]{24}$/.test(item.tourId)
           && validQuantity(item.quantityAdult) && validQuantity(item.quantityChildren) && validQuantity(item.quantityBaby);
-        const tourExists = validShape && await Tour.exists({_id: item.tourId, status: "active", deleted: false});
+        const tourExists = validShape && await Tour.exists({ _id: item.tourId, status: "active", deleted: false });
         if (!tourExists) {
           itemsValid = false;
           break;
@@ -77,18 +77,20 @@ module.exports.createPost = async (req, res) => {
           _id: item.tourId,
           status: "active",
           deleted: false,
-          stockAdult: {$gte: item.quantityAdult},
-          stockChildren: {$gte: item.quantityChildren},
-          stockBaby: {$gte: item.quantityBaby}
-        }, {$inc: {
-          stockAdult: -item.quantityAdult,
-          stockChildren: -item.quantityChildren,
-          stockBaby: -item.quantityBaby
-        }}, {session, new: true});
+          stockAdult: { $gte: item.quantityAdult },
+          stockChildren: { $gte: item.quantityChildren },
+          stockBaby: { $gte: item.quantityBaby }
+        }, {
+          $inc: {
+            stockAdult: -item.quantityAdult,
+            stockChildren: -item.quantityChildren,
+            stockBaby: -item.quantityBaby
+          }
+        }, { session, new: true });
 
         if (!infoTour) throw new Error("Tour không còn đủ chỗ hoặc đã ngừng hoạt động");
 
-        if(infoTour) {
+        if (infoTour) {
           // Thêm giá
           item.priceNewAdult = infoTour.priceNewAdult;
           item.priceNewChildren = infoTour.priceNewChildren;
@@ -132,7 +134,7 @@ module.exports.createPost = async (req, res) => {
       req.body.status = "initial"; // initial: khởi tạo, done: hoàn thành, cancel: hủy
 
       newRecord = new Order(req.body);
-      await newRecord.save({session});
+      await newRecord.save({ session });
     });
 
     res.json({
@@ -143,10 +145,16 @@ module.exports.createPost = async (req, res) => {
   } catch (error) {
     console.log(error);
 
+    const outOfStock =
+      error.message === "Tour không còn đủ chỗ hoặc đã ngừng hoạt động";
+
     res.json({
       code: "error",
-      message: "Đặt hàng không thành công!"
-    })
+      errorCode: outOfStock ? "OUT_OF_STOCK" : "ORDER_CREATE_FAILED",
+      message: outOfStock
+        ? "Tour không còn đủ chỗ. Vui lòng cập nhật lại giỏ hàng."
+        : "Đặt hàng không thành công!"
+    });
   } finally {
     if (session) await session.endSession();
   }
@@ -161,7 +169,7 @@ module.exports.success = async (req, res) => {
       phone: phone
     })
 
-    if(!orderDetail) {
+    if (!orderDetail) {
       res.redirect("/");
       return;
     }
@@ -180,7 +188,7 @@ module.exports.success = async (req, res) => {
         deleted: false
       })
 
-      if(infoTour) {
+      if (infoTour) {
         item.slug = infoTour.slug;
       }
 
@@ -190,7 +198,7 @@ module.exports.success = async (req, res) => {
         _id: item.locationFrom
       })
 
-      if(city) {
+      if (city) {
         item.locationFromName = city.name;
       }
     }
@@ -211,14 +219,14 @@ module.exports.paymentCard = async (req, res) => {
     if (!req.customer || !req.card) return res.redirect('/account/login');
     if (typeof orderId !== 'string' || !/^[a-fA-F0-9]{24}$/.test(orderId)) return res.redirect('/');
     const orderDetail = await Order.findOne({
-      _id: orderId, customerId: String(req.customer._id), paymentStatus: 'unpaid', paymentMethod: 'card', deleted: false, status: {$ne: 'cancel'}
+      _id: orderId, customerId: String(req.customer._id), paymentStatus: 'unpaid', paymentMethod: 'card', deleted: false, status: { $ne: 'cancel' }
     });
     if (!orderDetail) return res.redirect('/');
     res.set('Cache-Control', 'no-store');
     res.render("client/pages/order-payment-card", {
       pageTitle: "Thanh toán bằng ví thẻ",
       orderDetail: orderDetail,
-      cardInfo: {cardId: req.card.cardId, balance: req.card.balance}
+      cardInfo: { cardId: req.card.cardId, balance: req.card.balance }
     });
   } catch {
     return res.redirect('/');
@@ -254,7 +262,7 @@ module.exports.paymentZaloPay = async (req, res) => {
     const orderId = req.query.orderId;
     if (typeof orderId !== 'string' || !/^[a-fA-F0-9]{24}$/.test(orderId)) return res.redirect('/');
     const orderDetail = await Order.findOne({
-      _id: orderId, paymentStatus: 'unpaid', paymentMethod: 'zalopay', deleted: false, status: {$ne: 'cancel'}
+      _id: orderId, paymentStatus: 'unpaid', paymentMethod: 'zalopay', deleted: false, status: { $ne: 'cancel' }
     });
     if (!orderDetail) return res.redirect('/');
     // Số điện thoại nhập tự do ("0901 234 567") được chuẩn hoá trước khi đưa vào app_user của ZaloPay.
@@ -281,29 +289,29 @@ module.exports.paymentZaloPayResultPost = async (req, res) => {
   let received;
   try {
     const verified = zalopayHelper.verifyCallback(req.body);
-    if (!verified.valid) return res.json({return_code: -1, return_message: 'mac not equal'});
+    if (!verified.valid) return res.json({ return_code: -1, return_message: 'mac not equal' });
     const data = verified.data;
-    if (!/^\+?\d{8,15}-[a-fA-F0-9]{24}$/.test(data.app_user)) return res.json({return_code: -1, return_message: 'invalid payment'});
+    if (!/^\+?\d{8,15}-[a-fA-F0-9]{24}$/.test(data.app_user)) return res.json({ return_code: -1, return_message: 'invalid payment' });
     const [phone, orderId] = data.app_user.split('-');
-    received = {orderId, amount: data.amount, reference: data.app_trans_id};
+    received = { orderId, amount: data.amount, reference: data.app_trans_id };
     const reference = {
-      _id: orderId, total: data.amount, paymentMethod: 'zalopay', deleted: false, status: {$ne: 'cancel'}
+      _id: orderId, total: data.amount, paymentMethod: 'zalopay', deleted: false, status: { $ne: 'cancel' }
     };
     const found = await Order.findOne(reference);
     if (found) received.orderCode = found.orderCode;
     // So khớp chặt: số trong app_user phải đúng bằng số điện thoại của đơn sau khi chuẩn hoá.
-    if (!found || zalopayHelper.normalizePhone(found.phone) !== phone) return res.json({return_code: -1, return_message: 'invalid payment'});
-    const identity = {...reference, phone: found.phone};
+    if (!found || zalopayHelper.normalizePhone(found.phone) !== phone) return res.json({ return_code: -1, return_message: 'invalid payment' });
+    const identity = { ...reference, phone: found.phone };
     const order = found;
-    if (!['unpaid', 'paid'].includes(order.paymentStatus)) return res.json({return_code: -1, return_message: 'invalid payment'});
-    const changed = await orderPaymentHelper.markOrderPaid({_id: orderId, phone: found.phone, deleted: false, total: data.amount}, 'zalopay');
+    if (!['unpaid', 'paid'].includes(order.paymentStatus)) return res.json({ return_code: -1, return_message: 'invalid payment' });
+    const changed = await orderPaymentHelper.markOrderPaid({ _id: orderId, phone: found.phone, deleted: false, total: data.amount }, 'zalopay');
     // Callback lặp chỉ được ACK khi cùng identity/amount vẫn là đơn paid hợp lệ.
-    if (!changed && !await Order.findOne({...identity, paymentStatus: 'paid'})) return res.json({return_code: -1, return_message: 'invalid payment'});
-    return res.json({return_code: 1, return_message: 'success'});
+    if (!changed && !await Order.findOne({ ...identity, paymentStatus: 'paid' })) return res.json({ return_code: -1, return_message: 'invalid payment' });
+    return res.json({ return_code: 1, return_message: 'success' });
   } catch (error) {
     // Không trả lỗi DB/provider chứa dữ liệu nhạy cảm ra ngoài hoặc ghi MAC vào log; ZaloPay sẽ gọi lại.
     if (received) logPaymentFailure('zalopay', received, error);
-    return res.json({return_code: 0, return_message: 'processing failed'});
+    return res.json({ return_code: 0, return_message: 'processing failed' });
   }
 }
 
@@ -312,7 +320,7 @@ module.exports.paymentVNPay = async (req, res) => {
     const orderId = req.query.orderId;
     if (typeof orderId !== 'string' || !/^[a-fA-F0-9]{24}$/.test(orderId)) return res.redirect('/');
     const orderDetail = await Order.findOne({
-      _id: orderId, paymentStatus: 'unpaid', paymentMethod: 'vnpay', deleted: false, status: {$ne: 'cancel'}
+      _id: orderId, paymentStatus: 'unpaid', paymentMethod: 'vnpay', deleted: false, status: { $ne: 'cancel' }
     });
     if (!orderDetail) return res.redirect('/');
     const txnRef = `${orderDetail.id}-${Date.now()}`;
@@ -344,14 +352,14 @@ module.exports.paymentVNPayResult = async (req, res) => {
     if (!Number.isSafeInteger(scaled) || scaled % 100 !== 0) return res.redirect('/');
     const orderId = reference[1];
     const amount = scaled / 100;
-    received = {orderId, amount, reference: verified.txnRef};
-    const identity = {_id: orderId, total: amount, paymentMethod: 'vnpay', deleted: false, status: {$ne: 'cancel'}};
+    received = { orderId, amount, reference: verified.txnRef };
+    const identity = { _id: orderId, total: amount, paymentMethod: 'vnpay', deleted: false, status: { $ne: 'cancel' } };
     const order = await Order.findOne(identity);
     if (order) received.orderCode = order.orderCode;
     // Từ đây VNPay đã xác nhận thu tiền: mọi nhánh không ghi nhận được đều phải ghi log đối soát và hiện trang đang xử lý.
     if (!order || !['unpaid', 'paid'].includes(order.paymentStatus)) return paymentProcessing(res, 'vnpay', received, 'không có đơn khớp số tiền/phương thức hoặc đơn đã huỷ, xoá, đổi trạng thái thanh toán');
-    const changed = await orderPaymentHelper.markOrderPaid({_id: orderId, phone: order.phone, deleted: false, total: amount}, 'vnpay');
-    if (!changed && !await Order.findOne({...identity, phone: order.phone, paymentStatus: 'paid'})) return paymentProcessing(res, 'vnpay', received, 'không đánh dấu được đơn đã thanh toán');
+    const changed = await orderPaymentHelper.markOrderPaid({ _id: orderId, phone: order.phone, deleted: false, total: amount }, 'vnpay');
+    if (!changed && !await Order.findOne({ ...identity, phone: order.phone, paymentStatus: 'paid' })) return paymentProcessing(res, 'vnpay', received, 'không đánh dấu được đơn đã thanh toán');
     return res.redirect(`${process.env.DOMAIN_WEBSITE}/order/success?orderId=${orderId}&phone=${encodeURIComponent(order.phone)}`);
   } catch (error) {
     if (received) return paymentProcessing(res, 'vnpay', received, error);

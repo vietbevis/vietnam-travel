@@ -1,4 +1,5 @@
 const Tour = require("../../models/tour.model");
+const Category = require("../../models/category.model");
 const moment = require("moment");
 const categoryHelper = require("../../helpers/category.helper");
 
@@ -14,7 +15,7 @@ module.exports.home = async (req, res) => {
     })
     .limit(6)
 
-  for(const item of tourListSection2) {
+  for (const item of tourListSection2) {
     item.departureDateFormat = moment(item.departureDate).format("DD/MM/YYYY");
   }
   // End Section 2
@@ -34,14 +35,34 @@ module.exports.home = async (req, res) => {
     })
     .limit(8)
 
-  for(const item of tourListSection4) {
+  for (const item of tourListSection4) {
     item.departureDateFormat = moment(item.departureDate).format("DD/MM/YYYY");
   }
   // End Section 4: Tour Trong Nước
 
+  const domesticCategory = await Category.findById(
+    categoryIdSection4
+  ).select("slug");
+
+  const foreignCategory = await Category.findOne({
+    name: "Tour Nước Ngoài",
+    deleted: false,
+    status: "active"
+  }).select("slug");
+
+  const domesticToursHref = domesticCategory
+    ? `/category/${domesticCategory.slug}`
+    : "/search";
+
+  const foreignToursHref = foreignCategory
+    ? `/category/${foreignCategory.slug}`
+    : "/search";
+
   res.render("client/pages/home", {
     pageTitle: "Trang chủ",
     tourListSection2: tourListSection2,
+    domesticToursHref: domesticToursHref,
+    foreignToursHref: foreignToursHref,
     tourListSection4: tourListSection4
   })
 }

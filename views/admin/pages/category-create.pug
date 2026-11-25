@@ -5,7 +5,7 @@ block main
   h1.box-title Tạo danh mục
 
   .section-8
-    form#category-create-form
+    form#category-create-form(novalidate data-api=`/${pathAdmin}/category/create` data-list=`/${pathAdmin}/category/list`)
       .inner-group
         label(class="inner-label" for="name") Tên danh mục
         input(type="text" id="name" name="name")
@@ -16,7 +16,7 @@ block main
           +options(categoryList, 0)
       .inner-group
         label(class="inner-label" for="position") Vị trí
-        input(type="number" id="position" name="position")
+        input(type="text" id="position" name="position" inputmode="numeric")
       .inner-group
         label(class="inner-label" for="status") Trạng thái
         select(id="status" name="status")
@@ -25,11 +25,11 @@ block main
       .inner-group.inner-two-col
         label(class="inner-label" for="avatar") Ảnh đại diện
         div(class="inner-upload-image")
-          input(type="file" id="avatar" accept="image/*" filepond-image name="avatar")
+          input(type="file" id="avatar" accept="image/jpeg,image/png,image/gif,image/webp" filepond-image name="avatar")
       .inner-group.inner-two-col
         label(class="inner-label" for="description") Mô tả
         textarea(id="description" textarea-mce name="description")
       .inner-button.inner-two-col
-        button Tạo mới
+        button(type="submit") Tạo mới
     .inner-back
       a(href=`/${pathAdmin}/category/list`) Quay lại danh sách
