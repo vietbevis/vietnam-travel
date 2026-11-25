@@ -280,7 +280,7 @@
       try{
         const result=await statusFlow({cardId:form.dataset.cardId,action,reason,...(action==='revoke'?{refunded}:{})},{base:form.dataset.cardBase,signal:aborter.signal,onStepUp:()=>{message.textContent='Hãy cắm thẻ nhân viên của tài khoản hiện tại, sau đó nhập PIN trong hộp thoại để xác thực lại.';}});
         if(aborter.signal.aborted)return;
-        document.querySelector('[data-card-current-status]').textContent=({active:'Đang hoạt động',locked:'Đã khóa',revoked:'Đã thu hồi'})[result.status]||result.status;
+        document.querySelector('[data-card-current-status]').className='badge '+({active:'badge-green',locked:'badge-orange',revoked:'badge-red'})[result.status];document.querySelector('[data-card-current-status]').textContent=({active:'Đang hoạt động',locked:'Đã khóa',revoked:'Đã thu hồi'})[result.status]||result.status;
         message.textContent=result.message+' Nếu vừa xác thực lại, hãy cắm thẻ đang xem trước khi bấm Đồng bộ ngay.';
         for(const button of form.querySelectorAll('button[name="action"]'))button.hidden=result.status==='revoked'||button.value==='lock'&&result.status!=='active'||button.value==='unlock'&&result.status!=='locked';
       }catch(error){if(!aborter.signal.aborted)message.textContent=error.code==='PIN_CANCELLED'?'Đã hủy xác thực; trạng thái chưa được gửi lại.':error.message||'Không thể cập nhật trạng thái thẻ.';}
@@ -332,7 +332,7 @@
         section.querySelector('[data-checkin-blood]').textContent=current.customer.bloodType||current.profile.bloodType||'';
         section.querySelector('[data-checkin-allergies]').textContent=current.customer.allergies||current.profile.allergies||'';
         const list=section.querySelector('[data-checkin-items]');list.textContent='';
-        for(const item of current.items){const li=document.createElement('li');li.textContent=item.orderCode+' · '+item.pax+' khách · '+item.ticketStatus+(item.onCard?' · vé hợp lệ trên thẻ':' · chưa có vé hợp lệ trên thẻ');list.append(li);}
+        for(const item of current.items){const li=document.createElement('li');li.className=item.ticketStatus==='used'?'ca-used':item.onCard&&item.ticketStatus==='written'?'ca-valid':'ca-invalid';li.textContent=item.orderCode+' · '+item.pax+' khách · '+item.ticketStatus+(item.onCard?' · vé hợp lệ trên thẻ':' · chưa có vé hợp lệ trên thẻ');list.append(li);}
         const notice=current.syncNotice?current.syncNotice+' ':'';
         const ready=current.items.find(item=>item.ticketStatus==='written'&&item.onCard);
         current.ready=ready||null;confirmButton.hidden=!ready;result.hidden=false;

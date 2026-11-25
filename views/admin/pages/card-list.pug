@@ -1,44 +1,77 @@
 extends ../layouts/default.pug
+include ../partials/card-badge.pug
 
 block main
-  h1.box-title Quản lý thẻ
-  form(method="get")
-    label(for="keyword") Tên chủ thẻ hoặc mã thẻ
-    input#keyword(name="keyword" value=filters.keyword maxlength="120")
-    label(for="status") Trạng thái
-    select#status(name="status")
-      option(value="") Tất cả
-      each label, value in statusNames
-        option(value=value selected=filters.status===value)= label
-    label(for="cardType") Loại thẻ
-    select#cardType(name="cardType")
-      option(value="") Tất cả
-      option(value="customer" selected=filters.cardType==='customer') Khách hàng
-      option(value="staff" selected=filters.cardType==='staff') Nhân viên
-    button(type="submit") Lọc
-  p Tổng #{pagination.total} thẻ · Trang #{pagination.page}/#{pagination.pages}
-  table.table
-    thead
-      tr
-        th Mã thẻ
-        th Chủ thẻ
-        th Loại thẻ
-        th Trạng thái
-        th Số dư server (đ)
-    tbody
-      each card in cards
-        tr(data-card-row)
-          td
-            a(href=`/${pathAdmin}/card/detail/${card.cardId}`)= card.cardId
-          td #{card.owner && (card.owner.fullName || card.owner.email) || 'Không còn thông tin chủ thẻ'}
-          td= card.cardType==='customer'?'Khách hàng':'Nhân viên'
-          td= statusNames[card.status]
-          td= card.balance.toLocaleString('vi-VN')
-      if !cards.length
-        tr
-          td(colspan="5") Không có thẻ phù hợp.
-  nav(aria-label="Phân trang thẻ")
-    if pagination.previous
-      a(href=pagination.previous) Trang trước
-    if pagination.next
-      a(href=pagination.next) Trang sau
+  .ca-page
+    .ca-head
+      div
+        h1.box-title Quản lý thẻ
+      a.ca-btn(href=`/${pathAdmin}/card/issue`)
+        i.fa-solid.fa-plus
+        | Phát hành thẻ
+
+    form.ca-filter(method="get")
+      .ca-filter-title
+        i.fa-solid.fa-filter
+        | Bộ lọc
+      .ca-field
+        label(for="keyword") Tên chủ thẻ hoặc mã thẻ
+        input#keyword(name="keyword" value=filters.keyword maxlength="120" placeholder="Nhập tên hoặc mã thẻ")
+      .ca-field
+        label(for="status") Trạng thái
+        select#status(name="status")
+          option(value="") Tất cả
+          each label, value in statusNames
+            option(value=value selected=filters.status===value)= label
+      .ca-field
+        label(for="cardType") Loại thẻ
+        select#cardType(name="cardType")
+          option(value="") Tất cả
+          option(value="customer" selected=filters.cardType==='customer') Khách hàng
+          option(value="staff" selected=filters.cardType==='staff') Nhân viên
+      .ca-actions
+        button.ca-btn(type="submit")
+          i.fa-solid.fa-magnifying-glass
+          | Lọc
+        a.ca-reset(href=`/${pathAdmin}/card/list`)
+          i.fa-solid.fa-rotate-left
+          | Xóa bộ lọc
+
+    p.ca-meta
+      span Tổng <strong>#{pagination.total}</strong> thẻ
+      span Trang #{pagination.page}/#{pagination.pages}
+
+    .ca-table-wrap
+      table.ca-table
+        thead
+          tr
+            th Mã thẻ
+            th Chủ thẻ
+            th Loại thẻ
+            th Trạng thái
+            th.ca-num Số dư server (đ)
+        tbody
+          each card in cards
+            tr(data-card-row)
+              td
+                a.ca-code(href=`/${pathAdmin}/card/detail/${card.cardId}`)= card.cardId
+              td #{card.owner && (card.owner.fullName || card.owner.email) || 'Không còn thông tin chủ thẻ'}
+              td= card.cardType==='customer'?'Khách hàng':'Nhân viên'
+              td
+                +cardBadge(card.status, statusNames)
+              td.ca-num= card.balance.toLocaleString('vi-VN')
+          if !cards.length
+            tr.ca-empty
+              td(colspan="5")
+                i.fa-regular.fa-id-card
+                | Không có thẻ phù hợp.
+
+    nav.ca-pagination(aria-label="Phân trang thẻ")
+      if pagination.previous
+        a(href=pagination.previous)
+          i.fa-solid.fa-chevron-left
+          | Trang trước
+      if pagination.next
+        a(href=pagination.next)
+          | Trang sau
+          i.fa-solid.fa-chevron-right

@@ -1,142 +1,216 @@
 extends ../layouts/default.pug
 
 block main
-  h1.box-title Chi tiết thẻ
-  a(href=`/${pathAdmin}/card/list`) Danh sách thẻ
-  dl
-    dt Mã thẻ
-    dd= card.cardId
-    dt Loại thẻ
-    dd= card.cardType==='customer'?'Khách hàng':'Nhân viên'
-    dt Trạng thái server
-    dd(data-card-current-status)= statusNames[card.status]
-    dt Chủ thẻ
-    dd= card.owner && card.owner.fullName || 'Không còn thông tin chủ thẻ'
-    dt Email
-    dd= card.owner && card.owner.email || 'Chưa có'
-    dt Số điện thoại
-    dd= card.owner && card.owner.phone || 'Chưa có'
-    dt Số dư server (đ)
-    dd= card.balance.toLocaleString('vi-VN')
-    if card.revokedReason || card.lockedReason
-      dt Lý do khóa / thu hồi
-      dd= card.revokedReason || card.lockedReason
-  section(card-actions aria-label="Thao tác thẻ")
-    if permissions.includes('card-issue') && permissions.includes('card-revoke')
-      if card.replacement && !card.replacement.completedAt
-        p Thẻ cũ đã thu hồi. Số dư vẫn được giữ đến khi hoàn tất cấp lại; không hoàn tiền thủ công.
-        a(data-card-replacement-resume href=`/${pathAdmin}/card/issue?replaceOf=${card.cardId}`) Tiếp tục cấp lại thẻ
-      else if ['active','locked'].includes(card.status)
-        form(data-card-replace-form data-card-id=card.cardId data-card-base=`/${pathAdmin}/card`)
-          label(for="replacementReason") Lý do cấp lại
-          input#replacementReason(name="replacementReason" required maxlength="500")
-          button(type="submit") Cấp lại thẻ
-          p(data-card-replace-message role="status" aria-live="polite") Thu hồi thẻ cũ, giữ nguyên số dư đến khi thẻ mới hoàn tất.
-    if permissions.includes('card-edit') && card.cardType==='customer' && card.status==='active' && card.owner
-      form(data-card-profile-form data-card-id=card.cardId data-card-base=`/${pathAdmin}/card`)
-        h2 Sửa hồ sơ / ảnh trên thẻ
-        each field in [{name:'fullName',label:'Họ tên',max:60},{name:'dob',label:'Ngày sinh',type:'date'},{name:'gender',label:'Giới tính (male / female / other)',max:6},{name:'phone',label:'Số điện thoại',max:15},{name:'idNumber',label:'Số giấy tờ',max:20},{name:'emergencyName',label:'Liên hệ khẩn cấp',max:60},{name:'emergencyPhone',label:'Số liên hệ khẩn cấp',max:15},{name:'bloodType',label:'Nhóm máu',max:3},{name:'allergies',label:'Dị ứng',max:120}]
-          p
-            label(for=`profile-${field.name}`)= field.label
-            input(id=`profile-${field.name}` name=field.name data-profile-field type=field.type||'text' maxlength=field.max required=field.name==='fullName' value=field.name==='dob'?(card.owner.dob?new Date(card.owner.dob).toISOString().slice(0,10):''):(card.owner[field.name]||''))
-        label(for="profile-photo") Ảnh mới (không bắt buộc)
-        input#profile-photo(name="photo" type="file" accept="image/*")
-        img(data-card-profile-preview width="160" height="200" alt="Ảnh mới đã chọn" style="object-fit:cover")
-        button(type="submit") Ghi hồ sơ / ảnh
-        button(type="button" data-card-profile-reload hidden) Tải lại hồ sơ đã xác nhận
-        p(data-card-profile-message role="status" aria-live="polite") Khách nhập PIN của đúng thẻ đang xem. Hồ sơ và ảnh được xác nhận riêng; có thể chỉ một phần thành công.
-    form(data-card-status-form data-card-id=card.cardId data-card-base=`/${pathAdmin}/card`)
-      if permissions.includes('card-lock') || permissions.includes('card-revoke')
-        p
-          label(for="reason") Lý do (bắt buộc khi thu hồi)
-          input#reason(name="reason" maxlength="500" disabled=card.status==='revoked')
-        if permissions.includes('card-revoke') && ['active','locked','issuing'].includes(card.status)
-          p
-            label
-              input(type="checkbox" name="refunded")
-              |  Tôi xác nhận đã hoàn tiền mặt cho chủ thẻ
-          p Thu hồi là vĩnh viễn. Giao dịch cần đối soát phải hoàn tất trước khi thu hồi.
-        if permissions.includes('card-lock')
-          button(type="submit" name="action" value="lock" hidden=card.status!=='active') Khóa thẻ
-          button(type="submit" name="action" value="unlock" hidden=card.status!=='locked') Mở khóa thẻ
-        if permissions.includes('card-revoke')
-          button(type="submit" name="action" value="revoke" hidden=!['active','locked','issuing'].includes(card.status)) Thu hồi thẻ
-      p(data-card-status-message role="status" aria-live="polite") Cắm thẻ đang xem để đồng bộ trạng thái từ server.
-      if permissions.includes('card-lock') || permissions.includes('card-revoke')
-        button(type="button" data-card-sync) Đồng bộ ngay
-    if card.status==='active'
+  .ca-page
+    a.ca-back(href=`/${pathAdmin}/card/list`)
+      i.fa-solid.fa-arrow-left
+      | Danh sách thẻ
+    .ca-head
+      h1.box-title Chi tiết thẻ
+    .ca-layout-detail
+      .ca-card
+        h2
+          i.fa-solid.fa-id-card
+          | Thông tin thẻ
+        dl.ca-dl
+          dt Mã thẻ
+          dd= card.cardId
+          dt Loại thẻ
+          dd= card.cardType==='customer'?'Khách hàng':'Nhân viên'
+          dt Trạng thái server
+          dd
+            span.badge(data-card-current-status class=({active:'badge-green',locked:'badge-orange',revoked:'badge-red',issuing:'badge-blue'})[card.status]||'badge-grey')= statusNames[card.status]
+          dt Chủ thẻ
+          dd= card.owner && card.owner.fullName || 'Không còn thông tin chủ thẻ'
+          dt Email
+          dd= card.owner && card.owner.email || 'Chưa có'
+          dt Số điện thoại
+          dd= card.owner && card.owner.phone || 'Chưa có'
+          if card.revokedReason || card.lockedReason
+            dt Lý do khóa / thu hồi
+            dd= card.revokedReason || card.lockedReason
+      .ca-card
+        h2
+          i.fa-solid.fa-wallet
+          | Ví thẻ
+        .ca-label Số dư server (đ)
+        p.ca-balance= card.balance.toLocaleString('vi-VN')
+          small  đ
+        p.ca-note Số dư trên thẻ (chip) được đối chiếu khi cắm thẻ và đồng bộ.
+        h3.ca-label(style="margin-top:18px") Credit đang chờ
+        ul.ca-tickets.ca-pending
+          each tx in pendingCredits
+            li
+              i.fa-solid.fa-hourglass-half
+              | #{tx.txRef}: #{tx.amount.toLocaleString('vi-VN')} đ — #{tx.status}
+          if !pendingCredits.length
+            li.ca-none Không có credit đang chờ.
+    .ca-card(style="margin-top:20px")
+      h2
+        i.fa-solid.fa-ticket
+        | Các vé của chủ thẻ
+      ul.ca-tickets
+        each order in orders
+          each item in order.items
+            if ['pending','written','used','pending-delete','deleted'].includes(item.ticketStatus)
+              li
+                i.fa-solid.fa-ticket-simple
+                | #{order.orderCode || order._id} — #{item.title || item.tourName || item.tourId || 'Vé du lịch'} — #{item.ticketStatus}
+        if !orders.length
+          li.ca-none Chưa có vé.
+
+    section.ca-card(card-actions aria-label="Thao tác thẻ")
+      h2
+        i.fa-solid.fa-sliders
+        | Thao tác thẻ
+      if permissions.includes('card-issue') && permissions.includes('card-revoke')
+        if card.replacement && !card.replacement.completedAt
+          .ca-subform
+            p.ca-note.ca-note-warn Thẻ cũ đã thu hồi. Số dư vẫn được giữ đến khi hoàn tất cấp lại; không hoàn tiền thủ công.
+            a.ca-btn(data-card-replacement-resume href=`/${pathAdmin}/card/issue?replaceOf=${card.cardId}`)
+              i.fa-solid.fa-rotate
+              | Tiếp tục cấp lại thẻ
+        else if ['active','locked'].includes(card.status)
+          form.ca-subform(data-card-replace-form data-card-id=card.cardId data-card-base=`/${pathAdmin}/card`)
+            h3 Cấp lại thẻ
+            .ca-field
+              label(for="replacementReason") Lý do cấp lại
+              input#replacementReason(name="replacementReason" required maxlength="500")
+            button.ca-btn.ca-btn-orange(type="submit")
+              i.fa-solid.fa-rotate
+              | Cấp lại thẻ
+            p.ca-status(data-card-replace-message role="status" aria-live="polite") Thu hồi thẻ cũ, giữ nguyên số dư đến khi thẻ mới hoàn tất.
+      if permissions.includes('card-edit') && card.cardType==='customer' && card.status==='active' && card.owner
+        form.ca-subform(data-card-profile-form data-card-id=card.cardId data-card-base=`/${pathAdmin}/card`)
+          h2 Sửa hồ sơ / ảnh trên thẻ
+          .ca-grid
+            each field in [{name:'fullName',label:'Họ tên',max:60},{name:'dob',label:'Ngày sinh',type:'date'},{name:'gender',label:'Giới tính (male / female / other)',max:6},{name:'phone',label:'Số điện thoại',max:15},{name:'idNumber',label:'Số giấy tờ',max:20},{name:'emergencyName',label:'Liên hệ khẩn cấp',max:60},{name:'emergencyPhone',label:'Số liên hệ khẩn cấp',max:15},{name:'bloodType',label:'Nhóm máu',max:3},{name:'allergies',label:'Dị ứng',max:120}]
+              .ca-field
+                label(for=`profile-${field.name}`)= field.label
+                input(id=`profile-${field.name}` name=field.name data-profile-field type=field.type||'text' maxlength=field.max required=field.name==='fullName' value=field.name==='dob'?(card.owner.dob?new Date(card.owner.dob).toISOString().slice(0,10):''):(card.owner[field.name]||''))
+          .ca-photo-box
+            img.ca-photo(data-card-profile-preview width="160" height="200" alt="Ảnh mới đã chọn")
+            .ca-field(style="flex:1 1 240px")
+              label(for="profile-photo") Ảnh mới (không bắt buộc)
+              input#profile-photo(name="photo" type="file" accept="image/*")
+          .ca-btn-row
+            button.ca-btn(type="submit")
+              i.fa-solid.fa-floppy-disk
+              | Ghi hồ sơ / ảnh
+            button.ca-btn.ca-btn-grey(type="button" data-card-profile-reload hidden)
+              i.fa-solid.fa-arrows-rotate
+              | Tải lại hồ sơ đã xác nhận
+          p.ca-status(data-card-profile-message role="status" aria-live="polite") Khách nhập PIN của đúng thẻ đang xem. Hồ sơ và ảnh được xác nhận riêng; có thể chỉ một phần thành công.
+      form.ca-subform(data-card-status-form data-card-id=card.cardId data-card-base=`/${pathAdmin}/card`)
+        h3 Trạng thái thẻ
+        if permissions.includes('card-lock') || permissions.includes('card-revoke')
+          .ca-field
+            label(for="reason") Lý do (bắt buộc khi thu hồi)
+            input#reason(name="reason" maxlength="500" disabled=card.status==='revoked')
+          if permissions.includes('card-revoke') && ['active','locked','issuing'].includes(card.status)
+            .ca-field.ca-field-check
+              label
+                input(type="checkbox" name="refunded")
+                |  Tôi xác nhận đã hoàn tiền mặt cho chủ thẻ
+            p.ca-note.ca-note-danger Thu hồi là vĩnh viễn. Giao dịch cần đối soát phải hoàn tất trước khi thu hồi.
+        .ca-btn-row
+          if permissions.includes('card-lock')
+            button.ca-btn.ca-btn-orange(type="submit" name="action" value="lock" hidden=card.status!=='active')
+              i.fa-solid.fa-lock
+              |  Khóa thẻ
+            button.ca-btn.ca-btn-green(type="submit" name="action" value="unlock" hidden=card.status!=='locked')
+              i.fa-solid.fa-lock-open
+              |  Mở khóa thẻ
+          if permissions.includes('card-revoke')
+            button.ca-btn.ca-btn-red(type="submit" name="action" value="revoke" hidden=!['active','locked','issuing'].includes(card.status))
+              i.fa-solid.fa-ban
+              |  Thu hồi thẻ
+          if permissions.includes('card-lock') || permissions.includes('card-revoke')
+            button.ca-btn.ca-btn-light(type="button" data-card-sync)
+              i.fa-solid.fa-arrows-rotate
+              |  Đồng bộ ngay
+        p.ca-status(data-card-status-message role="status" aria-live="polite") Cắm thẻ đang xem để đồng bộ trạng thái từ server.
+      if card.status==='active'
+        if permissions.includes('card-reset-pin')
+          form.ca-subform(data-card-reset-pin-form data-card-id=card.cardId data-card-base=`/${pathAdmin}/card`)
+            h3 Reset PIN
+            button.ca-btn.ca-btn-orange(type="submit")
+              i.fa-solid.fa-key
+              |  Reset PIN
+            p.ca-note PIN mới chỉ hiện một lần sau khi xác nhận. Chủ thẻ cần đổi PIN trước khi sử dụng.
+        if permissions.includes('card-topup') && card.cardType==='customer'
+          form.ca-subform(data-card-topup-cash-form data-card-id=card.cardId data-card-base=`/${pathAdmin}/card`)
+            h3 Nạp tiền mặt
+            .ca-field(style="max-width:360px")
+              label(for="cash-amount") Số tiền mặt đã nhận (đ)
+              input#cash-amount(name="amount" type="number" required min="10000" max="20000000" step="1" inputmode="numeric")
+            .ca-btn-row
+              button.ca-btn.ca-btn-green(type="submit")
+                i.fa-solid.fa-money-bill-wave
+                |  Nạp tiền mặt
+              button.ca-btn.ca-btn-light(type="button" data-card-cash-recover hidden) Đối chiếu / đồng bộ khoản đang chờ
+              button.ca-btn.ca-btn-grey(type="button" data-card-new-cash-payment hidden) Bắt đầu khoản tiền mặt khác
+            p.ca-note Tối thiểu 10.000 đ; mỗi nhân viên tối đa 20.000.000 đ/ngày theo giờ Việt Nam. Giữ cùng yêu cầu nếu mất phản hồi.
+        if permissions.includes('card-reset-pin') || permissions.includes('card-topup')
+          p.ca-status(data-card-ops-message role="status" aria-live="polite") Cắm đúng thẻ đang xem trước khi thao tác. Có thể cần thẻ nhân viên để xác thực lại.
       if permissions.includes('card-reset-pin')
-        form(data-card-reset-pin-form data-card-id=card.cardId data-card-base=`/${pathAdmin}/card`)
-          button(type="submit") Reset PIN
-          p PIN mới chỉ hiện một lần sau khi xác nhận. Chủ thẻ cần đổi PIN trước khi sử dụng.
-      if permissions.includes('card-topup') && card.cardType==='customer'
-        form(data-card-topup-cash-form data-card-id=card.cardId data-card-base=`/${pathAdmin}/card`)
-          label(for="cash-amount") Số tiền mặt đã nhận (đ)
-          input#cash-amount(name="amount" type="number" required min="10000" max="20000000" step="1" inputmode="numeric")
-          button(type="submit") Nạp tiền mặt
-          button(type="button" data-card-cash-recover hidden) Đối chiếu / đồng bộ khoản đang chờ
-          button(type="button" data-card-new-cash-payment hidden) Bắt đầu khoản tiền mặt khác
-          p Tối thiểu 10.000 đ; mỗi nhân viên tối đa 20.000.000 đ/ngày theo giờ Việt Nam. Giữ cùng yêu cầu nếu mất phản hồi.
-      if permissions.includes('card-reset-pin') || permissions.includes('card-topup')
-        p(data-card-ops-message role="status" aria-live="polite") Cắm đúng thẻ đang xem trước khi thao tác. Có thể cần thẻ nhân viên để xác thực lại.
-    if permissions.includes('card-reset-pin')
-      dialog(data-card-new-pin-dialog aria-label="PIN mới chỉ hiển thị một lần")
-        p PIN mới (chỉ hiển thị lần này)
-        strong(data-card-new-pin)
-        p Chủ thẻ phải đổi PIN trước khi sử dụng.
-        button(type="button" data-card-new-pin-dismiss) Đã lưu PIN an toàn
-  h2 Credit đang chờ
-  ul
-    each tx in pendingCredits
-      li #{tx.txRef}: #{tx.amount.toLocaleString('vi-VN')} đ — #{tx.status}
-    if !pendingCredits.length
-      li Không có credit đang chờ.
-  h2 Giao dịch (100 mục gần nhất, mới nhất trước)
-  table.table
-    thead
-      tr
-        th Thời gian
-        th Mã giao dịch
-        th Loại / nguồn
-        th Số tiền (đ)
-        th Trạng thái
-    tbody
-      each tx in transactions
-        tr
-          td= new Date(tx.createdAt).toLocaleString('vi-VN', {timeZone:'Asia/Ho_Chi_Minh'})
-          td= tx.txRef
-          td #{tx.type} / #{tx.source}
-          td= tx.amount.toLocaleString('vi-VN')
-          td= tx.status
-      if !transactions.length
-        tr
-          td(colspan="5") Chưa có giao dịch.
-  h2 Các vé của chủ thẻ
-  ul
-    each order in orders
-      each item in order.items
-        if ['pending','written','used','pending-delete','deleted'].includes(item.ticketStatus)
-          li #{order.orderCode || order._id} — #{item.title || item.tourName || item.tourId || 'Vé du lịch'} — #{item.ticketStatus}
-    if !orders.length
-      li Chưa có vé.
-  h2 50 nhật ký gần nhất
-  table.table
-    thead
-      tr
-        th Thời gian
-        th Thao tác
-        th Người thực hiện
-        th Kết quả
-        th Chi tiết
-    tbody
-      each entry in logs
-        tr(data-card-log-row)
-          td= new Date(entry.createdAt).toLocaleString('vi-VN', {timeZone:'Asia/Ho_Chi_Minh'})
-          td= entry.action
-          td #{entry.actorType} #{entry.actorId || ''}
-          td= entry.result
-          td= entry.detail ? JSON.stringify(entry.detail) : ''
-      if !logs.length
-        tr
-          td(colspan="5") Chưa có nhật ký.
+        dialog.ca-dialog(data-card-new-pin-dialog aria-label="PIN mới chỉ hiển thị một lần")
+          .ca-modal-body
+            .ca-modal-icon(aria-hidden="true")
+              i.fa-solid.fa-key
+            p PIN mới (chỉ hiển thị lần này)
+            strong.ca-pin-value(data-card-new-pin)
+            p Chủ thẻ phải đổi PIN trước khi sử dụng.
+            .ca-modal-actions
+              button.ca-btn(type="button" data-card-new-pin-dismiss) Đã lưu PIN an toàn
+
+    h2.ca-dash-title Giao dịch (100 mục gần nhất, mới nhất trước)
+    .ca-table-wrap
+      table.ca-table
+        thead
+          tr
+            th Thời gian
+            th Mã giao dịch
+            th Loại / nguồn
+            th.ca-num Số tiền (đ)
+            th Trạng thái
+        tbody
+          each tx in transactions
+            tr
+              td= new Date(tx.createdAt).toLocaleString('vi-VN', {timeZone:'Asia/Ho_Chi_Minh'})
+              td= tx.txRef
+              td #{tx.type} / #{tx.source}
+              td.ca-num= tx.amount.toLocaleString('vi-VN')
+              td
+                span.badge(class=/^(completed|success|settled)$/i.test(String(tx.status)) ? 'badge-green' : /^(failed|cancelled|rejected)$/i.test(String(tx.status)) ? 'badge-red' : 'badge-grey')= tx.status
+          if !transactions.length
+            tr.ca-empty
+              td(colspan="5")
+                i.fa-solid.fa-receipt
+                | Chưa có giao dịch.
+
+    h2.ca-dash-title 50 nhật ký gần nhất
+    .ca-table-wrap
+      table.ca-table
+        thead
+          tr
+            th Thời gian
+            th Thao tác
+            th Người thực hiện
+            th Kết quả
+            th Chi tiết
+        tbody
+          each entry in logs
+            tr(data-card-log-row)
+              td= new Date(entry.createdAt).toLocaleString('vi-VN', {timeZone:'Asia/Ho_Chi_Minh'})
+              td= entry.action
+              td #{entry.actorType} #{entry.actorId || ''}
+              td
+                span.badge(class=/^(success|ok)$/i.test(String(entry.result)) ? 'badge-green' : 'badge-grey')= entry.result
+              td.ca-detail-json= entry.detail ? JSON.stringify(entry.detail) : ''
+          if !logs.length
+            tr.ca-empty
+              td(colspan="5")
+                i.fa-regular.fa-clipboard
+                | Chưa có nhật ký.
   script(src="/admin/assets/js/card-admin.js" defer)

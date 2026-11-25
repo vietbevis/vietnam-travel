@@ -1,1 +1,192 @@
-.card-account{max-width:1080px;margin:2rem auto;padding:1.5rem;color:#183047;background:#fff;line-height:1.6}.card-account section{margin-top:2rem;padding-top:1rem;border-top:1px solid #d5e0e9}.card-account form{display:grid;gap:.5rem;max-width:32rem;margin:1.5rem 0}.card-account input{border:1px solid #8da4b8;border-radius:5px;padding:.65rem;font:inherit;max-width:100%;min-width:0}.card-account button,.card-session button{font:inherit;padding:.6rem 1rem;border:0;border-radius:5px;background:#0861a8;color:#fff;cursor:pointer}.card-account button:disabled{opacity:.6;cursor:wait}.card-account pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit}.card-account .card-photo{display:block;max-width:160px;max-height:210px}.card-account .card-photo:not([src]){display:none}.card-account .card-warning{padding:1rem;background:#fff3cd;color:#684b00}.card-account .card-table-wrap{overflow-x:auto}.card-account table{border-collapse:collapse;width:100%}.card-account td,.card-account th{text-align:left;border-bottom:1px solid #d5e0e9;padding:.6rem;white-space:nowrap}.card-session{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}.card-session a{color:inherit}.card-session button{font-size:.85rem} @media(max-width:700px){.card-account{margin:1rem;padding:1rem}.card-session{font-size:.8rem}.card-account h1{font-size:1.6rem}}
+/* Smart-card customer pages. Reuses --color-primary (#4502C7) and Lexend Deca from style.css */
+.card-account {
+  --cc-primary: var(--color-primary, #4502C7);
+  --cc-primary-dark: #2f0190;
+  --cc-ink: #1d1b2e;
+  --cc-muted: #6b6880;
+  --cc-line: #e6e3f0;
+  --cc-soft: #f1ecfd;
+  --cc-ok: #12805c;
+  --cc-warn: #8a5a00;
+  --cc-err: #c0262d;
+  font-family: "Lexend Deca", sans-serif;
+  color: var(--cc-ink);
+  padding: 32px 0 64px;
+  line-height: 1.6;
+}
+.card-account .container { max-width: 100%; }
+.card-narrow .container { max-width: 560px; }
+.card-page-head { margin-bottom: 24px; }
+.card-page-title { font-size: 28px; font-weight: 600; margin: 0 0 4px; color: var(--cc-ink); }
+.card-page-sub { margin: 0; color: var(--cc-muted); font-size: 14px; }
+
+/* Hero card */
+.card-hero { display: grid; grid-template-columns: minmax(0, 420px) 1fr; gap: 24px; align-items: stretch; margin-bottom: 20px; }
+.card-face {
+  position: relative; display: flex; flex-direction: column; justify-content: space-between; gap: 18px;
+  min-height: 230px; padding: 24px; border-radius: 20px; color: #fff; overflow: hidden;
+  background: linear-gradient(135deg, #4502C7 0%, #7b3ff2 60%, #a37bff 100%);
+  box-shadow: 0 18px 40px rgba(69, 2, 199, .28);
+}
+.card-face::after { content: ""; position: absolute; right: -60px; top: -60px; width: 220px; height: 220px; border-radius: 50%; background: rgba(255,255,255,.12); }
+.card-face.card-tier-silver { background: linear-gradient(135deg, #5b6472 0%, #98a2b3 60%, #d0d5dd 100%); }
+.card-face.card-tier-gold { background: linear-gradient(135deg, #8a5a00 0%, #d99a1b 60%, #f6d36b 100%); }
+.card-face.card-tier-platinum { background: linear-gradient(135deg, #111827 0%, #3b3f5c 55%, #7c83b5 100%); }
+.card-face.card-tier-standard { background: linear-gradient(135deg, #4502C7 0%, #7b3ff2 60%, #a37bff 100%); }
+.card-face-top, .card-face-bottom { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; position: relative; z-index: 1; }
+.card-face-top { align-items: center; }
+.card-brand { font-weight: 600; letter-spacing: .5px; }
+.card-tier-badge { padding: 3px 12px; border-radius: 999px; background: rgba(255,255,255,.2); border: 1px solid rgba(255,255,255,.5); font-size: 12px; font-weight: 500; text-transform: uppercase; letter-spacing: .6px; }
+.card-face-chip { width: 44px; height: 32px; border-radius: 7px; background: linear-gradient(135deg, #f6d36b, #c99a2e); position: relative; z-index: 1; }
+.card-face-id { font-size: 13px; letter-spacing: 1.5px; word-break: break-all; position: relative; z-index: 1; opacity: .95; }
+.card-face-label { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; opacity: .8; }
+.card-face-name { font-size: 18px; font-weight: 500; }
+.card-face-discount { text-align: right; }
+.card-face-percent { font-size: 18px; font-weight: 600; }
+
+/* Balance tiles */
+.card-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.card-tile { background: #fff; border: 1px solid var(--cc-line); border-radius: 14px; padding: 16px 18px; display: flex; flex-direction: column; justify-content: center; }
+.card-tile-label { font-size: 13px; color: var(--cc-muted); }
+.card-tile-value { font-size: 18px; font-weight: 600; margin-top: 4px; overflow-wrap: anywhere; }
+.card-tile-value strong { font-weight: 600; color: var(--cc-primary); }
+.card-tile-value:empty::before { content: "—"; color: var(--cc-muted); }
+
+/* Alerts */
+.card-alert { margin: 12px 0; padding: 12px 16px; border-radius: 10px; font-size: 14px; border: 1px solid transparent; }
+.card-alert[hidden], .card-alert:empty { display: none; }
+.card-alert-info { background: var(--cc-soft); color: var(--cc-primary-dark); border-color: #d8ccf7; }
+.card-alert-warning, .card-account .card-warning { background: #fff6dd; color: var(--cc-warn); border-color: #f0dca0; }
+.card-alert-error { background: #fdecec; color: var(--cc-err); border-color: #f4bcbc; }
+.card-alert-success { background: #e7f6ef; color: var(--cc-ok); border-color: #b5e2cf; }
+
+/* Panels */
+.card-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; margin-bottom: 20px; align-items: start; }
+.card-panel { background: #fff; border: 1px solid var(--cc-line); border-radius: 16px; padding: 24px; margin-bottom: 20px; box-shadow: 0 4px 16px rgba(29, 27, 46, .04); }
+.card-grid .card-panel { margin-bottom: 0; }
+.card-panel-title { font-size: 18px; font-weight: 600; margin: 0 0 12px; }
+.card-panel-title i { color: var(--cc-primary); margin-right: 6px; }
+.card-sub-title { font-size: 14px; font-weight: 600; margin: 18px 0 6px; color: var(--cc-ink); }
+.card-hint { font-size: 14px; color: var(--cc-muted); margin: 0 0 16px; }
+.card-pre { margin: 0; padding: 12px 14px; background: #faf9fd; border: 1px solid var(--cc-line); border-radius: 10px; font: inherit; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; min-height: 44px; }
+.card-pre:empty::before { content: "Chưa có dữ liệu — bấm Đọc thẻ."; color: var(--cc-muted); }
+.card-photo { display: block; width: 120px; height: auto; max-height: 160px; object-fit: cover; border-radius: 12px; margin: 16px 0 0; border: 1px solid var(--cc-line); }
+.card-photo:not([src]) { display: none; }
+
+/* Forms */
+.card-form { display: grid; gap: 14px; margin: 0; max-width: none; }
+.card-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: end; }
+.card-form-grid .card-btn { grid-column: 1 / -1; justify-self: start; }
+.card-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.card-field label { font-size: 14px; font-weight: 500; }
+.card-account input:not([type="radio"]), .card-account select, .card-pin-dialog input {
+  width: 100%; height: 46px; padding: 0 14px; border: 1px solid #cfc9e3; border-radius: 10px; background: #fff;
+  font: inherit; font-size: 15px; color: var(--cc-ink); min-width: 0;
+}
+.card-account input:focus-visible, .card-account select:focus-visible, .card-pin-dialog input:focus-visible,
+.card-btn:focus-visible, .card-account a:focus-visible {
+  outline: 3px solid rgba(69, 2, 199, .35); outline-offset: 2px; border-color: var(--cc-primary);
+}
+.card-step { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .8px; color: var(--cc-primary); }
+.card-form + .card-form { margin-top: 22px; padding-top: 22px; border-top: 1px dashed var(--cc-line); }
+
+/* Buttons */
+.card-btn, .card-account button.card-btn, .card-pin-dialog .card-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  height: 46px; padding: 0 24px; border: 1px solid var(--cc-primary); border-radius: 10px;
+  background: var(--cc-primary); color: #fff; font: inherit; font-size: 15px; font-weight: 500; cursor: pointer;
+  transition: background .2s, box-shadow .2s;
+}
+.card-btn:hover:not(:disabled) { background: var(--cc-primary-dark); box-shadow: 0 6px 16px rgba(69, 2, 199, .25); }
+.card-btn:disabled { opacity: .55; cursor: not-allowed; box-shadow: none; }
+.card-btn-outline, .card-account button.card-btn-outline { background: #fff; color: var(--cc-primary); }
+.card-btn-outline:hover:not(:disabled) { background: var(--cc-soft); color: var(--cc-primary-dark); box-shadow: none; }
+.card-btn-danger { background: var(--cc-err); border-color: var(--cc-err); }
+.card-btn-danger:hover:not(:disabled) { background: #961c22; box-shadow: none; }
+.card-btn-block { width: 100%; }
+.card-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.card-autofill { height: 40px; font-size: 14px; margin: 8px 0; }
+
+/* Table */
+.card-table-wrap { overflow-x: auto; }
+.card-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.card-table th { text-align: left; padding: 10px 12px; font-weight: 500; color: var(--cc-muted); background: #faf9fd; border-bottom: 1px solid var(--cc-line); white-space: nowrap; }
+.card-table td { padding: 12px; border-bottom: 1px solid var(--cc-line); vertical-align: middle; overflow-wrap: anywhere; }
+.card-empty { text-align: center; color: var(--cc-muted); padding: 24px 12px !important; }
+.card-badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 500; background: #eee; color: #444; white-space: nowrap; }
+.card-badge-credit, .card-badge-status-done { background: #e7f6ef; color: var(--cc-ok); }
+.card-badge-debit { background: #fdecec; color: var(--cc-err); }
+.card-badge-status-awaiting-payment, .card-badge-status-pending-card { background: #fff6dd; color: var(--cc-warn); }
+.card-badge-status-sent, .card-badge-status-reconciliation { background: var(--cc-soft); color: var(--cc-primary-dark); }
+.card-badge-status-failed { background: #fdecec; color: var(--cc-err); }
+
+/* Focus pages (login, lock, pay) */
+.card-focus { text-align: left; padding: 32px; }
+.card-focus .card-page-title { font-size: 24px; margin-bottom: 12px; }
+.card-focus-icon { width: 56px; height: 56px; display: grid; place-items: center; border-radius: 16px; background: var(--cc-soft); color: var(--cc-primary); font-size: 24px; margin-bottom: 16px; }
+.card-lock-link { margin: 16px 0 0; font-size: 14px; }
+.card-lock-link a { color: var(--cc-primary); font-weight: 500; text-decoration: underline; }
+
+/* Pay summary */
+.card-summary { margin: 0 0 16px; border: 1px solid var(--cc-line); border-radius: 12px; overflow: hidden; }
+.card-summary-row { display: flex; justify-content: space-between; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--cc-line); font-size: 14px; }
+.card-summary-row:last-child { border-bottom: 0; }
+.card-summary dt { color: var(--cc-muted); }
+.card-summary dd { margin: 0; font-weight: 500; text-align: right; }
+.card-discount { color: var(--cc-ok); }
+.card-summary-total { background: var(--cc-soft); font-size: 16px; }
+.card-summary-total strong { color: var(--cc-primary); font-size: 18px; }
+
+/* Cart bits */
+.card-tier-note { color: var(--cc-ok); font-weight: 500; }
+.inner-item label i { color: var(--color-primary, #4502C7); }
+
+/* Header session */
+.card-session { display: flex; align-items: center; gap: 10px; flex-wrap: nowrap; white-space: nowrap; font-size: 13px; flex-shrink: 0; }
+.card-session-name { font-weight: 500; }
+.card-session-link { color: var(--color-primary, #4502C7); font-weight: 500; }
+.card-session-link:hover { text-decoration: underline; }
+.card-session-logout { font: inherit; font-size: 12px; padding: 4px 12px; border: 1px solid var(--color-primary, #4502C7); border-radius: 999px; background: #fff; color: var(--color-primary, #4502C7); cursor: pointer; }
+.card-session-logout:hover { background: var(--color-primary, #4502C7); color: #fff; }
+
+/* PIN modal */
+.card-pin-dialog { border: 0; padding: 0; border-radius: 18px; width: min(92vw, 380px); box-shadow: 0 24px 60px rgba(29, 27, 46, .35); font-family: "Lexend Deca", sans-serif; color: #1d1b2e; }
+.card-pin-dialog::backdrop { background: rgba(20, 10, 50, .55); backdrop-filter: blur(2px); }
+.card-pin-dialog[open] { margin: auto; }
+.card-pin-form { padding: 28px 24px 24px; display: grid; gap: 14px; text-align: center; }
+.card-pin-form .card-focus-icon { margin: 0 auto; }
+.card-pin-title { margin: 0; font-size: 20px; font-weight: 600; }
+.card-pin-form .card-field { text-align: left; }
+.card-pin-input { text-align: center; letter-spacing: 8px; font-size: 20px !important; }
+.card-pin-status { margin: 0; min-height: 20px; font-size: 14px; color: var(--cc-err, #c0262d); }
+.card-pin-actions { display: flex; gap: 10px; }
+.card-pin-actions .card-btn { flex: 1; padding: 0 12px; }
+
+/* Responsive */
+@media (max-width: 991.98px) {
+  .card-account .container { padding: 0 16px; }
+  .card-hero, .card-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 575.98px) {
+  .card-account { padding: 20px 0 40px; }
+  .card-page-title { font-size: 22px; }
+  .card-tiles, .card-form-grid { grid-template-columns: 1fr; }
+  .card-panel, .card-focus { padding: 18px; }
+  .card-face { min-height: 200px; padding: 18px; }
+  .card-table thead { display: none; }
+  .card-table, .card-table tbody, .card-table tr, .card-table td { display: block; width: 100%; }
+  .card-table tr { border: 1px solid var(--cc-line); border-radius: 10px; margin-bottom: 10px; padding: 4px 0; }
+  .card-table td { border: 0; display: flex; justify-content: space-between; gap: 12px; padding: 6px 12px; text-align: right; }
+  .card-table td[data-label]::before { content: attr(data-label); color: var(--cc-muted); text-align: left; }
+  .card-table td.card-empty { display: block; text-align: center; }
+  .card-btn:not(.card-pin-actions .card-btn) { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) { .card-btn { transition: none; } }
+
+/* Header: link thẻ chiếm thêm chỗ nên thu gọn khoảng cách menu để chữ không xuống dòng. */
+@media (min-width: 992px) {
+  .header .inner-menu > ul > li { margin: 0 14px; display: flex; align-items: center; white-space: nowrap; }
+  .header .inner-menu > ul > li > a { white-space: nowrap; }
+}
+.card-session-link { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; background: rgba(69, 2, 199, .08); text-decoration: none; }
+.card-session-link:hover { background: rgba(69, 2, 199, .14); text-decoration: none; }

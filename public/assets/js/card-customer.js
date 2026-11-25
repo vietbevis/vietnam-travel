@@ -4,6 +4,7 @@
 }(typeof window!=='undefined'?window:globalThis,function(root,S){
   'use strict';
   const invalid=message=>{throw new Error(message);};
+  const WEAK_PIN_HINT='PIN quá yếu (không dùng 6 số giống nhau, dãy số liên tiếp hoặc ngày sinh DDMMYY). Vui lòng nhập mã khác.';
   function identity(info,cardId){
     if(info.cardType===0||info.state===0)invalid('Thẻ chưa được phát hành.');
     if(info.cardType!==1)invalid('Vui lòng cắm thẻ khách hàng.');
@@ -23,9 +24,10 @@
           try{dob=(await client.readProfile()).dob;}
           catch(error){if(!initial||error?.sw!=='6985')throw error;}
         }
-        newPin=await client.askPin('Nhập PIN mới gồm 6 chữ số');
+        // Kiểm tra ngay trong modal: PIN yếu / nhập lại không khớp thì giữ modal và yêu cầu nhập lại.
+        newPin=await client.askPin('Nhập PIN mới gồm 6 chữ số',{validate:value=>S.isWeakPin(value,dob)?WEAK_PIN_HINT:''});
         if(!S.isPinFormat(newPin)||S.isWeakPin(newPin,dob))invalid('PIN mới quá yếu. Vui lòng chọn mã khác.');
-        confirm=await client.askPin('Nhập lại PIN mới');
+        confirm=await client.askPin('Nhập lại PIN mới',{validate:value=>value!==newPin?'PIN nhập lại không khớp. Vui lòng nhập lại.':''});
         if(newPin!==confirm)invalid('Hai lần nhập PIN mới không khớp.');
         await client.changePin(oldPin,newPin,dob);await client.verifyPin(newPin);
         // Thẻ mới chặn READ_DATA trước CHANGE_PIN. Chỉ khi đã VERIFY PIN mới

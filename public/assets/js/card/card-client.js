@@ -25,7 +25,8 @@
   // Mỗi trang dùng một đầu đọc: giữ khóa cả khi gọi server và gửi APDU.
   // Instance thứ hai không được thay challenge của lệnh đang chờ chữ ký.
   let queue = Promise.resolve();
-  function modalPin(title, owner) {
+  // validate (tuỳ chọn): trả về chuỗi lỗi để giữ modal mở và yêu cầu nhập lại ngay trong modal.
+  function modalPin(title, owner, validate) {
     if (pendingPin) return Promise.reject(fail('PIN_BUSY'));
     const document = root.document;
     const modal = document && document.querySelector('[card-pin-modal]');
@@ -58,6 +59,8 @@
       function submit(event) {
         event.preventDefault();
         if (!S.isPinFormat(input.value)) { status.textContent = 'Mã PIN phải gồm đúng 6 chữ số.'; input.value = ''; input.focus(); return; }
+        const problem = typeof validate === 'function' ? validate(input.value) : '';
+        if (problem) { status.textContent = String(problem); input.value = ''; input.focus(); return; }
         finish(null, input.value);
       }
       input.value = ''; status.textContent = ''; heading.textContent = title || 'Nhập mã PIN';
@@ -311,10 +314,10 @@
         const auth = exact(await cmd(S.INS.AUTHENTICATE, 0, 0, S.fromHex(result.nonce)), 132);
         return server(verifyUrl, { ...body, cardId: info.cardId, nonce: result.nonce, counter: u32(auth, 0), signature: S.toHex(auth.subarray(4)) });
       }),
-      askPin: title => {
+      askPin: (title, askOptions) => {
         const requestedGeneration = generation;
         try { ensureActive(requestedGeneration); } catch (error) { return Promise.reject(error); }
-        return options.askPin ? Promise.resolve().then(() => { ensureActive(requestedGeneration); return options.askPin(title); }).then(pin => { ensureActive(requestedGeneration); return pin; }) : modalPin(title, owner);
+        return options.askPin ? Promise.resolve().then(() => { ensureActive(requestedGeneration); return options.askPin(title, askOptions); }).then(pin => { ensureActive(requestedGeneration); return pin; }) : modalPin(title, owner, askOptions && askOptions.validate);
       },
       dispose: () => {
         if (disposed) return;

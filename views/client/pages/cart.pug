@@ -32,7 +32,7 @@ block main
               span(cart-discount) 0
               span đ
               if customer && tier.percent > 0
-                span.inner-tier  (Hạng #{tier.label} giảm #{tier.percent}%)
+                span.inner-tier.card-tier-note  (Hạng #{tier.label} giảm #{tier.percent}%)
           .inner-item
             .inner-label Thanh toán:
             .inner-price-highlight
@@ -61,8 +61,8 @@ block main
                   type="text"
                   value=customer ? customer.phone : ""
                   )
-            button(type="button" data-card-autofill data-card-id=card ? card.cardId : "") Điền từ thẻ
-            p(data-customer-status role="status" aria-live="polite")
+            button.card-btn.card-btn-outline.card-autofill(type="button" data-card-autofill data-card-id=card ? card.cardId : "") Điền từ thẻ
+            p.card-alert.card-alert-info(data-customer-status role="status" aria-live="polite")
             textarea(
               placeholder="Ghi chú" 
               name="note"
@@ -113,7 +113,7 @@ block main
                     name="method" 
                     type="radio"
                     )
-                  label(for="methodCard") Ví thẻ thành viên
+                  label(for="methodCard") #[i.fa-solid.fa-credit-card(aria-hidden="true")]  Ví thẻ thành viên
             .inner-info-bank
               .inner-title Thông tin chuyển khoản
               .inner-text Ngân hàng : Vietcombank
@@ -121,4 +121,4 @@ block main
               .inner-text STK: 0123456789
           .inner-button
             button(type="submit") ĐẶT TOUR
-  // End Section 12
+  // End Section 12

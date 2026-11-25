@@ -1,0 +1,3 @@
+mixin cardBadge(status, labels)
+  - const map = { active: 'badge-green', locked: 'badge-orange', revoked: 'badge-red', terminated: 'badge-red', issuing: 'badge-blue', pending: 'badge-grey', created: 'badge-grey' }
+  span.badge(class=map[status] || 'badge-grey')= (labels && labels[status]) || status

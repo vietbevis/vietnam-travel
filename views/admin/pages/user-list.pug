@@ -2,11 +2,18 @@ extends ../layouts/default.pug
 
 block main
   h1.box-title Quản lý khách hàng
-  form(method="GET" action=`/${pathAdmin}/user/list`)
-    label(for="customer-search") Tìm theo tên, email hoặc số điện thoại
-    input#customer-search(type="search" name="keyword" value=keyword maxlength="120")
-    button(type="submit") Tìm kiếm
-    a(href=`/${pathAdmin}/user/list`) Xóa bộ lọc
+  form.ca-filter(method="GET" action=`/${pathAdmin}/user/list`)
+    .ca-filter-title
+      i.fa-solid.fa-magnifying-glass
+      | Tìm kiếm
+    .ca-field(style="flex:3 1 320px")
+      label(for="customer-search") Tìm theo tên, email hoặc số điện thoại
+      input#customer-search(type="search" name="keyword" value=keyword maxlength="120" placeholder="Tên, email hoặc số điện thoại")
+    .ca-actions
+      button.ca-btn(type="submit") Tìm kiếm
+      a.ca-reset(href=`/${pathAdmin}/user/list`)
+        i.fa-solid.fa-rotate-left
+        | Xóa bộ lọc
   .section-6
     .table-2
       table
@@ -26,8 +33,12 @@ block main
                   img(src=customer.avatar alt="Ảnh khách hàng" class="inner-avatar")
               td= customer.email
               td= customer.phone || 'Chưa cung cấp'
-              td= customer.card ? ({issuing:'Đang phát hành',active:'Hoạt động',locked:'Đã khóa'}[customer.card.status] || customer.card.status) : 'Chưa có thẻ hiện hành'
+              td
+                if customer.card
+                  span.badge(class=({issuing:'badge-blue',active:'badge-green',locked:'badge-orange'})[customer.card.status]||'badge-grey')= ({issuing:'Đang phát hành',active:'Hoạt động',locked:'Đã khóa'}[customer.card.status] || customer.card.status)
+                else
+                  span.badge.badge-grey Chưa có thẻ hiện hành
           else
             tr
               td(colspan="5") Không có khách hàng phù hợp.
-  p Hiển thị tối đa 200 khách hàng. Dùng tìm kiếm để thu hẹp kết quả.
+  p.ca-note Hiển thị tối đa 200 khách hàng. Dùng tìm kiếm để thu hẹp kết quả.

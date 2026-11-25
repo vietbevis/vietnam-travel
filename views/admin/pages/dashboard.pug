@@ -34,7 +34,7 @@ block main
 
     //- Thống kê thẻ thành viên (A11)
     if cardStats
-      h2.inner-title Thẻ thành viên
+      h2.ca-dash-title Thẻ thành viên
       .section-1
         .inner-item
           .inner-icon
@@ -56,7 +56,7 @@ block main
             .inner-title Thẻ bị khoá / thu hồi
             .inner-number #{(cardStats.byStatus.locked + cardStats.byStatus.revoked).toLocaleString("vi-VN")}
       .section-3
-        h2.inner-title Tỉ lệ check-in (khởi hành trong ±7 ngày)
+        h2.ca-dash-title Tỉ lệ check-in (khởi hành trong ±7 ngày)
         .table-1
           table
             thead

@@ -1,16 +1,25 @@
 extends ../layouts/default
 block main
-  main.card-account
-    h1 Khóa thẻ bị mất
-    p Nhập email chủ thẻ để nhận mã OTP. Mã có hiệu lực 5 phút, tối đa 5 lần nhập. Khóa thẻ giữ nguyên số dư và các khoản đang chờ.
-    form(data-card-lock-send)
-      label(for="lock-send-email") Email chủ thẻ
-      input#lock-send-email(type="email" name="email" required maxlength="254" autocomplete="email")
-      button(type="submit") Gửi mã OTP
-    form(data-card-lock-confirm)
-      label(for="lock-confirm-email") Email chủ thẻ
-      input#lock-confirm-email(type="email" name="email" required maxlength="254" autocomplete="email")
-      label(for="lock-otp") Mã OTP gồm 6 chữ số
-      input#lock-otp(type="password" name="otp" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required autocomplete="off")
-      button(type="submit") Xác nhận khóa thẻ
-    p(data-customer-status role="status" aria-live="polite")
+  main.card-account.card-narrow
+    .container
+      .card-panel.card-focus
+        .card-focus-icon
+          i.fa-solid.fa-shield-halved(aria-hidden="true")
+        h1.card-page-title Khóa thẻ bị mất
+        p.card-hint Nhập email chủ thẻ để nhận mã OTP. Mã có hiệu lực 5 phút, tối đa 5 lần nhập. Khóa thẻ giữ nguyên số dư và các khoản đang chờ.
+        form.card-form(data-card-lock-send)
+          .card-step Bước 1
+          .card-field
+            label(for="lock-send-email") Email chủ thẻ
+            input#lock-send-email(type="email" name="email" required maxlength="254" autocomplete="email")
+          button.card-btn(type="submit") Gửi mã OTP
+        form.card-form(data-card-lock-confirm)
+          .card-step Bước 2
+          .card-field
+            label(for="lock-confirm-email") Email chủ thẻ
+            input#lock-confirm-email(type="email" name="email" required maxlength="254" autocomplete="email")
+          .card-field
+            label(for="lock-otp") Mã OTP gồm 6 chữ số
+            input#lock-otp(type="password" name="otp" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required autocomplete="off")
+          button.card-btn.card-btn-danger(type="submit") Xác nhận khóa thẻ
+        p.card-alert.card-alert-info(data-customer-status role="status" aria-live="polite")

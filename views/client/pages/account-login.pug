@@ -1,8 +1,13 @@
 extends ../layouts/default
 block main
-  main.card-account
-    h1 Đăng nhập bằng thẻ
-    p Mở Card Agent, cắm thẻ khách hàng rồi bấm đăng nhập. Thẻ mới phải đổi PIN trước khi sử dụng.
-    button(type="button" data-card-login) Đăng nhập bằng thẻ
-    p(data-customer-status role="status" aria-live="polite")
-    a(href="/account/card-lock") Mất thẻ? Khóa thẻ qua email
+  main.card-account.card-narrow
+    .container
+      .card-panel.card-focus
+        .card-focus-icon
+          i.fa-solid.fa-id-card(aria-hidden="true")
+        h1.card-page-title Đăng nhập bằng thẻ
+        p.card-hint Mở Card Agent, cắm thẻ khách hàng rồi bấm đăng nhập. Thẻ mới phải đổi PIN trước khi sử dụng.
+        button.card-btn.card-btn-block(type="button" data-card-login) Đăng nhập bằng thẻ
+        p.card-alert.card-alert-info(data-customer-status role="status" aria-live="polite")
+        p.card-lock-link
+          a(href="/account/card-lock") Mất thẻ? Khóa thẻ qua email

@@ -51,11 +51,15 @@ header.header
       // Cart
       .card-session
         if typeof customer !== 'undefined' && customer
-          span= customer.fullName
-          a(href="/account/card") Thẻ của tôi
-          button(type="button" data-card-logout) Đăng xuất
+          span.card-session-name= customer.fullName
+          a.card-session-link(href="/account/card")
+            i.fa-solid.fa-credit-card(aria-hidden="true")
+            |  Thẻ của tôi
+          button.card-session-logout(type="button" data-card-logout) Đăng xuất
         else
-          a(href="/account/login") Đăng nhập bằng thẻ
+          a.card-session-link(href="/account/login")
+            i.fa-solid.fa-credit-card(aria-hidden="true")
+            |  Đăng nhập bằng thẻ
       .inner-cart
         a(href="/cart")
           img(

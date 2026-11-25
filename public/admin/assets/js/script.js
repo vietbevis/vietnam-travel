@@ -1260,15 +1260,20 @@ const sider = document.querySelector(".sider");
 if (sider) {
   const pathNameCurrent = window.location.pathname;
   const splitPathNameCurrent = pathNameCurrent.split("/");
-  const menuList = sider.querySelectorAll("a");
-  menuList.forEach(item => {
-    const href = item.href;
-    const pathName = new URL(href).pathname;
-    const splitPathName = pathName.split("/");
-    if (splitPathNameCurrent[1] == splitPathName[1] && splitPathNameCurrent[2] == splitPathName[2]) {
-      item.classList.add("active");
-    }
-  })
+  const menuList = [...sider.querySelectorAll("a")];
+  // Cùng module (vd. /admin/card/...) có thể có nhiều mục menu: ưu tiên mục khớp đúng trang,
+  // nếu không (trang con như /card/detail/...) thì chọn mục ".../list" của module đó.
+  const sameModule = menuList.filter(item => {
+    const splitPathName = new URL(item.href).pathname.split("/");
+    return splitPathNameCurrent[1] == splitPathName[1] && splitPathNameCurrent[2] == splitPathName[2];
+  });
+  const segment3 = item => new URL(item.href).pathname.split("/")[3];
+  const activeItem = sameModule.length <= 1
+    ? sameModule[0]
+    : (sameModule.find(item => segment3(item) == splitPathNameCurrent[3])
+      || sameModule.find(item => segment3(item) == "list")
+      || sameModule[0]);
+  if (activeItem) activeItem.classList.add("active");
 }
 // End Sider
 

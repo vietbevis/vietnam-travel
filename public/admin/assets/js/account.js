@@ -30,8 +30,11 @@ if (loginForm) {
           pin = await client.askPin(info.mustChangePin ? 'Nhập PIN ban đầu của thẻ nhân viên' : 'Nhập PIN thẻ nhân viên');
           await client.verifyPin(pin);
           if (info.mustChangePin) {
-            newPin = await client.askPin('Đặt PIN mới (không dùng mã yếu hoặc ngày sinh)');
-            confirmation = await client.askPin('Nhập lại PIN mới');
+            // PIN yếu / nhập lại không khớp: giữ modal và yêu cầu nhập lại ngay trong modal.
+            const shared = window.CardShared;
+            newPin = await client.askPin('Đặt PIN mới (không dùng mã yếu hoặc ngày sinh)', { validate: value => shared && shared.isWeakPin(value) ? 'PIN quá yếu (không dùng 6 số giống nhau hoặc dãy số liên tiếp). Vui lòng nhập mã khác.' : '' });
+            const firstPin = newPin;
+            confirmation = await client.askPin('Nhập lại PIN mới', { validate: value => value !== firstPin ? 'PIN nhập lại không khớp. Vui lòng nhập lại.' : '' });
             if (newPin !== confirmation) throw new Error('PIN xác nhận không khớp. Hãy thử đăng nhập lại.');
             await client.changePin(pin, newPin);
             await client.verifyPin(newPin);
