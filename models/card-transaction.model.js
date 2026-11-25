@@ -30,8 +30,10 @@ const schema = new mongoose.Schema({
   // txRef của credit chưa ký mà giao dịch này thay thế (chuyển sang thẻ mới) hoặc hoàn tiền khi thu hồi.
   movedFrom: { type: String, match: /^[a-fA-F0-9]{16}$/, uppercase: true },
   // Đồng bộ phát hiện credit sẽ làm số dư chip vượt 50 000 000: giữ lại chờ đối soát thủ công (đã ghi nhật ký).
-  capHeldAt: Date
-}, { timestamps: true });
-schema.index({ txRef: 1 }, { unique: true });
-schema.index({ cashRequestId: 1 }, { unique: true, partialFilterExpression: { cashRequestId: { $type: 'string' } } });
-module.exports = mongoose.model('CardTransaction', schema, 'card-transactions');
+  capHeldAt:Date
+},{timestamps:true});
+schema.index({txRef:1},{unique:true});
+schema.index({cashRequestId:1},{unique:true,partialFilterExpression:{cashRequestId:{$type:'string'}}});
+// Mỗi đơn huỷ chỉ được hoàn về ví thẻ đúng một lần (double-click/retry không tạo khoản hoàn thứ hai).
+schema.index({orderId:1},{unique:true,partialFilterExpression:{type:'credit',source:'refund',orderId:{$type:'string'}}});
+module.exports=mongoose.model('CardTransaction',schema,'card-transactions');

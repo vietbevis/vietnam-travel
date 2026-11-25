@@ -20,6 +20,8 @@ const schema = new mongoose.Schema(
     items: [itemSchema],
     customerId: String,
     cardTxRef: { type: String, match: /^[a-fA-F0-9]{16}$/, uppercase: true },
+    // Credit hoàn tiền về ví thẻ khi admin huỷ đơn đã trừ ví (một lần duy nhất).
+    refundTxRef: { type: String, match: /^[a-fA-F0-9]{16}$/, uppercase: true },
     subTotal: Number,
     discount: {
       type: Number,

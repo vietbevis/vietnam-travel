@@ -14,6 +14,7 @@ const Op=require('../../models/card-operation.model');
 const Log=require('../../models/card-log.model');
 const Order=require('../../models/order.model');
 const Tx=require('../../models/card-transaction.model');
+const Tour=require('../../models/tour.model');
 const E=require('../../helpers/card-op.helper');
 const T=require('../../helpers/ticket.helper');
 const Sync=require('../../helpers/card-sync.helper');
@@ -29,7 +30,7 @@ before(async()=>{
   if(db.enabled){await db.connect();await Promise.all([Card,Customer,Account,Role,Op,Log,Order].map(model=>model.init()));}
   const app=express();app.set('view engine','pug');app.set('views',path.resolve('views'));app.locals.pathAdmin='admin';app.locals.messages={};app.use(express.json());app.use(cookies());
   // Kiểm cách order.controller huỷ đơn mà không cần toàn bộ middleware flash/permission của trang quản trị.
-  app.patch('/order-edit/:id',(req,res)=>{req.flash=()=>{};req.account={id:String(admin.id)};require('../../controllers/admin/order.controller').editPatch(req,res);});
+  app.patch('/order-edit/:id',(req,res)=>{req.flash=()=>{};req.account={id:String(admin.id)};req.permissions=['order-edit'];require('../../controllers/admin/order.controller').editPatch(req,res);});
   app.use('/admin',require('../../routes/admin/index.route'));app.use('/card-api',require('../../routes/client/card-api.route'));
   server=app.listen(0,'127.0.0.1');await new Promise(resolve=>server.once('listening',resolve));base='http://127.0.0.1:'+server.address().port;
 });
@@ -118,14 +119,18 @@ it('use-ticket confirm marks the item used with checkedInBy and a second check-i
   assert.ok(await Log.findOne({action:'checkin-use',result:'success',cardId:customerCard.cardId}));
 });
 it('admin cancel maps written to pending-delete and pending to none, idempotently, and sync then plans DELETE',async()=>{
-  const o=await order({},{ticketStatus:'written'});
-  await Order.updateOne({_id:o._id},{$push:{items:[{tourId,departureDate:soon(),quantityAdult:1,ticketStatus:'pending'},{tourId,departureDate:soon(),quantityAdult:1,ticketStatus:'used'}]}});
+  // Huỷ đơn hoàn kho theo tour; đơn chưa thanh toán (tiền mặt) nên không phát sinh hoàn tiền ví.
+  // Không dùng vé 'used': đơn có vé đã check-in bị chặn huỷ (xem order-card-refund.test.js).
+  await Tour.create({_id:tourId,name:'Tour vé',status:'active',deleted:false,stockAdult:5,stockChildren:5,stockBaby:5});
+  const o=await order({paymentMethod:'money',paymentStatus:'unpaid',status:'initial'},{ticketStatus:'written'});
+  await Order.updateOne({_id:o._id},{$push:{items:[{tourId,departureDate:soon(),quantityAdult:1,quantityChildren:0,quantityBaby:0,ticketStatus:'pending'},{tourId,departureDate:soon(),quantityAdult:1,quantityChildren:0,quantityBaby:0,ticketStatus:'deleted'}]}});
   const response=await fetch(base+'/order-edit/'+o._id,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({status:'cancel'})});
   assert.equal((await response.json()).code,'success');
-  assert.deepEqual((await Order.findById(o._id)).items.map(i=>i.ticketStatus),['pending-delete','none','used']);
+  assert.deepEqual((await Order.findById(o._id)).items.map(i=>i.ticketStatus),['pending-delete','none','deleted']);
+  assert.equal((await Tour.findById(tourId)).stockAdult,9);
   const logs=await Log.find({action:'ticket-order-cancel'});assert.equal(logs.length,1);assert.equal(logs[0].cardId,customerCard.cardId);assert.equal(logs[0].actorId,String(admin.id));
   await T.onOrderCancelled(o);await T.onOrderCancelled(await Order.findById(o._id));
-  assert.deepEqual((await Order.findById(o._id)).items.map(i=>i.ticketStatus),['pending-delete','none','used']);
+  assert.deepEqual((await Order.findById(o._id)).items.map(i=>i.ticketStatus),['pending-delete','none','deleted']);
   assert.equal(await Log.countDocuments({action:'ticket-order-cancel'}),1);
   const context=await Sync.loadSyncContext(await Card.findById(customerCard._id).lean());
   const step=Sync.planNextSync({card:(await Card.findById(customerCard._id).lean()),cardState:2,...context});

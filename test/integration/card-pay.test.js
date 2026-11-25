@@ -40,7 +40,7 @@ before(async()=> {
   app.use('/card-api',require('../../routes/client/card-api.route'));
   app.use('/order',require('../../middlewares/client/customer-auth.middleware').optional,require('../../routes/client/order.route'));
   // Sửa đơn quản trị (editPatch) không qua middleware flash/permission của trang admin.
-  app.patch('/order-edit/:id',(req,res)=>{req.flash=()=>{};req.account={id:'0123456789abcdef0123abcd'};require('../../controllers/admin/order.controller').editPatch(req,res);});
+  app.patch('/order-edit/:id',(req,res)=>{req.flash=()=>{};req.account={id:'0123456789abcdef0123abcd'};req.permissions=['order-edit'];require('../../controllers/admin/order.controller').editPatch(req,res);});
   server=app.listen(0,'127.0.0.1');
   await new Promise(r=>server.once('listening',r));
   base='http://127.0.0.1:'+server.address().port;

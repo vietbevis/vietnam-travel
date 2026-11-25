@@ -21,6 +21,47 @@
     }catch(error){if(error.message?.startsWith('Ảnh'))throw error;throw new Error('Ảnh không thể đọc; hãy chọn ảnh khác.');}
     finally{if(image?.close)image.close();}
   }
+  // Bảng thông báo tiếng Việt cho mọi errorCode server / card-client / card-shared có thể trả về.
+  const ERROR_MESSAGES={
+    PIN_CANCELLED:'Đã hủy nhập PIN; thao tác chưa được thực hiện.',PIN_BUSY:'Đang có hộp nhập PIN khác mở. Hãy hoàn tất hoặc đóng hộp đó rồi thử lại.',PIN_FORMAT:'PIN phải gồm đúng 6 chữ số.',PIN_MODAL_UNAVAILABLE:'Không mở được hộp nhập PIN. Hãy tải lại trang rồi thử lại.',
+    WEAK_PIN:'PIN quá yếu (không dùng 6 số giống nhau, dãy số liên tiếp hoặc ngày sinh DDMMYY). Vui lòng nhập mã khác.',INVALID_PIN:'PIN không hợp lệ. PIN phải gồm đúng 6 chữ số.',
+    AUTH_REQUIRED:'Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại.',CARD_AUTH_INVALID:'Không thể xác thực thẻ. Hãy kiểm tra thẻ trong đầu đọc và thử lại.',
+    OP_FORBIDDEN:'Bạn không có quyền thực hiện thao tác này, hoặc thẻ đang cắm không phải thẻ của tài khoản hiện tại.',OP_STATE:'Thao tác đã hết hạn hoặc đã thay đổi trạng thái. Hãy tải lại trang và thử lại.',OP_NOT_FOUND:'Không tìm thấy thao tác thẻ này (có thể đã hết hạn). Hãy bắt đầu lại.',
+    STEP_UP_REQUIRED:'Cần xác thực lại bằng thẻ nhân viên của tài khoản hiện tại.',
+    STAFF_CARD_REQUIRED:'Tài khoản của bạn chưa có thẻ nhân viên đang hoạt động. Hãy phát hành thẻ nhân viên cho tài khoản này (Phát hành thẻ → Nhân viên) rồi đăng nhập lại bằng thẻ.',
+    STAFF_CARD_CHANGED:'Phiên đăng nhập gắn với thẻ nhân viên khác thẻ đang hoạt động (có thể thẻ đã được thay). Hãy đăng xuất và đăng nhập lại bằng thẻ nhân viên mới.',
+    STAFF_CARD_MISMATCH:'Thẻ đang cắm không phải thẻ nhân viên của phiên đăng nhập này. Hãy cắm đúng thẻ đã dùng để đăng nhập, hoặc đăng nhập lại bằng thẻ này.',
+    RATE_LIMITED:'Bạn thao tác quá nhanh. Hãy đợi giây lát rồi thử lại.',
+    CARD_RELOGIN_REQUIRED:'Tài khoản đã được yêu cầu đăng nhập bằng thẻ nhân viên. Vui lòng đăng nhập lại bằng mật khẩu và thẻ.',
+    CARD_NOT_FOUND:'Không tìm thấy thẻ này trên hệ thống.',CARD_STATE:'Trạng thái thẻ hiện không cho phép thao tác này.',CURRENT_CARD:'Đây không phải thẻ hiện hành của chủ thẻ. Hãy dùng thẻ mới nhất.',OWNER_STATE:'Chủ thẻ hiện không ở trạng thái cho phép thao tác này.',
+    INVALID_INPUT:'Dữ liệu nhập không hợp lệ. Hãy kiểm tra lại các trường rồi thử lại.',INVALID_BODY:'Dữ liệu gửi lên không hợp lệ.',INVALID_AMOUNT:'Số tiền không hợp lệ.',INVALID_PHOTO:'Ảnh không hợp lệ. Hãy chọn ảnh khác.',PHOTO_UPLOAD:'Không tải được ảnh lên. Hãy chọn ảnh khác và thử lại.',PROFILE_TOO_LARGE:'Hồ sơ quá lớn để ghi vào thẻ. Hãy rút gọn thông tin.',INVALID_PROFILE:'Hồ sơ thẻ không hợp lệ.',INVALID_PROFILE_TLV:'Hồ sơ trên thẻ bị lỗi định dạng.',INVALID_REPLACEMENT:'Yêu cầu cấp lại thẻ không hợp lệ hoặc đã khác với yêu cầu trước đó.',INVALID_TARGET:'Vùng dữ liệu thẻ không hợp lệ.',INVALID_CARD_TYPE:'Loại thẻ không đúng. Hãy cắm đúng loại thẻ.',INVALID_OP_ID:'Mã thao tác không hợp lệ.',INVALID_INIT:'Dữ liệu khởi tạo thẻ không hợp lệ.',INVALID_PAYLOAD:'Dữ liệu thao tác không hợp lệ.',INVALID_AUTH_PURPOSE:'Mục đích xác thực không hợp lệ.',INVALID_ORDER_CODE:'Mã đơn hàng không hợp lệ.',INVALID_DEPARTURE_DATE:'Ngày khởi hành không hợp lệ.',INVALID_ESCROW_KEY:'Khóa ký quỹ không hợp lệ. Hãy liên hệ quản trị.',INVALID_SERVER_KEY:'Khóa máy chủ thẻ không hợp lệ. Hãy liên hệ quản trị.',CARD_SERVER_KEY_PATH_REQUIRED:'Máy chủ chưa cấu hình khóa thẻ. Hãy liên hệ quản trị.',
+    INVALID_APDU:'Lệnh gửi thẻ không hợp lệ.',INVALID_APDU_DATA:'Dữ liệu lệnh gửi thẻ không hợp lệ.',INVALID_APDU_HEADER:'Tiêu đề lệnh gửi thẻ không hợp lệ.',INVALID_BYTE:'Dữ liệu thẻ không hợp lệ.',INVALID_BYTES:'Dữ liệu thẻ không hợp lệ.',INVALID_HEX:'Dữ liệu thẻ không hợp lệ.',INVALID_HEX_LENGTH:'Độ dài dữ liệu thẻ không hợp lệ.',INVALID_RANDOM_LENGTH:'Độ dài dữ liệu ngẫu nhiên không hợp lệ.',INVALID_UINT32:'Dữ liệu thẻ không hợp lệ.',TARGET_LENGTH:'Độ dài dữ liệu thẻ không hợp lệ.',
+    TOPUP_LIMIT:'Khoản nạp vượt hạn mức cho phép (tối đa 20.000.000 VNĐ mỗi lần và mỗi nhân viên mỗi ngày; số dư thẻ tối đa 50.000.000 VNĐ).',
+    REQUEST_MISMATCH:'Yêu cầu trùng mã nhưng khác nội dung. Hãy tải lại trang và tạo yêu cầu mới.',REQUEST_TIMEOUT:'Yêu cầu quá thời gian. Hãy kiểm tra kết nối rồi thử lại; nếu đang thu tiền, hãy đối chiếu giao dịch, không thu lần nữa.',
+    ISSUE_CLOSED:'Yêu cầu phát hành đã đóng. Hãy bắt đầu phát hành mới.',ISSUE_EXPIRED:'Yêu cầu phát hành đã hết hạn. Hãy bắt đầu phát hành mới.',ISSUE_INCOMPLETE:'Phát hành chưa hoàn tất. Hãy kiểm tra trạng thái thẻ trước khi thử lại.',ISSUE_PREPARING:'Yêu cầu phát hành đang được chuẩn bị. Vui lòng đợi giây lát rồi thử lại.',ISSUE_STARTED:'Yêu cầu phát hành đã bắt đầu ghi thẻ. Hãy kiểm tra trạng thái thẻ trước khi thử lại.',
+    REPLACEMENT_DEFERRED:'Việc cấp lại thẻ đang chờ xử lý. Hãy hoàn tất từ thẻ nguồn.',REFUND_REQUIRED:'Thẻ còn số dư; cần xác nhận đã hoàn tiền cho khách trước khi thu hồi.',RECONCILIATION_REQUIRED:'Cần đối soát giao dịch trước khi tiếp tục. Không thu tiền lại.',SYNC_LOOP:'Đồng bộ thẻ lặp quá nhiều lần. Hãy rút thẻ, cắm lại và thử lại.',
+    CHECKIN:'Không thể check-in cho vé này.',CHECKIN_WINDOW:'Chưa đến hoặc đã quá thời gian check-in của tour này.',ITEM_NOT_FOUND:'Không tìm thấy vé trong đơn hàng.',ORDER_STATE:'Trạng thái đơn hàng không cho phép thao tác này.',TICKET_GONE:'Vé không còn hiệu lực.',TICKET_NOT_WRITTEN:'Vé chưa được ghi lên thẻ. Hãy để khách đăng nhập để đồng bộ trước.',TICKET_USED:'Vé đã được sử dụng.',
+    AGENT_HTTP:'Card Agent chưa sẵn sàng hoặc khe đọc không có thẻ.',AGENT_RESPONSE:'Card Agent trả về dữ liệu không hợp lệ. Hãy kiểm tra Card Agent.',AGENT_URL:'Địa chỉ Card Agent không hợp lệ.',CARD_RESPONSE:'Không đọc được thẻ. Hãy kiểm tra thẻ trong khe đọc.',
+    SERVER_HTTP:'Máy chủ từ chối yêu cầu. Hãy thử lại sau.',SERVER_REJECTED:'Máy chủ từ chối thao tác thẻ. Hãy thử lại hoặc liên hệ quản trị.',SERVER_RESPONSE:'Máy chủ trả về dữ liệu không hợp lệ. Hãy thử lại sau.',SERVER_UNAVAILABLE:'Không kết nối được máy chủ. Hãy kiểm tra mạng và thử lại.',SERVER_URL:'Địa chỉ máy chủ không hợp lệ.',
+    CLIENT_STALE:'Trang đã thay đổi. Hãy tải lại trang và thử lại.',CLIENT_SUSPENDED:'Trang đã tạm dừng. Hãy tải lại trang và thử lại.',CLIENT_DISPOSED:'Trang đã đóng. Hãy tải lại trang và thử lại.',INTERNAL:'Máy chủ gặp lỗi nội bộ. Hãy thử lại sau.'
+  };
+  const GENERIC_ERROR='Không thể hoàn tất thao tác thẻ. Hãy kiểm tra Card Agent, thẻ trong đầu đọc rồi thử lại.';
+  const VIET=/[À-ỹ]/;
+  // Luôn trả về thông báo tiếng Việt; không bao giờ trả mã lỗi thô.
+  function errorMessage(error,fallback){
+    if(error==null)return fallback||GENERIC_ERROR;
+    if(error.sw)return S.swMessage(error.sw);
+    const code=typeof error.code==='string'?error.code:'',text=typeof error.message==='string'?error.message:'';
+    // Thông báo tiếng Việt đã có (từ server hoặc client) thì giữ nguyên.
+    if(text&&text!==code&&VIET.test(text))return text;
+    if(code&&ERROR_MESSAGES[code])return ERROR_MESSAGES[code];
+    if(text&&ERROR_MESSAGES[text])return ERROR_MESSAGES[text];
+    if(error.name==='AbortError')return 'Yêu cầu đã bị hủy hoặc quá thời gian. Hãy kiểm tra kết nối rồi thử lại.';
+    if(error instanceof TypeError)return 'Không thể kết nối. Hãy kiểm tra mạng và Card Agent rồi thử lại.';
+    const raw=code||(/^[A-Z][A-Z0-9_]{2,}$/.test(text)?text:'');
+    if(raw)return (fallback||GENERIC_ERROR)+' ('+raw+')';
+    return text&&VIET.test(text)?text:(fallback||GENERIC_ERROR);
+  }
   function base64(bytes){let value='';for(const byte of bytes)value+=String.fromCharCode(byte);return root.btoa(value);}
   async function issueFlow(formData,options={}){
     const client=options.client||root.cardClient;
@@ -35,7 +76,7 @@
       try{
         const response=await fetcher(base+path,{method:'POST',credentials:'same-origin',redirect:'error',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:controller.signal});
         const json=await response.json();
-        if(!response.ok||json.code!=='success'){const error=new Error(json.message||'Yêu cầu phát hành bị từ chối.');error.status=response.status;throw error;}
+        if(!response.ok||json.code!=='success'){const error=new Error(json.message||'Yêu cầu phát hành bị từ chối.');error.status=response.status;if(typeof json.errorCode==='string')error.code=json.errorCode;throw error;}
         return json;
       }finally{clearTimeout(timeout);signal?.removeEventListener('abort',abort);controller.abort();}
     }
@@ -59,13 +100,13 @@
       let finished;
       try{finished=await post('/issue/finish',{cardId:prepared.cardId});}
       catch(error){if(error.status)throw error;finished=await post('/issue/finish',{cardId:prepared.cardId});}
-      return {cardId:prepared.cardId,initialPin:prepared.initialPin,emailStatus:finished.emailStatus};
+      return {cardId:prepared.cardId,initialPin:prepared.initialPin,emailStatus:finished.emailStatus,reloginRequired:finished.reloginRequired===true};
     }catch(error){
       if(prepareSent){
         let cancelled;
         try{cancelled=await post('/issue/cancel',{requestId},true);}
         catch{const pending=new Error(finishStarted?'Chưa xác nhận được kết quả phát hành. Hãy kiểm tra trạng thái thẻ trước khi thử lại; yêu cầu hủy chưa được xác nhận.':'Phát hành bị gián đoạn; chưa xác nhận được việc hủy trên server. Hãy thử lại để đối chiếu yêu cầu trước khi bắt đầu phát hành mới.');pending.pendingRequestId=requestId;throw pending;}
-        const failure=new Error(!prepared?(error.status?error.message:'Đã hủy yêu cầu chuẩn bị chưa rõ kết quả; thẻ chưa được gửi INIT. Có thể thử lại với cùng khách hàng.'):finishStarted?'Chưa xác nhận được phát hành; server đã hủy bản ghi đang phát hành. Hãy kiểm tra thẻ và reset thẻ ảo hoặc cài lại applet trước khi thử lại.':'Phát hành chưa hoàn tất và đã hủy trên server. Hãy cài lại applet trên thẻ thật hoặc reset thẻ ảo trước khi thử lại.');
+        const failure=new Error(!prepared?(error.status?errorMessage(error):'Đã hủy yêu cầu chuẩn bị chưa rõ kết quả; thẻ chưa được gửi INIT. Có thể thử lại với cùng khách hàng.'):finishStarted?'Chưa xác nhận được phát hành; server đã hủy bản ghi đang phát hành. Hãy kiểm tra thẻ và reset thẻ ảo hoặc cài lại applet trước khi thử lại.':'Phát hành chưa hoàn tất và đã hủy trên server. Hãy cài lại applet trên thẻ thật hoặc reset thẻ ảo trước khi thử lại.');
         failure.recoveryCustomerId=cancelled.customerId;throw failure;
       }
       throw error;
@@ -123,7 +164,7 @@
         if(result.code==='step-up-required'){
           const error=new Error('Cần xác thực lại thẻ nhân viên.');error.code='STEP_UP_REQUIRED';error.status=response.status;throw error;
         }
-        if(!response.ok||result.code!=='success'){const error=new Error(result.message||'Yêu cầu thẻ bị từ chối.');error.status=response.status;throw error;}
+        if(!response.ok||result.code!=='success'){const error=new Error(result.message||'Yêu cầu thẻ bị từ chối.');error.status=response.status;if(typeof result.errorCode==='string')error.code=result.errorCode;throw error;}
         return result;
       })(),new Promise((resolve,reject)=>{timeout=setTimeout(()=>{abort();reject(new Error('Hết thời gian chờ; hãy đối chiếu cùng yêu cầu, không thu tiền lần nữa.'));},15000);})]);
     }finally{clearTimeout(timeout);signal?.removeEventListener('abort',abort);controller.abort();}
@@ -156,7 +197,7 @@
     for(const [key,target,id,data]of [['profile',1,prepared.profileOpId,prepared.profileHex&&S.fromHex(prepared.profileHex)],['photo',2,prepared.photoOpId,bytes]]){
       if(!id)continue;
       try{await client.writeTarget(target,data);const confirmed=await client.runSignedOp({opId:id,signUrl:base+'/op/sign',confirmUrl:base+'/op/confirm'});result[key]=confirmed.ok?'done':'failed';}
-      catch(error){result[key]='unknown';result[key+'Message']=error.message;}
+      catch(error){result[key]='unknown';result[key+'Message']=errorMessage(error);}
     }
     return result;
   }
@@ -177,7 +218,7 @@
         profile.querySelector('[data-card-profile-reload]').hidden=false;
         // Không gửi lại form chứa dữ liệu trước khi biết kết quả từng operation.
         profile.querySelector('button[type="submit"]').dataset.finished='true';
-      }catch(error){message.textContent=error.message;}
+      }catch(error){message.textContent=errorMessage(error);}
       finally{setBusy(false);if(profile.querySelector('button[type="submit"]').dataset.finished)profile.querySelector('button[type="submit"]').disabled=true;}
     });
     profile?.querySelector('[data-card-profile-reload]').addEventListener('click',()=>root.location.reload());
@@ -185,7 +226,7 @@
       event.preventDefault();if(busy||!replace.reportValidity()||!root.confirm('Cấp lại sẽ thu hồi vĩnh viễn thẻ cũ. Số dư được giữ đến khi thẻ mới hoàn tất. Tiếp tục?'))return;
       setBusy(true);aborter=new AbortController();const message=document.querySelector('[data-card-replace-message]');
       try{const result=await replaceFlow({cardId:replace.dataset.cardId,reason:replace.elements.replacementReason.value.trim()},{base:replace.dataset.cardBase,signal:aborter.signal,onStepUp:()=>{if(!root.confirm('Cắm thẻ nhân viên của tài khoản hiện tại rồi bấm OK để xác thực cấp lại.'))throw new Error('Đã hủy xác thực.');}});root.location.assign(result.redirect);}
-      catch(error){message.textContent=error.message+' Nếu mất phản hồi, tải lại trang để tiếp tục từ thẻ nguồn; không hoàn tiền thủ công.';}
+      catch(error){message.textContent=errorMessage(error)+' Nếu mất phản hồi, tải lại trang để tiếp tục từ thẻ nguồn; không hoàn tiền thủ công.';}
       finally{setBusy(false);}
     });
   }
@@ -242,7 +283,7 @@
           message.textContent=result.emailStatus==='failed'?'Đã reset PIN. Gửi email thất bại; PIN mới chỉ hiện một lần. Khách cần đổi PIN trước khi sử dụng.':result.emailStatus==='not-applicable'?'Đã reset PIN. Chủ thẻ chưa có email; PIN mới chỉ hiện một lần.':'Đã reset PIN và gửi email. PIN mới chỉ hiện một lần; khách cần đổi PIN.';
           pin.textContent=result.newPin;dialog.showModal();
         }finally{result.newPin='';}
-      }catch(error){if(!aborter.signal.aborted)message.textContent=error.message+(resetUncertain?' Kết quả reset cần kiểm tra; không tự gửi lệnh reset lần nữa.':'');}
+      }catch(error){if(!aborter.signal.aborted)message.textContent=errorMessage(error)+(resetUncertain?' Kết quả reset cần kiểm tra; không tự gửi lệnh reset lần nữa.':'');}
       finally{setBusy(false);}
     });
     async function cashRun(){
@@ -253,7 +294,7 @@
         completed=result.status==='done';
         message.textContent=completed?`Giao dịch ${result.txRef} đã hoàn tất. Chỉ bắt đầu khoản nạp mới khi nhận một khoản tiền khác.`:`Giao dịch ${result.txRef}: ${result.status}. Chưa xác nhận nạp xong; giữ nguyên yêu cầu và đồng bộ/đối soát, không thu tiền lại.`;
         recover.hidden=completed;newPayment.hidden=!completed;
-      }catch(error){if(error.txRef)intent.txRef=error.txRef;if(!aborter.signal.aborted)message.textContent=error.message+(intent.txRef?` Giao dịch ${intent.txRef} cần đối soát; không thu tiền lại.`:' Giữ nguyên yêu cầu để đối chiếu; chưa xác nhận đã tạo khoản nạp.');recover.hidden=false;}
+      }catch(error){if(error.txRef)intent.txRef=error.txRef;if(!aborter.signal.aborted)message.textContent=errorMessage(error)+(intent.txRef?` Giao dịch ${intent.txRef} cần đối soát; không thu tiền lại.`:' Giữ nguyên yêu cầu để đối chiếu; chưa xác nhận đã tạo khoản nạp.');recover.hidden=false;}
       finally{setBusy(false);}
     }
     cashForm?.addEventListener('submit',event=>{
@@ -283,7 +324,7 @@
         document.querySelector('[data-card-current-status]').className='badge '+({active:'badge-green',locked:'badge-orange',revoked:'badge-red'})[result.status];document.querySelector('[data-card-current-status]').textContent=({active:'Đang hoạt động',locked:'Đã khóa',revoked:'Đã thu hồi'})[result.status]||result.status;
         message.textContent=result.message+' Nếu vừa xác thực lại, hãy cắm thẻ đang xem trước khi bấm Đồng bộ ngay.';
         for(const button of form.querySelectorAll('button[name="action"]'))button.hidden=result.status==='revoked'||button.value==='lock'&&result.status!=='active'||button.value==='unlock'&&result.status!=='locked';
-      }catch(error){if(!aborter.signal.aborted)message.textContent=error.code==='PIN_CANCELLED'?'Đã hủy xác thực; trạng thái chưa được gửi lại.':error.message||'Không thể cập nhật trạng thái thẻ.';}
+      }catch(error){if(!aborter.signal.aborted)message.textContent=error.code==='PIN_CANCELLED'?'Đã hủy xác thực; trạng thái chưa được gửi lại.':errorMessage(error,'Không thể cập nhật trạng thái thẻ.');}
       finally{setBusy(false);}
     });
     if(sync)sync.addEventListener('click',async()=>{
@@ -291,7 +332,7 @@
       try{
         const info=await root.cardClient.openSession({expectedCardId:form.dataset.cardId});
         message.textContent=info.state===S.STATE.TERMINATED?'Thẻ đã bị thu hồi. Đã đồng bộ trạng thái 7F.':info.state===S.STATE.LOCKED?'Đã đồng bộ trạng thái khóa (03).':info.state===S.STATE.ACTIVE?'Đã đồng bộ trạng thái hoạt động (02).':'Thẻ chưa được phát hành hoàn tất; chưa thể đồng bộ trạng thái.';
-      }catch(error){message.textContent=error.message||'Không thể đồng bộ thẻ. Hãy kiểm tra Card Agent.';}finally{setBusy(false);}
+      }catch(error){message.textContent=errorMessage(error,'Không thể đồng bộ thẻ. Hãy kiểm tra Card Agent.');}finally{setBusy(false);}
     });
   }
   // Check-in: quét thẻ khách (PIN do khách nhập), đọc ảnh/hồ sơ/vé, tra cứu vé theo tour trên server.
@@ -314,7 +355,7 @@
     const prepared=await operationPost('/checkin/use',{cardId:intent.cardId,orderId:intent.orderId,itemIndex:intent.itemIndex},options);
     options.onPrepared?.(prepared.opId);
     const confirmed=await client.runSignedOp({opId:prepared.opId,signUrl:base+'/op/sign',confirmUrl:base+'/op/confirm'});
-    if(!confirmed.ok)throw new Error(confirmed.message||'Thẻ không xác nhận check-in; hãy kiểm tra lại vé.');
+    if(!confirmed.ok)throw new Error(errorMessage({message:confirmed.message},'Thẻ không xác nhận check-in; hãy kiểm tra lại vé.'));
     return confirmed;
   }
   function bindCheckin(){
@@ -337,7 +378,7 @@
         const ready=current.items.find(item=>item.ticketStatus==='written'&&item.onCard);
         current.ready=ready||null;confirmButton.hidden=!ready;result.hidden=false;
         message.textContent=notice+(ready?'Kiểm tra ảnh và thông tin rồi xác nhận check-in.':current.items.some(item=>item.ticketStatus==='used')?'Vé đã sử dụng.':'Không có vé sẵn sàng; nếu vé chờ ghi, hãy để khách đăng nhập bằng thẻ để đồng bộ trước.');
-      }catch(error){message.textContent=error.message||'Không thể đọc thẻ.';}
+      }catch(error){message.textContent=errorMessage(error,'Không thể đọc thẻ.');}
       finally{busy=false;scan.disabled=false;}
     });
     confirmButton.addEventListener('click',async()=>{
@@ -346,7 +387,7 @@
         await checkinUse({cardId:current.cardId,orderId:current.ready.orderId,itemIndex:current.ready.itemIndex},options());
         message.textContent='Đã check-in thành công.';confirmButton.hidden=true;
         root.setTimeout(()=>root.location.reload(),1200);
-      }catch(error){message.textContent=error.message||'Không thể check-in.';}
+      }catch(error){message.textContent=errorMessage(error,'Không thể check-in.');}
       finally{busy=false;confirmButton.disabled=false;}
     });
   }
@@ -388,8 +429,12 @@
         else{body.customer={};for(const key of ['fullName','email','phone','dob','gender','idNumber','emergencyName','emergencyPhone','bloodType','allergies'])if(form.elements[key].value)body.customer[key]=form.elements[key].value;}
         const result=await issueFlow(body,{base:form.dataset.cardBase,signal:aborter.signal});
         status.textContent=result.emailStatus==='failed'?'Thẻ đã hoạt động. Gửi email chưa thành công; PIN chỉ hiển thị một lần bên dưới.':'Thẻ đã hoạt động. PIN ban đầu chỉ hiển thị một lần; hãy đổi PIN khi đăng nhập.';
+        if(result.reloginRequired){
+          status.textContent+=' Thẻ nhân viên của chính bạn đã được kích hoạt: sau khi đóng hộp PIN, bạn sẽ được đăng xuất để đăng nhập lại bằng mật khẩu và thẻ.';
+          pinDialog.addEventListener('close',()=>{const base=String(form.dataset.cardBase||'/admin/card').replace(/\/card$/,'');root.fetch(base+'/account/logout',{method:'POST',credentials:'same-origin',cache:'no-store'}).catch(()=>{}).finally(()=>{root.location.href=base+'/account/login?notice=card-required';});},{once:true});
+        }
         if(!aborter.signal.aborted){pin.textContent=result.initialPin;pinDialog.showModal();}result.initialPin='';
-      }catch(error){if(error.pendingRequestId)pendingRequestId=error.pendingRequestId;recoverCustomer(error.recoveryCustomerId);status.textContent=error.message||'Không thể phát hành thẻ.';}
+      }catch(error){if(error.pendingRequestId)pendingRequestId=error.pendingRequestId;recoverCustomer(error.recoveryCustomerId);status.textContent=errorMessage(error,'Không thể phát hành thẻ.');}
       finally{busy=false;form.querySelector('button[type="submit"]').disabled=false;}
     });
     root.cardClient.status().then(info=>{reset.hidden=info?.mode!=='sim';});
@@ -401,5 +446,5 @@
       }catch{status.textContent='Chưa xác nhận được reset thẻ ảo. Hãy kiểm tra Card Agent.';}
     });
   }
-  return {checkinScan,checkinUse,preparePhoto,issueFlow,resetSim,statusFlow,resetPinFlow,cashTopupFlow,profileFlow,replaceFlow,bind};
+  return {errorMessage,ERROR_MESSAGES,checkinScan,checkinUse,preparePhoto,issueFlow,resetSim,statusFlow,resetPinFlow,cashTopupFlow,profileFlow,replaceFlow,bind};
 }));

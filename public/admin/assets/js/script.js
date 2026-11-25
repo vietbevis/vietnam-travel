@@ -642,7 +642,7 @@ if (orderEditForm) {
         errorMessage: 'Số điện thoại không đúng định dạng!'
       },
     ])
-    .onSuccess((event) => {
+    .onSuccess(async (event) => {
       const id = event.target.id.value;
       const fullName = event.target.fullName.value;
       const phone = event.target.phone.value;
@@ -650,6 +650,25 @@ if (orderEditForm) {
       const paymentMethod = event.target.paymentMethod.value;
       const paymentStatus = event.target.paymentStatus.value;
       const status = event.target.status.value;
+
+      // Đơn đã trừ ví thẻ: huỷ đơn sẽ hoàn tiền về ví, cần admin xác nhận số tiền.
+      const refundAmount = Number(orderEditForm.dataset.cardRefund);
+      if (status === "cancel" && Number.isSafeInteger(refundAmount) && refundAmount > 0) {
+        const message = `Huỷ đơn này sẽ hoàn ${refundAmount.toLocaleString("vi-VN")} đ vào ví thẻ của khách. Tiền sẽ được ghi lên thẻ ở lần cắm thẻ tiếp theo. Tiếp tục huỷ đơn?`;
+        const confirmed = window.Swal
+          ? (await Swal.fire({
+            title: "Huỷ đơn và hoàn tiền ví thẻ",
+            text: message,
+            icon: "warning",
+            showCancelButton: true,
+            confirmButtonText: "Huỷ đơn và hoàn tiền",
+            cancelButtonText: "Không",
+            focusCancel: true,
+            heightAuto: false
+          })).isConfirmed
+          : window.confirm(message);
+        if (!confirmed) return;
+      }
 
       const dataFinal = {
         fullName: fullName,
@@ -668,15 +687,20 @@ if (orderEditForm) {
         body: JSON.stringify(dataFinal),
       })
         .then(res => res.json())
-        .then(data => {
+        .then(async data => {
           if (data.code == "error") {
             showTravelNotice(data.message, "error");
           }
 
           if (data.code == "success") {
+            // Hoàn tiền ví thẻ: hiện rõ số tiền đã hoàn trước khi tải lại trang.
+            if (data.refund && data.message) {
+              await showTravelNotice(data.message, "success");
+            }
             window.location.reload();
           }
         })
+        .catch(() => showTravelNotice("Không thể cập nhật đơn hàng. Vui lòng thử lại!", "error"));
     })
     ;
 }

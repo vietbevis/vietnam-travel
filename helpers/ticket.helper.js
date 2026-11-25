@@ -38,7 +38,8 @@ function statusOnCancel(ticketStatus,item) {
 }
 // Áp statusOnCancel cho mọi item bằng một update pipeline trên đúng một document (nguyên tử, không cần
 // transaction và vẫn chạy được với đơn legacy). Idempotent: lần gọi lại không còn gì để đổi, không ghi log.
-async function onOrderCancelled(order,actorId) {
+// Truyền session khi huỷ đơn cùng transaction với hoàn kho/hoàn tiền: vé và nhật ký commit hoặc rollback cùng nhau.
+async function onOrderCancelled(order,actorId,session) {
   const orderId=order?._id??order?.id;
   if(!orderId)
     return;
@@ -52,14 +53,14 @@ async function onOrderCancelled(order,actorId) {
         '$$item'
       ]}
     ]}}}}
-  }],{new:false}).lean();
+  }],{new:false,...(session?{session}:{})}).lean();
   if(!before)
     return;
   const changes=before.items.map((item,itemIndex)=>({itemIndex,from:item.ticketStatus,to:statusOnCancel(item.ticketStatus,item)})).filter(c=>c.from!==c.to);
   if(!changes.length)
     return;
-  const card=before.customerId?await Card.findOne({ownerId:before.customerId,cardType:'customer',isCurrent:true}).select('cardId').lean():null;
-  await cardLog.write({action:'ticket-order-cancel',cardId:card?.cardId,actorType:'admin',actorId,result:'success',detail:{orderCode:before.orderCode,changes}});
+  const card=before.customerId?await Card.findOne({ownerId:before.customerId,cardType:'customer',isCurrent:true}).select('cardId').session(session||null).lean():null;
+  await cardLog.write({action:'ticket-order-cancel',cardId:card?.cardId,actorType:'admin',actorId,result:'success',detail:{orderCode:before.orderCode,changes}},session?{session}:{});
 }
 async function loadItem(card,params,type,session) {
   if(!id(params.orderId)||!Number.isSafeInteger(params.itemIndex)||params.itemIndex<0)

@@ -2,6 +2,8 @@ const crypto=require('node:crypto');
 const mongoose=require('mongoose');
 const jwt=require('jsonwebtoken');
 const adminToken=require('../../helpers/admin-token.helper');
+const authMiddleware=require('../../middlewares/admin/auth.middleware');
+const isPageRequest=req=>req.method==='GET'&&!req.xhr&&req.accepts(['html','json'])==='html';
 const cardAuth=require('../../helpers/card-auth.helper');
 const Card=require('../../models/card.model');
 const Customer=require('../../models/customer.model');
@@ -25,6 +27,7 @@ const walletRules=require('../../helpers/wallet-rule.helper');
 const objectId=value=>typeof value==='string'&&/^[a-fA-F0-9]{24}$/.test(value);
 function fail(code,status=409,message='Yêu cầu phát hành thẻ không hợp lệ hoặc đã kết thúc.'){const error=new Error(message);Object.assign(error,{code,status});throw error;}
 function problem(res,error){if(error.code==='STEP_UP_REQUIRED')return res.status(403).json({code:'step-up-required',message:'Hãy xác thực lại thẻ nhân viên trước khi cấp lại thẻ.'});return res.status(error.status||500).json({code:'error',errorCode:error.code||'INTERNAL',message:error.status?error.message:'Không thể xử lý yêu cầu thẻ.'});}
+const CASH_AMOUNT_MESSAGE='Số tiền nạp tiền mặt phải là số nguyên từ 10.000 đến 20.000.000 VNĐ mỗi lần.';
 module.exports.authenticate=async(req,res,next)=>{
   res.set('Cache-Control','no-store');
   try{
@@ -34,13 +37,16 @@ module.exports.authenticate=async(req,res,next)=>{
     let decoded;try{decoded=jwt.verify(req.cookies.token,process.env.JWT_SECRET,{algorithms:['HS256']});}catch{fail('AUTH_REQUIRED',401);}
     if(decoded.stage!==undefined||!objectId(decoded.id)||typeof decoded.email!=='string')fail('AUTH_REQUIRED',401);
     const ctx=await adminToken.resolve(decoded);
-    if(!ctx)fail('OP_FORBIDDEN',403);
+    if(!ctx){
+      if(await authMiddleware.needsCardRelogin(decoded)){res.clearCookie('token');if(isPageRequest(req))return res.redirect('/'+req.app.locals.pathAdmin+'/account/login?notice=card-required');fail('CARD_RELOGIN_REQUIRED',403,authMiddleware.CARD_RELOGIN_MESSAGE);}
+      fail('OP_FORBIDDEN',403);
+    }
     adminToken.attach(req,ctx);
     const account=ctx.account,role=ctx.role;
     req.cardActor={id:decoded.id,permissions:role.permissions||[]};next();
   }catch(error){problem(res,error);}
 };
-function endpoint(schema,fn){return async(req,res)=>{try{if(!req.cardActor?.permissions.includes('card-issue'))fail('OP_FORBIDDEN',403);const {error,value}=V.schemas[schema].validate(req.body,{convert:false});if(error)fail('INVALID_INPUT',400);await fn(req,res,value);}catch(error){if(error.code===11000)return problem(res,{status:409,code:'CURRENT_CARD',message:'Người này đã có thẻ đang hoạt động'});problem(res,error);}};}
+function endpoint(schema,fn){return async(req,res)=>{try{if(!req.cardActor?.permissions.includes('card-issue'))fail('OP_FORBIDDEN',403);const {error,value}=V.schemas[schema].validate(req.body,{convert:false});if(error)fail('INVALID_INPUT',400,schema==='cash'&&error.details?.some(d=>d.path?.[0]==='amount')?CASH_AMOUNT_MESSAGE:undefined);await fn(req,res,value);}catch(error){if(error.code===11000)return problem(res,{status:409,code:'CURRENT_CARD',message:'Người này đã có thẻ đang hoạt động'});problem(res,error);}};}
 async function transaction(fn){const session=await mongoose.startSession();let result;try{await session.withTransaction(async()=>{result=await fn(session);});return result;}finally{await session.endSession();}}
 function pinKey(cardId){return crypto.createHmac('sha256',C.deriveEscrowKey(cardId)).update('travel-card-issuance-v1').digest();}
 function encryptPin(cardId,pin){const iv=crypto.randomBytes(12),cipher=crypto.createCipheriv('aes-256-gcm',pinKey(cardId),iv);cipher.setAAD(Buffer.from(cardId));const encrypted=Buffer.concat([cipher.update(pin,'ascii'),cipher.final()]);return Buffer.concat([iv,cipher.getAuthTag(),encrypted]).toString('hex');}
@@ -257,7 +263,7 @@ module.exports.issueFinish=endpoint('card',async(req,res,body)=>{
     if(meta.requestId){const claimed=await Request.updateOne({requestId:meta.requestId,actorId:req.cardActor.id,cardId:card.cardId,state:'ready'},{$set:{state:'finished'},$inc:{__v:1}},{session});if(claimed.modifiedCount!==1)fail('CARD_STATE');}
     if(card.cardType==='staff'){const staff=await Account.updateOne({_id:owner._id,status:'active',deleted:false},{$set:{cardRequired:true}},{session});if(staff.matchedCount!==1)fail('OWNER_STATE');}
     await Log.create([{action:'issue',cardId:card.cardId,actorType:'admin',actorId:req.cardActor.id,result:'success'}],{session});
-    return {alreadyFinished:false};
+    return {alreadyFinished:false,...(card.cardType==='staff'&&String(owner._id)===req.cardActor.id&&!adminToken.context(req)?.decoded.cardId?{reloginRequired:true}:{})};
   });
   if(notification){try{const outcome=await mail.sendMail(notification.email,'Thẻ thành viên của bạn',`PIN ban đầu: <strong>${notification.pin}</strong>. Hãy đổi PIN ngay khi đăng nhập lần đầu và không chia sẻ mã PIN.`);result.emailStatus=outcome?.sent===false?'failed':'sent';}catch{result.emailStatus='failed';}finally{notification.pin='';}}
   res.json({code:'success',...result});
@@ -283,13 +289,16 @@ async function forward(handler,req,res){
 module.exports.opSign=(req,res)=>forward(api.sign,req,res);
 module.exports.opConfirm=(req,res)=>forward(api.confirm,req,res);
 
+const STAFF_CARD_REQUIRED_MESSAGE='Tài khoản của bạn chưa có thẻ nhân viên đang hoạt động. Hãy phát hành thẻ nhân viên cho tài khoản này (Phát hành thẻ → Nhân viên) rồi đăng nhập lại bằng thẻ.';
+const STAFF_CARD_CHANGED_MESSAGE='Phiên đăng nhập gắn với thẻ nhân viên cũ, không phải thẻ nhân viên đang hoạt động (có thể thẻ đã được thay). Hãy đăng xuất và đăng nhập lại bằng thẻ nhân viên mới.';
+const STAFF_CARD_MISMATCH_MESSAGE='Thẻ đang cắm không phải thẻ nhân viên của phiên đăng nhập này. Hãy cắm đúng thẻ đã dùng để đăng nhập, hoặc đăng nhập lại bằng thẻ này.';
 module.exports.stepUpChallenge=async(req,res)=>{
-  try{const ctx=adminToken.context(req);if(!ctx)fail('AUTH_REQUIRED',401);if(!await Card.exists({ownerId:ctx.account.id,cardType:'staff',status:'active',isCurrent:true,...(ctx.decoded.cardId?{cardId:ctx.decoded.cardId}:{})}))fail('OP_FORBIDDEN',403);res.json({code:'success',nonce:await cardAuth.issueNonce({purpose:'step-up',accountId:ctx.account.id})});}catch(error){problem(res,error);}
+  try{const ctx=adminToken.context(req);if(!ctx)fail('AUTH_REQUIRED',401);const staffCard=await Card.findOne({ownerId:ctx.account.id,cardType:'staff',status:'active',isCurrent:true}).select('cardId').lean();if(!staffCard)fail('STAFF_CARD_REQUIRED',403,STAFF_CARD_REQUIRED_MESSAGE);if(ctx.decoded.cardId&&ctx.decoded.cardId!==staffCard.cardId)fail('STAFF_CARD_CHANGED',403,STAFF_CARD_CHANGED_MESSAGE);res.json({code:'success',nonce:await cardAuth.issueNonce({purpose:'step-up',accountId:ctx.account.id})});}catch(error){problem(res,error);}
 };
 module.exports.stepUpVerify=async(req,res)=>{
   try{
     const ctx=adminToken.context(req);if(!ctx||!Number.isFinite(ctx.decoded.exp))fail('AUTH_REQUIRED',401);
-    if(ctx.decoded.cardId&&ctx.decoded.cardId!==req.body.cardId.toUpperCase())fail('OP_FORBIDDEN',403);
+    if(ctx.decoded.cardId&&ctx.decoded.cardId!==req.body.cardId.toUpperCase())fail('STAFF_CARD_MISMATCH',403,STAFF_CARD_MISMATCH_MESSAGE);
     const result=await cardAuth.verify({...req.body,purpose:'step-up',accountId:ctx.account.id});
     if(result.error)fail('OP_FORBIDDEN',403);
     const current=await adminToken.resolve({...ctx.decoded,cardId:result.card.cardId});if(!current)fail('OP_FORBIDDEN',403);
