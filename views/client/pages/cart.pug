@@ -11,14 +11,6 @@ block main
             | Quay lại mua hàng
             i.fa-solid.fa-angle-right
         .inner-tour-list(cart-list)
-        .inner-coupon
-          form#coupon-form(action="")
-            input#coupon-input(
-              name="coupon" 
-              placeholder="Nhập mã giảm giá" 
-              type="text"
-              )
-            button(type="submit") Dùng Mã
         .inner-list-price
           .inner-item
             .inner-label Tạm tình:
@@ -43,7 +35,7 @@ block main
   .section-12
     .container
       .inner-wrap
-        form#order-form(action="")
+        form#order-form(method="post" action="")
           .inner-info
             .inner-title-main Thông Tin Khách Hàng
             .inner-inputs
@@ -52,16 +44,26 @@ block main
                   placeholder="Họ và tên" 
                   name="fullName" 
                   type="text"
+                  required
+                  minlength="5"
+                  maxlength="50"
+                  autocomplete="name"
+                  aria-label="Họ và tên"
                   value=customer ? customer.fullName : ""
                   )
               .inner-input
                 input#phone-input(
                   placeholder="Số điện thoại" 
                   name="phone" 
-                  type="text"
+                  type="tel"
+                  required
+                  autocomplete="tel"
+                  aria-label="Số điện thoại"
                   value=customer ? customer.phone : ""
                   )
-            button.card-btn.card-btn-outline.card-autofill(type="button" data-card-autofill data-card-id=card ? card.cardId : "") Điền từ thẻ
+            button.card-btn.card-btn-outline.card-autofill(type="button" data-card-autofill data-card-id=card ? card.cardId : "")
+              i.fa-solid.fa-id-card(aria-hidden="true")
+              | Điền từ thẻ
             p.card-alert.card-alert-info(data-customer-status role="status" aria-live="polite")
             textarea(
               placeholder="Ghi chú" 
@@ -115,10 +117,9 @@ block main
                     )
                   label(for="methodCard") #[i.fa-solid.fa-credit-card(aria-hidden="true")]  Ví thẻ thành viên
             .inner-info-bank
-              .inner-title Thông tin chuyển khoản
-              .inner-text Ngân hàng : Vietcombank
-              .inner-text Tên tài khoản: Le Van A
-              .inner-text STK: 0123456789
+              .inner-title Chuyển khoản ngân hàng
+              .inner-text Hãy liên hệ nhân viên để nhận thông tin thanh toán của đơn hàng.
           .inner-button
             button(type="submit") ĐẶT TOUR
+          p(data-checkout-feedback role="status" aria-live="polite")
   // End Section 12

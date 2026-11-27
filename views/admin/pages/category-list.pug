@@ -1,4 +1,5 @@
 extends ../layouts/default.pug
+include ../mixins/list-pagination.pug
 
 block main
   - const canEdit = permissions.includes("category-edit");
@@ -113,11 +114,4 @@ block main
                     ) <i class="fa-regular fa-trash-can"></i>
   //- End Section 6
 
-  //- Section 7
-  .section-7
-    span(class="inner-label") Hiển thị #{categoryList.length ? pagination.skip + 1 : 0} - #{categoryList.length ? pagination.skip + categoryList.length : 0} của #{pagination.totalRecord}
-    if pagination.totalPage > 0
-      select(class="inner-pagination" pagination aria-label="Trang danh mục")
-        - for (let i = 1; i <= pagination.totalPage; i++)
-          option(value=i selected=(i === pagination.page)) Trang #{i}
-  //- End Section 7
+  +listPagination(pagination, categoryList.length, "Trang danh mục")

@@ -1,0 +1,15 @@
+mixin listPagination(pagination, rowCount, label)
+  .section-7
+    span.inner-label Hiển thị #{rowCount ? pagination.skip + 1 : 0} - #{rowCount ? pagination.skip + rowCount : 0} của #{pagination.totalRecord}
+    if pagination.pageSizes
+      label
+        span Bản ghi mỗi trang
+        select.inner-pagination(page-size aria-label="Số bản ghi mỗi trang")
+          each size in pagination.pageSizes
+            option(value=size selected=(size === pagination.limit))= size
+    if pagination.totalPage > 0
+      label
+        span Trang #{pagination.page}/#{pagination.totalPage}
+        select.inner-pagination(pagination aria-label=label)
+          - for (let pageNumber = 1; pageNumber <= pagination.totalPage; pageNumber++)
+            option(value=pageNumber selected=(pageNumber === pagination.page)) Trang #{pageNumber}

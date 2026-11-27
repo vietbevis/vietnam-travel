@@ -13,6 +13,7 @@ const schema = new mongoose.Schema(
     positionCompany: String,
     status: String,
     password: String,
+    sessionVersion: { type: Number, default: 0, min: 0 },
     avatar: String,
     createdBy: String,
     updatedBy: String,

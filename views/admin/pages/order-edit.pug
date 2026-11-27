@@ -1,25 +1,26 @@
 extends ../layouts/default.pug
 
 block main
+  - const canEdit = permissions.includes("order-edit")
   h1.box-title Đơn hàng: #{orderDetail.orderCode}
 
   .section-8
-    form#order-edit-form(data-card-refund=(cardRefund ? cardRefund.amount : undefined))
+    form#order-edit-form(method="post" data-api=`/${pathAdmin}/order/edit/${orderDetail.id}` data-card-refund=(cardRefund ? cardRefund.amount : undefined) data-order-status=orderDetail.status)
       .inner-group(style="display: none;")
         label(class="inner-label" for="id") Id
         input(type="text" id="id" name="id" value=orderDetail.id)
       .inner-group
         label(class="inner-label" for="fullName") Tên khách hàng
-        input(type="text" id="fullName" name="fullName" value=orderDetail.fullName)
+        input(type="text" id="fullName" name="fullName" value=orderDetail.fullName readonly=!canEdit required minlength="5" maxlength="100")
       .inner-group
         label(class="inner-label" for="phone") Số điện thoại
-        input(type="text" id="phone" name="phone" value=orderDetail.phone)
+        input(type="tel" id="phone" name="phone" value=orderDetail.phone readonly=!canEdit required maxlength="25")
       .inner-group.inner-two-col
         label(class="inner-label" for="note") Ghi chú
-        textarea(id="note" name="note") #{orderDetail.note}
+        textarea(id="note" name="note" readonly=!canEdit) #{orderDetail.note}
       .inner-group
         label(class="inner-label" for="paymentMethod") Phương thức thanh toán
-        select(id="paymentMethod" name="paymentMethod")
+        select(id="paymentMethod" name="paymentMethod" disabled=!canEdit)
           each item in paymentMethod
             option(
               value=item.value
@@ -27,7 +28,7 @@ block main
             ) #{item.label}
       .inner-group
         label(class="inner-label" for="paymentStatus") Trạng thái thanh toán
-        select(id="paymentStatus" name="paymentStatus")
+        select(id="paymentStatus" name="paymentStatus" disabled=!canEdit)
           each item in paymentStatus
             option(
               value=item.value
@@ -38,12 +39,12 @@ block main
         input(type="datetime-local" id="createdAt" name="createdAt" value=orderDetail.createdAtFormat readonly)
       .inner-group
         label(class="inner-label" for="status") Trạng thái
-        select(id="status" name="status")
+        select(id="status" name="status" disabled=!canEdit)
           each item in orderStatus
             option(
               value=item.value
               selected=(item.value == orderDetail.status ? true : false)
-              disabled=(usedTicket && item.value == "cancel")
+              disabled=((usedTicket || (typeof pendingCheckin !== 'undefined' && pendingCheckin)) && item.value == "cancel")
             ) #{item.label}
       .inner-group
         label(class="inner-label") Danh sách tour
@@ -54,36 +55,41 @@ block main
                 img(src=item.avatar, alt=item.name)
               .inner-order-content
                 .inner-order-name #{item.name}
-                .inner-order-text Người lớn: #{item.quantityAdult} x #{item.priceNewAdult.toLocaleString("vi-VN")}đ
-                .inner-order-text Trẻ em: #{item.quantityChildren} x #{item.priceNewChildren.toLocaleString("vi-VN")}đ
-                .inner-order-text Em bé: #{item.quantityBaby} x #{item.priceNewBaby.toLocaleString("vi-VN")}đ
+                .inner-order-text Người lớn: #{item.quantityAdult} x #{item.priceNewAdult.toLocaleString("vi-VN")} đ
+                .inner-order-text Trẻ em: #{item.quantityChildren} x #{item.priceNewChildren.toLocaleString("vi-VN")} đ
+                .inner-order-text Em bé: #{item.quantityBaby} x #{item.priceNewBaby.toLocaleString("vi-VN")} đ
                 .inner-order-text Ngày khởi hành: #{item.departureDateFormat}
                 .inner-order-text Khởi hành tại: #{item.locationFromName}
       .inner-group
         label(class="inner-label") Thanh toán
         .inner-order-total
-          div Tạm tính: #{orderDetail.subTotal.toLocaleString("vi-VN")}đ
-          div Giảm: #{orderDetail.discount.toLocaleString("vi-VN")}đ
+          div Tạm tính: #{orderDetail.subTotal.toLocaleString("vi-VN")} đ
+          div Giảm: #{orderDetail.discount.toLocaleString("vi-VN")} đ
           //- div Mã giảm: TOURMUAHE2024
-          div Thanh toán: <span class="inner-order-price">#{orderDetail.total.toLocaleString("vi-VN")}đ</span>
+          div Thanh toán: <span class="inner-order-price">#{orderDetail.total.toLocaleString("vi-VN")} đ</span>
       if usedTicket
         .inner-group.inner-two-col
           .inner-order-refund-note
             | Đơn có vé đã check-in nên không thể huỷ và hoàn tiền tự động. Vui lòng xử lý thủ công.
+      if typeof pendingCheckin !== 'undefined' && pendingCheckin
+        .inner-group.inner-two-col
+          .inner-order-refund-note Đơn có vé đang chờ xác nhận check-in. Cần đối soát trước khi hủy hoặc hoàn tiền.
       if cardRefund
         .inner-group.inner-two-col
           .inner-order-refund-note
             | Đơn đã thanh toán bằng ví thẻ: nếu huỷ đơn, hệ thống sẽ tự hoàn
-            |  #[strong #{cardRefund.amount.toLocaleString("vi-VN")}đ]
+            |  #[strong #{cardRefund.amount.toLocaleString("vi-VN")} đ]
             |  vào ví thẻ của khách (ghi lên thẻ ở lần cắm thẻ tiếp theo).
       if refundInfo
         .inner-group.inner-two-col
           .inner-order-refund-note
             | Đã hoàn
             if refundInfo.amount
-              |  #[strong #{refundInfo.amount.toLocaleString("vi-VN")}đ]
+              |  #[strong #{refundInfo.amount.toLocaleString("vi-VN")} đ]
             |  vào ví thẻ (mã giao dịch #{refundInfo.txRef}): #{refundInfo.statusLabel}.
-      .inner-button.inner-two-col
-        button Cập nhật
+      if canEdit
+        p.form-status.inner-two-col(data-form-status role="status")
+        .inner-button.inner-two-col
+          button(type="submit") Cập nhật
     .inner-back
       a(href=`/${pathAdmin}/order/list`) Quay lại danh sách

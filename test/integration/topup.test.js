@@ -100,7 +100,7 @@ it('fresh callback on an unavailable card records money for reconciliation',asyn
   for(const change of [{status:'locked'},{status:'revoked',isCurrent:false},{isCurrent:false}]) {
     await Tx.deleteMany({});await Card.updateOne({cardId},{$set:{status:'active',isCurrent:true,...change}});
     const tx=await makeTx({source:'vnpay'});
-    assert.equal((await get('/card-api/topup-vnpay-result?'+vnpQuery(tx))).location,'/account/card?topup=reconciliation');
+    assert.equal((await get('/card-api/topup-vnpay-result?'+vnpQuery(tx))).location,'/account/card/return');
     const stored=await Tx.findById(tx.id).lean();
     assert.equal(stored.status,'reconciliation');assert.ok(stored.paymentReceivedAt);
     assert.equal(stored.reconciliationReason,'card-unavailable');
@@ -161,7 +161,7 @@ it('topup zalopay creates awaiting-payment credit on the caller card with topup-
   assert.equal(zaloCalls[0].app_user,'topup-'+tx._id);
   assert.equal(zaloCalls[0].amount,100000);
   assert.equal(zaloCalls[0].callback_url,'https://shop.example.invalid/card-api/topup-zalopay-result');
-  assert.equal(JSON.parse(zaloCalls[0].embed_data).redirecturl,'https://shop.example.invalid/account/card?topup=1');
+  assert.equal(JSON.parse(zaloCalls[0].embed_data).redirecturl,'https://shop.example.invalid/account/card/return');
   assert.ok(await CardLog.findOne({action:'card-topup-prepare',result:'success'}));
 });
 it('topup vnpay uses txRef as vnp_TxnRef and a separate return path',async()=> {
@@ -283,10 +283,10 @@ it('vnpay return credits once; F5 redirects again without a second credit',async
   const tx=await makeTx({source:'vnpay'});
   const query=vnpQuery(tx);
   const first=await get('/card-api/topup-vnpay-result?'+query);
-  assert.equal(first.status,302);assert.equal(first.location,'/account/card?topup=1');
+  assert.equal(first.status,302);assert.equal(first.location,'/account/card/return');
   assert.equal(await status(tx),'pending-card');
   const second=await get('/card-api/topup-vnpay-result?'+query);
-  assert.equal(second.location,'/account/card?topup=1');
+  assert.equal(second.location,'/account/card/return');
   assert.equal(await Tx.countDocuments({status:'pending-card'}),1);
   assert.equal((await Tx.findById(tx.id)).signedOpId,undefined);
 });
@@ -297,7 +297,7 @@ it('vnpay return rejects bad hash, failed payment, wrong amount, wrong merchant,
   const urls=[tampered,vnpQuery(tx,{vnp_ResponseCode:'24'}),vnpQuery(tx,{vnp_TransactionStatus:'02'}),vnpQuery(tx,{vnp_Amount:String((tx.amount+1)*100)}),vnpQuery(tx,{vnp_TmnCode:'OTHER'}),vnpQuery(tx,{vnp_Amount:'12345'}),vnpQuery(zl),vnpQuery(unknown),'vnp_TxnRef='+tx.txRef,''];
   for(const query of urls) {
     const r=await get('/card-api/topup-vnpay-result?'+query);
-    assert.equal(r.status,302);assert.notEqual(r.location,'/account/card?topup=1');
+    assert.equal(r.status,302);assert.equal(r.location,'/account/card/return');
   }
   // Return ký hợp lệ nhưng báo thất bại thì đóng khoản chờ; các lỗi còn lại không đổi gì.
   assert.equal(await status(tx),'failed');assert.equal(await status(zl),'awaiting-payment');
@@ -330,11 +330,11 @@ it('gateway requests carry a 15 minute expiry for top-up only',async()=> {
 it('verified VNPay failure closes the tx and a later success records reconciliation without credit',async()=> {
   const tx=await makeTx({source:'vnpay'});
   const r=await get('/card-api/topup-vnpay-result?'+vnpQuery(tx,{vnp_ResponseCode:'24'}));
-  assert.equal(r.location,'/account/card?topup=fail');
+  assert.equal(r.location,'/account/card/return');
   const stored=await Tx.findById(tx.id).lean();
   assert.deepEqual([stored.status,stored.failReason],['failed','gateway']);
   const later=await get('/card-api/topup-vnpay-result?'+vnpQuery(tx));
-  assert.equal(later.location,'/account/card?topup=reconciliation');
+  assert.equal(later.location,'/account/card/return');
   assert.equal(await status(tx),'reconciliation');
   assert.ok((await Tx.findById(tx.id)).paymentReceivedAt);
 });
@@ -358,7 +358,7 @@ it('late paid callback for an expired tx is honoured once when the card is activ
   assert.equal((await post('/card-api/topup-zalopay-result',body,null)).return_code,1);
   assert.equal(await Tx.countDocuments({status:'pending-card'}),1);
   const vn=await makeTx({source:'vnpay'});await backdate(vn,30);await E.expireStaleTopups(cardId);
-  assert.equal((await get('/card-api/topup-vnpay-result?'+vnpQuery(vn))).location,'/account/card?topup=1');
+  assert.equal((await get('/card-api/topup-vnpay-result?'+vnpQuery(vn))).location,'/account/card/return');
   assert.equal(await status(vn),'pending-card');
 });
 it('late paid callback after card is no longer active or current records one durable reconciliation',async()=> {
@@ -406,9 +406,9 @@ it('a repeated callback for a paid top-up later moved to a replacement card or r
     await Tx.updateOne({_id:tx._id},{$set:{status:'failed',failReason}});
     assert.equal((await post('/card-api/topup-zalopay-result',zaloBody(tx),null)).return_code,1);
     const vn=await makeTx({source:'vnpay'});
-    assert.equal((await get('/card-api/topup-vnpay-result?'+vnpQuery(vn))).location,'/account/card?topup=1');
+    assert.equal((await get('/card-api/topup-vnpay-result?'+vnpQuery(vn))).location,'/account/card/return');
     await Tx.updateOne({_id:vn._id},{$set:{status:'failed',failReason}});
-    assert.equal((await get('/card-api/topup-vnpay-result?'+vnpQuery(vn))).location,'/account/card?topup=1');
+    assert.equal((await get('/card-api/topup-vnpay-result?'+vnpQuery(vn))).location,'/account/card/return');
     assert.equal(await Tx.countDocuments({status:{$ne:'failed'}}),0);
   }
 });

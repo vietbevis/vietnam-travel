@@ -31,6 +31,29 @@ test('workflow never cancels a card after finish response is lost without report
   const client={openSession:async()=>({state:0}),transmit:async()=>[{data:'AA'.repeat(128),sw:'9000'}],verifyPin:async()=>{},writeTarget:async()=>{},runSignedOp:async()=>{}};
   await assert.rejects(admin.issueFlow({photo:new Uint8Array([1])},{fetch,client}),/kiểm tra|xác nhận/i);
 });
+test('replacement finish resumes the same card after step-up without reinvoking INIT or cancellation',async()=>{
+  const requests=[];
+  let renewed=false;
+  const cardId='11'.repeat(16);
+  const client={openSession:async options=>{assert.deepEqual(options,{sync:false});return{state:0};},transmit:async()=>[{data:'AA'.repeat(128),sw:'9000'}],verifyPin:async()=>{},writeTarget:async()=>{},runSignedOp:async()=>{}};
+  const fetch=async(url,options)=>{
+    const path=url.slice('/admin/card'.length),body=JSON.parse(options.body);
+    requests.push({path,body});
+    if(path==='/issue/prepare')return{ok:true,json:async()=>({code:'success',cardId,initApdu:'00010000',initialPin:'582046',profileHex:'010141',profileOpId:'1',photoOpId:'2'})};
+    if(path==='/issue/finish'&&!renewed)return{ok:false,status:403,json:async()=>({code:'step-up-required'})};
+    return{ok:true,json:async()=>({code:'success',emailStatus:'sent'})};
+  };
+  let continuation;
+  await assert.rejects(admin.issueFlow({photo:new Uint8Array([1]),replaceOf:'22'.repeat(16)},{fetch,client}),error=>{
+    assert.equal(error.code,'STEP_UP_REQUIRED');
+    continuation=error.resumeFinish;
+    return true;
+  });
+  renewed=true;
+  assert.equal((await continuation()).cardId,cardId);
+  assert.deepEqual(requests.map(request=>request.path),['/issue/prepare','/issue/init-confirm','/issue/finish','/issue/finish']);
+  assert.deepEqual(requests.at(-1).body,requests.at(-2).body);
+});
 test('sim reset targets the selected slot and requires Agent acknowledgement',async()=>{
   assert.equal(typeof admin.resetSim,'function');
   const result=await admin.resetSim({client:{status:async()=>({mode:'sim',slot:2})},fetch:async(url,request)=>{
@@ -79,7 +102,7 @@ test('checkin scan reads photo profile tickets then looks up and flags tickets p
     readPhotoUrl:async()=>{calls.push(['photo']);return 'blob:x';},readProfile:async()=>({fullName:'A'}),
     readTickets:async()=>[{status:1,orderCode:'OD0000000001',tourId:tourId.toUpperCase(),departure:'20261215',pax:3},{status:2,orderCode:'OD0000000002',tourId:tourId.toUpperCase(),departure:'20261215',pax:1}]
   };
-  const fetch=async(url,request)=>{calls.push([url,JSON.parse(request.body)]);return {ok:true,json:async()=>({code:'success',customer:{fullName:'A'},items:[{orderId:'o1',itemIndex:0,orderCode:'OD0000000001',pax:3,ticketStatus:'written'},{orderId:'o2',itemIndex:0,orderCode:'OD0000000002',pax:1,ticketStatus:'written'}]})};};
+  const fetch=async(url,request)=>{calls.push([url,JSON.parse(request.body)]);return {ok:true,json:async()=>({code:'success',customer:{fullName:'A'},items:[{orderId:'o1',itemIndex:0,orderCode:'OD0000000001',departure:'20261215',pax:3,ticketStatus:'written'},{orderId:'o2',itemIndex:0,orderCode:'OD0000000002',departure:'20261215',pax:1,ticketStatus:'written'}]})};};
   const result=await admin.checkinScan({tourId},{client,fetch});
   assert.deepEqual(calls.map(c=>c[0]),['open','pin','photo','/admin/card/checkin/lookup']);
   assert.notEqual(calls[0][1],false,'scan phải đồng bộ theo spec A9');
@@ -94,7 +117,10 @@ test('checkin use posts then runs the signed op against the admin op endpoints a
   const client={runSignedOp:async a=>{seen.push(a);return {ok:true};}};
   await admin.checkinUse({cardId:'11'.repeat(16),orderId:'0123456789abcdef01234567',itemIndex:0},{client,fetch});
   assert.equal(seen[0],'/admin/card/checkin/use');
-  assert.deepEqual(seen[1],{opId:'ab'.repeat(12),signUrl:'/admin/card/op/sign',confirmUrl:'/admin/card/op/confirm'});
+  assert.deepEqual(seen[1],{
+    opId:'ab'.repeat(12),signUrl:'/admin/card/op/sign',confirmUrl:'/admin/card/op/confirm',
+    expectedCardId:'11'.repeat(16),retryConfirmation:true
+  });
   await assert.rejects(admin.checkinUse({cardId:'11'.repeat(16),orderId:'0123456789abcdef01234567',itemIndex:0},{client:{runSignedOp:async()=>({ok:false,message:'Thẻ báo lỗi'})},fetch}),/Thẻ báo lỗi/);
 });
 test('checkin scan keeps going and shows a notice when sync stops at a step the admin may not sign',async()=>{

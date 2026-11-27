@@ -4,21 +4,23 @@ block main
   h1.box-title Tạo nhóm quyền
 
   .section-8
-    form#setting-role-create-form
+    form#setting-role-create-form(method="post")
       .inner-group
         label(class="inner-label" for="name") Tên nhóm quyền
-        input(type="text" id="name" name="name")
+        input(type="text" id="name" name="name" required maxlength="100")
       .inner-group
         label(class="inner-label" for="description") Mô tả ngắn
-        input(type="text" id="description" name="description")
+        input(type="text" id="description" name="description" maxlength="500")
       .inner-group
         label(class="inner-label") Phân quyền
+        small Bạn chỉ có thể cấp các quyền trong phạm vi của mình.
         .inner-checkbox-list
           each item in permissionList
             .inner-checkbox-item
-              input(type="checkbox" name="permissions" value=item.value)
-              label #{item.label}
+              input(type="checkbox" name="permissions" id=`grant-${item.value}` value=item.value disabled=!grantable.includes(item.value))
+              label(for=`grant-${item.value}`)= item.label
+      p.form-status.inner-two-col(data-form-status role="status")
       .inner-button.inner-two-col
-        button Tạo mới
+        button(type="submit") Tạo mới
     .inner-back
       a(href=`/${pathAdmin}/setting/role/list`) Quay lại danh sách

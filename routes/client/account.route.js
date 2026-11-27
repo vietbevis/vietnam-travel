@@ -1,9 +1,14 @@
 const router=require('express').Router();
 const C=require('../../controllers/client/account.controller');
 const auth=require('../../middlewares/client/customer-auth.middleware');
+const { upload }=require('../../middlewares/admin/image-upload.middleware');
+const { asyncRoute }=require('../../middlewares/http-route.middleware');
 router.get('/login',C.login);
-router.get('/card',auth.required,C.card);
+router.get('/card/return',C.topupReturn);
+router.get('/card',C.cardAccess,C.card);
 router.get('/card/snapshot',auth.apiRequired,C.snapshot);
+router.get('/profile',auth.required,C.profile);
+router.patch('/profile/web',auth.apiRequired,C.requireProfileOrigin,upload.single('webAvatar'),asyncRoute(C.profileWebPatch));
 router.get('/card-lock',C.lock);
 router.post('/card-lock/otp',C.sendOtp);
 router.post('/card-lock/confirm',C.confirmLock);

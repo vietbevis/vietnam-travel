@@ -19,19 +19,30 @@ block main
           select#tourId(name="tourId")
             option(value="") Chọn tour
             each tour in tours
-              option(value=tour.tourId selected=tour.tourId===selected) #{tour.name} — #{new Date(tour.departureDate).toLocaleDateString('vi-VN', {timeZone:'Asia/Ho_Chi_Minh'})}
+              option(value=tour.tourId selected=tour.tourId===selected)= tour.name
+        .ca-field
+          label(for="booking-search") Khách đã đặt
+          input#booking-search(name="keyword" type="search" value=keyword placeholder="Tên, số điện thoại, mã đơn" maxlength="120")
         .ca-actions
           button.ca-btn(type="submit")
             i.fa-solid.fa-users
             | Xem khách đã đặt
+          if selected && keyword
+            a.ca-reset(href=`?tourId=${selected}`) Xóa tìm kiếm
     if selected
-      .ca-layout
+      dl.ca-checkin-metrics(aria-label="Tổng hợp vé của tour")
+        each metric in [['Số mục vé', summary.tickets], ['Tổng số khách', summary.passengers], ['Mục đã check-in', summary.checkedIn], ['Mục chưa check-in', summary.tickets - summary.checkedIn]]
+          div
+            dt= metric[0]
+            dd= metric[1]
+      .ca-checkin-layout
         div
-          .ca-table-wrap
+          .ca-table-wrap(tabindex="0" aria-label="Danh sách khách đã đặt")
             table.ca-table
               thead
                 tr
                   th Mã đơn
+                  th Khởi hành
                   th Khách hàng
                   th SĐT
                   th.ca-num Số khách
@@ -42,17 +53,18 @@ block main
                   tr(data-checkin-row)
                     td
                       span.ca-code= booking.orderCode
-                    td= booking.fullName
-                    td= booking.phone
+                    td= new Date(booking.departureDate).toLocaleDateString('vi-VN', {timeZone:'Asia/Ho_Chi_Minh', day:'2-digit', month:'2-digit', year:'numeric'})
+                    td= booking.fullName || 'Chưa cập nhật'
+                    td= booking.phone || 'Chưa cập nhật'
                     td.ca-num= booking.pax
                     td
-                      span.badge(class=booking.ticketStatus==='used' ? 'badge-green' : booking.ticketStatus==='written' ? 'badge-blue' : 'badge-grey')= booking.ticketStatus
-                    td= booking.checkedInAt ? new Date(booking.checkedInAt).toLocaleString('vi-VN', {timeZone:'Asia/Ho_Chi_Minh'}) : ''
+                      span.badge(class=booking.ticketStatus==='used' ? 'badge-green' : booking.checkinPending ? 'badge-orange' : booking.ticketStatus==='written' ? 'badge-blue' : 'badge-grey')= booking.checkinPending ? 'Chờ đối soát check-in' : ticketStatusLabel(booking.ticketStatus)
+                    td= booking.checkedInAt ? new Date(booking.checkedInAt).toLocaleString('vi-VN', {timeZone:'Asia/Ho_Chi_Minh', day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit'}) : '—'
                 if !bookings.length
                   tr.ca-empty
-                    td(colspan="6")
+                    td(colspan="7")
                       i.fa-regular.fa-user
-                      | Chưa có khách đã thanh toán cho tour này.
+                      = keyword ? 'Không có khách khớp nội dung tìm kiếm.' : 'Chưa có khách đã thanh toán cho tour này.'
         section.ca-card(data-card-checkin data-tour-id=selected data-card-base=`/${pathAdmin}/card` aria-label="Quét thẻ check-in")
           .ca-scanner
             .ca-scanner-icon(aria-hidden="true")
@@ -71,8 +83,14 @@ block main
                 dd(data-checkin-blood)
                 dt Dị ứng
                 dd(data-checkin-allergies)
-              ul(data-checkin-items)
+              fieldset.ca-checkin-select
+                legend Vé của khách cho tour đang chọn
+                label(data-checkin-select-all hidden)
+                  input(type="checkbox")
+                  |  Chọn tất cả vé hợp lệ
+                ul(data-checkin-items)
+                p.ca-note(data-checkin-selection role="status")
               button.ca-btn.ca-btn-green(type="button" data-checkin-confirm hidden)
                 i.fa-solid.fa-circle-check
-                | Xác nhận check-in
+                span(data-checkin-confirm-label) Xác nhận check-in
   script(src="/admin/assets/js/card-admin.js" defer)

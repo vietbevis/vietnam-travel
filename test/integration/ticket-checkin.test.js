@@ -78,7 +78,8 @@ it('lookup returns customer and only paid non-cancelled items of the requested t
   const r=await lookup();
   assert.equal(r.code,'success',JSON.stringify(r));
   assert.deepEqual(r.customer,{fullName:'Trần Thị B',phone:'0900000001',bloodType:'O+',allergies:'Hải sản'});
-  assert.deepEqual(r.items,[{orderId:String(good._id),itemIndex:0,orderCode:good.orderCode,pax:3,ticketStatus:'written'}]);
+  const departure = new Date(good.items[0].departureDate.getTime() + 7 * 3600000).toISOString().slice(0,10).replaceAll('-', '');
+  assert.deepEqual(r.items,[{orderId:String(good._id),itemIndex:0,orderCode:good.orderCode,pax:3,ticketStatus:'written',departure,ambiguous:false,checkinPending:false}]);
   assert.ok(await Log.findOne({action:'checkin-lookup',result:'success',cardId:customerCard.cardId}));
 });
 it('lookup rejects outside the check-in window and inactive or non-customer cards',async()=>{
@@ -117,6 +118,49 @@ it('use-ticket confirm marks the item used with checkedInBy and a second check-i
   assert.equal(second.http,409);assert.equal(second.message,'Vé đã sử dụng');
   const l=await lookup();assert.equal(l.items[0].ticketStatus,'used');
   assert.ok(await Log.findOne({action:'checkin-use',result:'success',cardId:customerCard.cardId}));
+});
+it('a signed check-in with missing confirmation blocks refund and a second use', async () => {
+  const booking = await order({ status: 'done', paymentMethod: 'card' });
+  const prepared = await use(booking);
+  const args = { opId: prepared.opId, actorType: 'admin', actorId: String(admin.id) };
+  await E.signOp({ ...args, challengeHex: challenge });
+
+  const response = await fetch(base + '/order-edit/' + booking._id, {
+    method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ status: 'cancel' })
+  });
+  assert.match((await response.json()).message, /check-in.*đối soát/);
+  assert.equal((await use(booking)).http, 409);
+  assert.equal((await lookup()).items[0].checkinPending, true);
+  assert.equal((await E.confirmOp({ ...args, sw: '9000' })).ok, true);
+  assert.equal((await E.confirmOp({ ...args, sw: '9000' })).ok, true);
+  assert.equal((await Order.findById(booking._id)).items[0].ticketStatus, 'used');
+  assert.equal(await Tx.countDocuments({ type: 'credit', source: 'refund' }), 0);
+});
+it('a browser-reported rejection alone cannot release a signed check-in or allow a second use', async () => {
+  const booking = await order({ status: 'done', paymentMethod: 'card' });
+  const prepared = await use(booking);
+  const args = { opId: prepared.opId, actorType: 'admin', actorId: String(admin.id) };
+  await E.signOp({ ...args, challengeHex: challenge });
+  assert.equal((await E.confirmOp({ ...args, sw: '6985' })).ok, false);
+  assert.equal((await E.confirmOp({ ...args, sw: '9000' })).ok, false);
+  const stored = (await Order.findById(booking.id)).items[0];
+  assert.equal(stored.checkinOpId, prepared.opId);
+  assert.equal(stored.ticketStatus, 'written');
+  assert.equal((await use(booking)).http, 409);
+  assert.equal((await lookup()).items[0].checkinPending, true);
+  assert.equal(await Tx.countDocuments({ type: 'credit', source: 'refund' }), 0);
+  assert.equal(await Log.countDocuments({ action: 'card-op-confirm', result: 'fail', cardId: customerCard.cardId }), 2);
+  // The marker must outlive the short-lived operation document.
+  await Op.deleteOne({ _id: prepared.opId });
+  await Role.updateOne({ _id: admin.role }, { $addToSet: { permissions: { $each: ['card-issue', 'card-revoke'] } } });
+  const replacement = await fetch(base + '/admin/card/replace', {
+    method: 'POST', headers: { 'content-type': 'application/json', cookie: 'token=' + token },
+    body: JSON.stringify({ cardId: customerCard.cardId, reason: 'Kiểm thử trạng thái đối soát' })
+  });
+  assert.equal(replacement.status, 409);
+  assert.equal((await replacement.json()).errorCode, 'RECONCILIATION_REQUIRED');
+  assert.equal((await Card.findById(customerCard.id)).status, 'active');
+  assert.equal((await Order.findById(booking.id)).items[0].checkinOpId, prepared.opId);
 });
 it('admin cancel maps written to pending-delete and pending to none, idempotently, and sync then plans DELETE',async()=>{
   // Huỷ đơn hoàn kho theo tour; đơn chưa thanh toán (tiền mặt) nên không phát sinh hoàn tiền ví.

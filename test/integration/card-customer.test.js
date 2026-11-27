@@ -15,12 +15,62 @@ after(async()=>{if(server)await new Promise(r=>server.close(r));if(db.enabled)aw
 async function request(url,body,cookie=token,extra={}){const r=await fetch(base+url,{method:body===undefined?'GET':'POST',redirect:'manual',headers:{...(body===undefined?{}:{'content-type':'application/json'}),...(cookie?{cookie:'customerToken='+cookie}:{}),...extra},...(body===undefined?{}:{body:JSON.stringify(body)})});const text=await r.text();let json={};try{json=JSON.parse(text);}catch{}return{status:r.status,headers:r.headers,text,...json};}
 async function proof(changes={},nonce){nonce=nonce||(await request('/card-api/login/challenge',{},'')).nonce;const body={cardId:card.cardId,nonce,counter:0,...changes};body.signature=crypto.sign('sha256',A.buildAuthMessage({nonceHex:body.nonce,cardIdHex:body.cardId,counter:body.counter}),key.privateKey).toString('hex');return body;}
 async function otp(){const r=await request('/account/card-lock/otp',{email:customer.email},'');assert.equal(r.status,200);await new Promise(r=>setTimeout(r,20));return /\b\d{6}\b/.exec(messages[0]?.content||'')?.[0];}
+
+it('top-up return is a neutral same-origin landing and the protected destination keeps a safe login target', async () => {
+  const landing=await request('/account/card/return',undefined,'');
+  assert.equal(landing.status,200);
+  assert.match(landing.text,/href="\/account\/card\?from=topup"/);
+  assert.doesNotMatch(landing.text,/700\.000|Khách kiểm thử|customer@example\.com/);
+  const withoutSession=await request('/account/card?from=topup',undefined,'');
+  assert.equal(withoutSession.headers.get('location'),'/account/login?from=topup');
+  const login=await request('/account/login?from=topup',undefined,'');
+  assert.match(login.text,/data-card-login-target="\/account\/card\?from=topup"/);
+  const processOrder='32'.repeat(12);
+  const processing=await request('/account/login?destination=processing&orderId='+processOrder,undefined,'');
+  assert.ok(processing.text.includes(`data-card-login-target="/order/processing?orderId=${processOrder}"`));
+  const own=await request('/account/card?from=topup');
+  assert.equal(own.status,200);
+  assert.match(own.text,/700\.000/);
+  assert.doesNotMatch(own.text,/Đã ghi .* vào thẻ/);
+});
 // Catches missing nonce purpose/CAS, accepting forged proof, and wrong token/cookie lifetime.
 it('customer login consumes RSA nonce once activates first login and sets protected one-day JWT',async()=>{const body=await proof();const r=await request('/card-api/login/verify',body,'');assert.equal(r.status,200,r.text);const cookie=r.headers.get('set-cookie');assert.match(cookie,/HttpOnly/);assert.match(cookie,/SameSite=Strict/);assert.match(cookie,/Max-Age=86400/);const decoded=jwt.verify(decodeURIComponent(cookie.match(/customerToken=([^;]+)/)[1]),process.env.JWT_SECRET,{algorithms:['HS256']});assert.equal(decoded.exp-decoded.iat,86400);assert.equal(decoded.customerId,customer.id);assert.equal(decoded.cardId,card.cardId);assert.ok((await Card.findById(card.id)).activatedAt);assert.equal((await request('/card-api/login/verify',body,'')).status,401);});
 it('login rejects foreign purpose expiry signature staff locked revoked and deleted owner without money changes',async()=>{for(const mode of ['purpose','expiry','signature','staff','locked','revoked','deleted']){await Nonce.deleteMany({});await Card.updateOne({_id:card.id},{$set:{cardType:'customer',status:'active',isCurrent:true}});await Customer.updateOne({_id:customer.id},{$set:{deleted:false}});const body=await proof();if(mode==='purpose')await Nonce.updateOne({nonce:body.nonce},{$set:{purpose:'step-up'}});if(mode==='expiry')await Nonce.updateOne({nonce:body.nonce},{$set:{expireAt:new Date(0)}});if(mode==='signature')body.signature='00'.repeat(128);if(mode==='staff')await Card.updateOne({_id:card.id},{$set:{cardType:'staff'}});if(['locked','revoked'].includes(mode))await Card.updateOne({_id:card.id},{$set:{status:mode,isCurrent:mode==='locked'}});if(mode==='deleted')await Customer.updateOne({_id:customer.id},{$set:{deleted:true}});assert.equal((await request('/card-api/login/verify',body,'')).status,401,mode);}assert.equal((await Card.findById(card.id)).balance,700000);assert.equal((await Card.findById(card.id)).txCounter,0);});
 it('nonce concurrency issues a single session and cross-origin strict input cannot login or logout',async()=>{const body=await proof();const results=await Promise.all([request('/card-api/login/verify',body,''),request('/card-api/login/verify',body,'')]);assert.deepEqual(results.map(r=>r.status).sort(),[200,401]);for(const url of ['/card-api/login/challenge','/card-api/logout'])assert.equal((await request(url,{},token,{origin:'https://other.example'})).status,403);assert.equal((await request('/card-api/login/challenge',{purpose:'login-staff'},'')).status,400);assert.equal((await request('/card-api/logout',{})).headers.get('set-cookie').includes('customerToken=;'),true);});
 it('middleware rejects forged expired foreign owner and next request after lock or revoke',async()=>{for(const bad of [token+'x',jwt.sign({customerId:customer.id,cardId:card.cardId},process.env.JWT_SECRET,{expiresIn:-1}),jwt.sign({customerId:'11'.repeat(12),cardId:card.cardId},process.env.JWT_SECRET)]){const r=await request('/account/card',undefined,bad);assert.equal(r.status,302);assert.match(r.headers.get('set-cookie'),/customerToken=;/);}for(const status of ['locked','revoked']){await Card.updateOne({_id:card.id},{$set:{status,isCurrent:status==='locked'}});assert.equal((await request('/account/card')).status,302);assert.equal((await request('/card-api/profile/build',{phone:'0902222222',emergencyName:'Mẹ',emergencyPhone:'0903333333'})).status,401);}});
 it('account renders persisted tier spend pending balance and transaction history without exposing proof',async()=>{await Tx.create({cardId:card.cardId,txRef:'11'.repeat(8),type:'credit',source:'cash',amount:10000,status:'pending-card'});const r=await request('/account/card');assert.equal(r.status,200,r.text);for(const text of ['Gold','35.000.000','700.000','10.000','1111111111111111'])assert.ok(r.text.includes(text),text);assert.ok(!r.text.includes(modulus));assert.equal(r.headers.get('cache-control'),'no-store');});
+
+it('web profile only writes the current owner address with a matching form revision and Origin', async () => {
+  const page = await request('/account/profile');
+  assert.equal(page.status, 200);
+  assert.equal(page.headers.get('cache-control'), 'no-store');
+  const revisions = [...page.text.matchAll(/name="revision" value="([a-f\d]{64})"/g)];
+  assert.equal(revisions.length, 2);
+  const revision = revisions[1][1];
+  const obsoleteContact = await request('/card-api/profile/build', {
+    phone: customer.phone, emergencyName: '', emergencyPhone: '', revision
+  });
+  assert.equal(obsoleteContact.status, 409);
+  assert.equal(obsoleteContact.errorCode, 'PROFILE_CHANGED');
+  assert.equal((await request('/account/profile', undefined, '')).headers.get('location'), '/account/login');
+  const patch = (fields={}, origin=base, cookie=token) => {
+    const body = new FormData();
+    for (const [key, value] of Object.entries({ address: 'Địa chỉ kiểm thử', revision, ...fields })) body.append(key, value);
+    return fetch(base+'/account/profile/web', {
+      method: 'PATCH', body, headers: { origin, ...(cookie ? { cookie: 'customerToken='+cookie } : {}) }
+    });
+  };
+  assert.equal((await patch({}, 'http://fixture-other.example')).status, 403);
+  assert.equal((await patch({}, base, '')).status, 401);
+  assert.equal((await patch({ customerId: customer.id, totalSpent: '0' })).status, 400);
+  assert.equal((await patch()).status, 200);
+  assert.equal((await patch({ address: 'Stale write' })).status, 409);
+  const stored = await Customer.findById(customer.id).lean();
+  assert.equal(stored.address, 'Địa chỉ kiểm thử');
+  assert.equal(stored.totalSpent, 35000000);
+  assert.equal(stored.phone, customer.phone);
+  assert.equal((await Card.findById(card.id)).balance, 700000);
+});
 it('profile accepts exactly three fields canonical TLV and applies only after bound latest confirm',async()=>{const fields={phone:'0902222222',emergencyName:'Mẹ',emergencyPhone:'0903333333'};const r=await request('/card-api/profile/build',fields);assert.equal(r.status,200,r.text);assert.ok(r.profileHex.includes(Buffer.from('Khách kiểm thử').toString('hex').toUpperCase()));assert.equal((await Customer.findById(customer.id)).phone,'0901111111');const op=await Op.findById(r.opId);assert.equal(op.actorType,'customer');assert.equal(op.actorId,customer.id);await E.signOp({opId:r.opId,challengeHex:'AB'.repeat(16),actorType:'customer',actorId:customer.id});assert.equal((await request('/card-api/op/confirm',{opId:r.opId,response:'',sw:'9000'})).ok,true);assert.equal((await Customer.findById(customer.id)).phone,fields.phone);const a=await request('/card-api/profile/build',fields);await E.signOp({opId:a.opId,challengeHex:'AB'.repeat(16),actorType:'customer',actorId:customer.id});await request('/card-api/profile/build',{...fields,phone:'0904444444'});assert.equal((await request('/card-api/op/confirm',{opId:a.opId,response:'',sw:'9000'})).status,409);});
 it('profile rejects immutable missing extra fields and failed confirm preserves Customer with sanitized audits',async()=>{for(const body of [{phone:'1'},{phone:'1',emergencyName:'Mẹ',emergencyPhone:'2',email:'evil@example.com'},{phone:123,emergencyName:'Mẹ',emergencyPhone:'2'}])assert.equal((await request('/card-api/profile/build',body)).status,400);const r=await request('/card-api/profile/build',{phone:'0902222222',emergencyName:'Mẹ',emergencyPhone:'0903333333'});await E.signOp({opId:r.opId,challengeHex:'AB'.repeat(16),actorType:'customer',actorId:customer.id});assert.equal((await request('/card-api/op/confirm',{opId:r.opId,response:'',sw:'6A80'})).ok,false);assert.equal((await Customer.findById(customer.id)).phone,'0901111111');const logs=await Log.find({action:'customer-profile-build'}).lean();assert.equal(logs.length,4);assert.ok(!JSON.stringify(logs).includes('0902222222'));});
 it('OTP send is uniform for unknown deleted inactive-card and mail failure and stores only context HMAC',async()=>{const known=await request('/account/card-lock/otp',{email:customer.email},'');for(const email of ['unknown@example.com',customer.email]){mail.sendMail=async()=>{throw new Error('raw-secret');};const r=await request('/account/card-lock/otp',{email},'');assert.equal(r.status,known.status);assert.equal(r.message,known.message);}const row=await Forgot.findOne({purpose:'customer-card-lock'}).lean();assert.ok(row);assert.equal(row.otp,undefined);assert.match(row.otpHash,/^[a-f0-9]{64}$/);assert.equal(row.cardId,card.cardId);assert.ok(row.expireAt-Date.now()<=300000);mail.sendMail=async(email,subject,content)=>{messages.push({email,subject,content});return{sent:true};};});
@@ -63,13 +113,18 @@ it('admin request cooldown and verification never consume customer purpose inclu
   const code=await otp();
   assert.equal((await request('/admin/account/otp-password',{email:customer.email,otp:code},'')).code,'error');
   assert.equal(await Forgot.countDocuments({purpose:'customer-card-lock'}),1);
-  assert.equal((await request('/admin/account/forgot-password',{email:customer.email},'')).code,'success');
-  const admin=await Forgot.findOne({purpose:'admin-reset'});assert.ok(admin);
-  assert.equal((await request('/account/card-lock/confirm',{email:customer.email,otp:admin.otp},'')).code,'error');
-  assert.equal((await request('/admin/account/otp-password',{email:customer.email,otp:admin.otp},'')).code,'success');
-  assert.equal(await Forgot.countDocuments({purpose:'customer-card-lock'}),1);
   await Forgot.create({email:customer.email,otp:'482057',expireAt:new Date(Date.now()+300000)});
   assert.equal((await request('/admin/account/otp-password',{email:customer.email,otp:'482057'},'')).code,'success');
+  assert.equal((await request('/admin/account/forgot-password',{email:customer.email},'')).code,'success');
+  const admin=await Forgot.findOne({purpose:'admin-reset'});assert.ok(admin);
+  assert.equal(admin.otp,undefined);
+  assert.match(admin.otpHash,/^[a-f0-9]{64}$/);
+  const adminCode=messages.find(item=>item.subject.includes('lấy lại mật khẩu')).content.match(/<b>(\d{6})<\/b>/)[1];
+  assert.equal((await request('/account/card-lock/confirm',{email:customer.email,otp:adminCode},'')).code,'error');
+  assert.equal((await request('/admin/account/otp-password',{email:customer.email,otp:adminCode},'')).code,'success');
+  assert.equal(await Forgot.countDocuments({purpose:'customer-card-lock'}),1);
+  await Forgot.create({email:customer.email,otp:'482057',expireAt:new Date(Date.now()+300000)});
+  assert.equal((await request('/admin/account/otp-password',{email:customer.email,otp:'482057'},'')).code,'error');
 });
 it('deleted owner invalidates current token and all customer audits omit OTP JWT and submitted private values',async()=>{
   const code=await otp();await request('/account/card-lock/confirm',{email:customer.email,otp:'482057'},'');await Customer.updateOne({_id:customer.id},{$set:{deleted:true}});

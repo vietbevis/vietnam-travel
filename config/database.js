@@ -5,9 +5,8 @@ module.exports.connect = async () => {
     await mongoose.connect(process.env.DATABASE);
     console.log("Kết nối DB thành công!");
     await module.exports.checkReplicaSet();
-  } catch (error) {
+  } catch {
     console.log("Kết nối DB thất bại!");
-    console.log(error);
   }
 }
 

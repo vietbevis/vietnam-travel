@@ -2,27 +2,138 @@
 const buttonMenuMobile = document.querySelector(".header .inner-menu-mobile");
 if (buttonMenuMobile) {
   const menu = document.querySelector(".header .inner-menu");
+  const close = menu.querySelector("[data-nav-close]");
+  const list = menu.firstElementChild;
+  const more = list.querySelector("[data-nav-more]");
+  const morePanel = more?.lastElementChild;
+  const categories = Array.from(list.querySelectorAll(":scope > [data-nav-category]"));
+  const fixed = Array.from(list.children).filter(item => item !== more &&
+    !item.matches("[data-nav-category], .inner-mobile-close"));
+  const mobile = matchMedia("(max-width: 991.98px)");
+  const toggles = menu.querySelectorAll("[data-nav-toggle]");
+  const panelFor = toggle => document.getElementById(toggle.getAttribute("aria-controls"));
+  const setPanel = (toggle, open) => {
+    if (!toggle) return;
+    const panel = panelFor(toggle);
+    toggle.setAttribute("aria-expanded", String(open));
+    panel.hidden = !open;
+    if (open) {
+      panel.removeAttribute("data-align-end");
+      if (panel.getBoundingClientRect().right > innerWidth - 8) panel.setAttribute("data-align-end", "");
+    } else {
+      panel.querySelectorAll('[data-nav-toggle][aria-expanded="true"]').forEach(child => {
+        child.setAttribute("aria-expanded", "false");
+        panelFor(child).hidden = true;
+      });
+    }
+  };
 
-  // Click vào button mở menu
-  buttonMenuMobile.addEventListener("click", () => {
-    menu.classList.add("active");
-  });
+  let frame;
+  function fitCategories() {
+    if (!more) return;
+    const focused = document.activeElement;
+    const focusedCategory = categories.find(item => item.contains(focused));
+    const oldParents = categories.map(item => item.parentElement);
+    const batch = new DocumentFragment();
+    batch.append(...categories);
+    list.insertBefore(batch, more);
+    menu.toggleAttribute("data-nav-fit", !mobile.matches);
 
-  // Click vào overlay đóng menu
-  const overlay = menu.querySelector(".inner-overlay");
-  if (overlay) {
-    overlay.addEventListener("click", () => {
-      menu.classList.remove("active");
+    let count = categories.length;
+    if (!mobile.matches) {
+      more.hidden = false;
+      const gap = parseFloat(getComputedStyle(list).columnGap);
+      const width = item => item.getBoundingClientRect().width + gap;
+      const available = list.clientWidth - 1 + gap - fixed.reduce((sum, item) => sum + width(item), 0);
+      const widths = categories.map(width);
+      if (widths.reduce((sum, value) => sum + value, 0) > available) {
+        let remaining = available - width(more);
+        count = 0;
+        while (count < widths.length && remaining >= widths[count]) remaining -= widths[count++];
+      }
+    }
+
+    morePanel.append(...categories.slice(count));
+    more.hidden = count === categories.length;
+    const moreToggle = more.firstElementChild;
+    if (more.hidden) setPanel(moreToggle, false);
+    categories.forEach((item, index) => {
+      if (item.parentElement !== oldParents[index]) {
+        setPanel(item.querySelector(":scope > .inner-category-row > [data-nav-toggle]"), false);
+      }
     });
+    if (focusedCategory || more.contains(focused)) {
+      let target = focused;
+      if (focusedCategory && morePanel.contains(focusedCategory) && morePanel.hidden) target = moreToggle;
+      else if (focusedCategory && focused.closest("[hidden]")) target = focusedCategory.querySelector("a");
+      else if (more.hidden && focused === moreToggle) target = list.querySelector("a");
+      if (!target.closest("[hidden]")) target.focus({ preventScroll: true });
+    }
+  }
+  function requestFit() {
+    cancelAnimationFrame(frame);
+    frame = requestAnimationFrame(fitCategories);
   }
 
-  // Click vào icon down mở sub menu
-  const listButtonSubMenu = menu.querySelectorAll("ul > li > i");
-  listButtonSubMenu.forEach(button => {
-    button.addEventListener("click", () => {
-      button.parentNode.classList.toggle("active");
-    })
+  const setOpen = (open, restoreFocus = true) => {
+    menu.classList.toggle("active", open);
+    buttonMenuMobile.setAttribute("aria-expanded", String(open));
+    if (open) close.focus();
+    else {
+      toggles.forEach(toggle => setPanel(toggle, false));
+      if (restoreFocus) buttonMenuMobile.focus();
+    }
+  };
+  buttonMenuMobile.addEventListener("click", () => setOpen(true));
+  close.addEventListener("click", () => setOpen(false));
+  menu.querySelector(".inner-overlay").addEventListener("click", () => setOpen(false));
+  mobile.addEventListener("change", () => {
+    setOpen(false, false);
+    fitCategories();
   });
+  toggles.forEach(toggle => {
+    const item = toggle.closest("li");
+    toggle.addEventListener("click", () => setPanel(toggle, panelFor(toggle).hidden));
+    if (item.matches("[data-nav-category]")) {
+      item.addEventListener("pointerenter", event => {
+        if (event.pointerType === "mouse" && !mobile.matches && item.parentElement === list) setPanel(toggle, true);
+      });
+      item.addEventListener("pointerleave", () => {
+        if (!mobile.matches && item.parentElement === list && !panelFor(toggle).contains(document.activeElement)) setPanel(toggle, false);
+      });
+    }
+    item.addEventListener("focusout", event => {
+      if (event.relatedTarget && !item.contains(event.relatedTarget)) setPanel(toggle, false);
+    });
+  });
+  document.addEventListener("click", event => {
+    toggles.forEach(toggle => {
+      if (!toggle.closest("li").contains(event.target)) setPanel(toggle, false);
+    });
+  });
+  document.addEventListener("keydown", event => {
+    if (event.key !== "Escape") return;
+    const open = Array.from(menu.querySelectorAll('[data-nav-toggle][aria-expanded="true"]')).reverse();
+    const toggle = open.find(item => item.closest("li").contains(event.target)) || open[0];
+    if (toggle) {
+      setPanel(toggle, false);
+      toggle.focus();
+    } else if (menu.classList.contains("active")) setOpen(false);
+  });
+  menu.querySelectorAll("a").forEach(link => {
+    if (link.getAttribute("href") === location.pathname) link.setAttribute("aria-current", "page");
+    link.addEventListener("click", () => {
+      if (mobile.matches) setOpen(false, false);
+    });
+  });
+  if (more) {
+    fitCategories();
+    const observer = new ResizeObserver(requestFit);
+    observer.observe(menu);
+    window.addEventListener("resize", requestFit);
+    document.fonts?.ready.then(requestFit);
+    document.fonts?.addEventListener("loadingdone", requestFit);
+  }
 }
 // End Menu Mobile
 
@@ -44,7 +155,7 @@ if (boxAddressSection1) {
   const listItem = boxAddressSection1.querySelectorAll(".inner-suggest-list .inner-item");
   listItem.forEach(item => {
     item.addEventListener("mousedown", () => {
-      const title = item.querySelector(".inner-item-title").innerHTML.trim();
+      const title = item.querySelector(".inner-item-title").textContent.trim();
       if (title) {
         input.value = title;
       }
@@ -182,65 +293,44 @@ if (boxTourInfo) {
     boxTourInfo.classList.add("active");
   })
 
-  new Viewer(boxTourInfo);
+  if (window.Viewer) new Viewer(boxTourInfo);
 }
 // End Box Tour Info
 
 // Khởi tạo AOS
-AOS.init();
+if (window.AOS) window.AOS.init();
+else document.documentElement.classList.add("no-aos");
 // Hết Khởi tạo AOS
 
 // Swiper Section 2
-const swiperSection2 = document.querySelector(".swiper-section-2");
-if (swiperSection2) {
-  new Swiper('.swiper-section-2', {
+function tourCarousel(selector, breakpoints) {
+  const element = document.querySelector(selector);
+  if (!element) return;
+  const slideCount = element.querySelectorAll(".swiper-wrapper > .swiper-slide").length;
+  if (!window.Swiper || slideCount < 2) {
+    element.classList.add("swiper-static");
+    return;
+  }
+  const maxVisible = Math.max(...Object.values(breakpoints).map(point => point.slidesPerView));
+  const pagination = element.querySelector(".swiper-pagination");
+  const loop = slideCount >= maxVisible + 1;
+  return new window.Swiper(element, {
     slidesPerView: 1,
     spaceBetween: 20,
-    autoplay: {
-      delay: 4000,
-    },
-    loop: true,
-    breakpoints: {
-      992: {
-        slidesPerView: 2,
-      },
-      1200: {
-        slidesPerView: 3,
-      },
-    },
+    autoplay: matchMedia("(prefers-reduced-motion: reduce)").matches ? false : { delay: 4000 },
+    loop,
+    rewind: !loop,
+    watchOverflow: true,
+    ...(pagination ? { pagination: { el: pagination, clickable: true } } : {}),
+    breakpoints
   });
 }
-// End Swiper Section 2
-
-// Swiper Section 3
-const swiperSection3 = document.querySelector(".swiper-section-3");
-if (swiperSection3) {
-  new Swiper('.swiper-section-3', {
-    slidesPerView: 1,
-    spaceBetween: 20,
-    autoplay: {
-      delay: 4000,
-    },
-    loop: true,
-    pagination: {
-      el: ".swiper-pagination",
-      clickable: true,
-    },
-    breakpoints: {
-      576: {
-        slidesPerView: 2,
-      },
-      992: {
-        slidesPerView: 3,
-      },
-    },
-  });
-}
-// End Swiper Section 3
+tourCarousel(".swiper-section-2", { 992: { slidesPerView: 2 }, 1200: { slidesPerView: 3 } });
+tourCarousel(".swiper-section-3", { 576: { slidesPerView: 2 }, 992: { slidesPerView: 3 } });
 
 // Swiper Box Images
 const boxImages = document.querySelector(".box-images");
-if (boxImages) {
+if (boxImages && window.Swiper) {
   const swiperBoxImagesThumb = new Swiper(".swiper-box-images-thumb", {
     spaceBetween: 5,
     slidesPerView: 4,
@@ -262,191 +352,184 @@ if (boxImages) {
 
 // Zoom Box Images Main
 const boxImagesMain = document.querySelector(".box-images .inner-images-main");
-if (boxImagesMain) {
+if (boxImagesMain && window.Viewer) {
   new Viewer(boxImagesMain);
 }
 // End Zoom Box Images Main
 
 // Box Tour Schedule
 const boxTourSchedule = document.querySelector(".box-tour-schedule");
-if (boxTourSchedule) {
+if (boxTourSchedule && window.Viewer) {
   new Viewer(boxTourSchedule);
 }
 // End Box Tour Schedule
 
-// Email Form
+// Newsletter
 const emailForm = document.querySelector("#email-form");
 if (emailForm) {
-  const validation = new JustValidate('#email-form');
-
-  validation
-    .addField('#email-input', [
-      {
-        rule: 'required',
-        errorMessage: 'Vui lòng nhập email của bạn!',
-      },
-      {
-        rule: 'email',
-        errorMessage: 'Email không đúng định dạng!',
-      },
-    ])
-    .onSuccess((event) => {
-      const email = event.target.email.value;
-
-      const dataFinal = {
-        email: email,
-      };
-
-      fetch(`/contact/create`, {
+  emailForm.addEventListener("submit", async event => {
+    event.preventDefault();
+    const button = emailForm.querySelector('button[type="submit"]');
+    if (button.disabled || !emailForm.reportValidity()) return;
+    button.disabled = true;
+    try {
+      await travelRequest("/contact/create", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(dataFinal),
-      })
-        .then(res => res.json())
-        .then(data => {
-          if (data.code == "error") {
-            showTravelNotice(data.message, "error");
-          }
-
-          if (data.code == "success") {
-            window.location.reload();
-          }
-        })
-    })
-    ;
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: emailForm.elements.email.value })
+      });
+      location.reload();
+    } catch (error) {
+      showTravelNotice(error.message || "Chưa nhận được kết quả đăng ký.", "error");
+    } finally {
+      button.disabled = false;
+    }
+  });
 }
-// End Email Form
-
-// Coupon Form
-const couponForm = document.querySelector("#coupon-form");
-if (couponForm) {
-  const validation = new JustValidate('#coupon-form');
-
-  validation
-    .onSuccess((event) => {
-      const coupon = event.target.coupon.value;
-      console.log(coupon);
-    })
-    ;
-}
-// End Email Form
 
 // Order Form
 const orderForm = document.querySelector("#order-form");
 if (orderForm) {
-  const validation = new JustValidate('#order-form');
+  const pendingKey = "vt.checkout.pending.v1";
+  const feedback = orderForm.querySelector("[data-checkout-feedback]");
+  const submitButton = orderForm.querySelector('button[type="submit"]');
+  let submitting = false;
+  const itemKey = item => JSON.stringify([
+    item.tourId, item.locationFrom, item.quantityAdult, item.quantityChildren, item.quantityBaby
+  ]);
+  const readCart = () => JSON.parse(localStorage.getItem("cart") || "[]");
 
-  validation
-    .addField('#full-name-input', [
-      {
-        rule: 'required',
-        errorMessage: 'Vui lòng nhập họ tên!'
-      },
-      {
-        rule: 'minLength',
-        value: 5,
-        errorMessage: 'Họ tên phải có ít nhất 5 ký tự!',
-      },
-      {
-        rule: 'maxLength',
-        value: 50,
-        errorMessage: 'Họ tên không được vượt quá 50 ký tự!',
-      },
-    ])
-    .addField('#phone-input', [
-      {
-        rule: 'required',
-        errorMessage: 'Vui lòng nhập số điện thoại!'
-      },
-      {
-        rule: 'customRegexp',
-        value: /(84|0[3|5|7|8|9])+([0-9]{8})\b/g,
-        errorMessage: 'Số điện thoại không đúng định dạng!'
-      },
-    ])
-    .onSuccess((event) => {
-      const fullName = event.target.fullName.value;
-      const phone = event.target.phone.value;
-      const note = event.target.note.value;
-      const method = event.target.method.value;
+  function setBusy(value) {
+    submitting = submitButton.disabled = value;
+    orderForm.setAttribute("aria-busy", String(value));
+  }
 
-      let cart = JSON.parse(localStorage.getItem("cart"));
-      cart = cart.filter(item => {
-        return (item.checked == true) && (item.quantityAdult + item.quantityChildren + item.quantityBaby > 0)
-      });
+  function completeOrder(data, pending) {
+    const booked = new Set(Array.isArray(data.bookedItems) ? data.bookedItems.map(itemKey) : pending.booked || []);
+    localStorage.setItem("cart", JSON.stringify(readCart().filter(item => !booked.has(itemKey(item)))));
+    sessionStorage.removeItem(pendingKey);
+    const gateway = ["zalopay", "vnpay", "card"].includes(data.paymentMethod) &&
+      data.paymentStatus === "unpaid" && data.orderStatus !== "cancel";
+    const destination = gateway ? "payment-" + data.paymentMethod : "success";
+    window.location.assign("/order/" + destination + "?orderId=" + encodeURIComponent(data.orderId));
+  }
 
-      cart = cart.map(item => {
-        return {
-          tourId: item.tourId,
-          locationFrom: item.locationFrom,
-          quantityAdult: item.quantityAdult,
-          quantityChildren: item.quantityChildren,
-          quantityBaby: item.quantityBaby,
-        }
-      })
+  async function checkoutSession() {
+    const load = async () => {
+      const response = await fetch("/order/checkout-session", { cache: "no-store", signal: AbortSignal.timeout(15000) });
+      const data = await response.json();
+      if (!response.ok || data.code !== "success") throw new Error(data.message);
+      return data;
+    };
+    const locks = window.navigator?.locks;
+    return locks ? locks.request("vt.checkout.session", load) : load();
+  }
 
-      if (cart.length > 0) {
-        const dataFinal = {
-          fullName: fullName,
-          phone: phone,
-          note: note,
-          paymentMethod: method,
-          items: cart
-        };
+  function readPending() {
+    const value = JSON.parse(sessionStorage.getItem(pendingKey) || "null");
+    return typeof value?.intentId === "string" && typeof value.scopeTag === "string" ? value : null;
+  }
 
-        fetch(`/order/create`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(dataFinal),
-        })
-          .then(res => res.json())
-          .then(data => {
-            if (data.code == "error") {
-              showTravelNotice(data.message, "error");
+  async function recoverOrder(pending) {
+    feedback.textContent = "Đang kiểm tra kết quả lần đặt trước…";
+    const response = await fetch("/order/checkout-status", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ intentId: pending.intentId }), signal: AbortSignal.timeout(15000)
+    });
+    const data = await response.json();
+    if (response.ok && data.code === "success") {
+      completeOrder(data, pending);
+      return true;
+    }
+    if (["INTENT_CLOSED", "INTENT_EXPIRED_NOT_CREATED"].includes(data.errorCode)) sessionStorage.removeItem(pendingKey);
+    feedback.textContent = data.errorCode === "INVALID_INTENT"
+      ? "Phiên hiện tại chưa thể mở lần đặt trước. Hãy dùng cùng phiên khách hoặc đăng nhập bằng đúng thẻ đã dùng khi đặt. Nếu phiên khách đã hết hạn, hãy liên hệ hỗ trợ để đối soát."
+      : data.message || "Chưa xác định được kết quả lần đặt trước.";
+    return data.errorCode !== "ORDER_NOT_FOUND";
+  }
 
-              if (data.errorCode === "OUT_OF_STOCK") {
-                drawCart();
-              }
+  async function resumeCheckout() {
+    if (submitting) return;
+    try {
+      const pending = readPending();
+      if (!pending) return;
+      setBusy(true);
+      await recoverOrder(pending);
+    } catch {
+      feedback.textContent = "Chưa nhận được kết quả. Trang sẽ kiểm tra lại khi tải hoặc khi gửi tiếp lần đặt này.";
+    } finally {
+      setBusy(false);
+    }
+  }
 
-              return;
-            }
-
-            if (data.code == "success") {
-              // Cập nhật lại giỏ hàng
-              let cart = JSON.parse(localStorage.getItem("cart"));
-              cart = cart.filter(item => item.checked == false);
-              localStorage.setItem("cart", JSON.stringify(cart));
-
-              switch (method) {
-                case "money":
-                case "bank":
-                  // Chuyển hướng sang trang đặt hành thành công
-                  window.location.href = `/order/success?orderId=${data.orderId}&phone=${phone}`;
-                  break;
-                case "zalopay":
-                  // Chuyển hướng sang trang thanh toán bằng ZaloPay
-                  window.location.href = `/order/payment-zalopay?orderId=${data.orderId}`;
-                  break;
-                case "vnpay":
-                  // Chuyển hướng sang trang thanh toán bằng VNPay
-                  window.location.href = `/order/payment-vnpay?orderId=${data.orderId}`;
-                  break;
-                case "card":
-                  // Chuyển hướng sang trang thanh toán bằng ví thẻ
-                  window.location.href = `/order/payment-card?orderId=${data.orderId}`;
-                  break;
-              }
-            }
-          })
-      } else {
-        showTravelNotice("Vui lòng đặt ít nhất 1 tour!");
+  orderForm.addEventListener("submit", async event => {
+    event.preventDefault();
+    if (submitting) return;
+    const phoneInput = orderForm.elements.phone;
+    const phone = phoneInput.value.trim();
+    if (!/^\+?[0-9 .()\-]+$/.test(phone) || phone.length > 25 || phone.replace(/\D/g, "").length < 7) {
+      phoneInput.setCustomValidity("Số điện thoại không đúng định dạng.");
+      phoneInput.reportValidity();
+      return;
+    }
+    setBusy(true);
+    let pending;
+    try {
+      pending = readPending();
+      if (pending && await recoverOrder(pending)) return;
+      const items = readCart().filter(item => item.checked && item.quantityAdult + item.quantityChildren + item.quantityBaby > 0)
+        .map(({ tourId, locationFrom, quantityAdult, quantityChildren, quantityBaby }) =>
+          ({ tourId, locationFrom, quantityAdult, quantityChildren, quantityBaby }));
+      if (!items.length) {
+        feedback.textContent = "Vui lòng chọn ít nhất một tour.";
+        return;
       }
-    })
-    ;
+      if (!pending) {
+        const checkout = await checkoutSession();
+        pending = { intentId: checkout.intentId, scopeTag: checkout.scopeTag, booked: items.map(itemKey) };
+      } else if (!pending.booked) {
+        pending.booked = items.map(itemKey);
+      }
+      sessionStorage.setItem(pendingKey, JSON.stringify(pending));
+      feedback.textContent = "Đang gửi đơn đặt tour…";
+      const response = await fetch("/order/create", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        signal: AbortSignal.timeout(30000),
+        body: JSON.stringify({
+          fullName: orderForm.elements.fullName.value, phone, note: orderForm.elements.note.value,
+          paymentMethod: orderForm.elements.method.value, items, intentId: pending.intentId
+        })
+      });
+      const data = await response.json();
+      if (response.ok && data.code === "success") {
+        completeOrder(data, { ...pending, booked: items.map(itemKey) });
+        return;
+      }
+      if (["INTENT_CONFLICT", "INTENT_EXPIRED", "INTENT_CLOSED", "ORDER_CREATE_FAILED"].includes(data.errorCode)) {
+        await recoverOrder(pending);
+      } else if (data.errorCode === "INSUFFICIENT_BALANCE") {
+        feedback.textContent = "";
+        await showTravelNotice(data.message || "Hãy nạp thêm tiền hoặc chọn phương thức thanh toán khác.", "warning", {
+          title: "Số dư ví không đủ", fallbackTarget: feedback
+        });
+      } else {
+        feedback.textContent = data.message || "Không thể hoàn tất lần đặt tour này.";
+        if (data.errorCode === "OUT_OF_STOCK") drawCart();
+      }
+    } catch {
+      try {
+        if (pending && await recoverOrder(pending)) return;
+      } catch {
+        // The same intent is kept for a later request.
+      }
+      feedback.textContent = "Chưa xác định được kết quả đặt tour. Tải lại trang hoặc gửi lại trong cùng phiên để tiếp tục.";
+    } finally {
+      setBusy(false);
+    }
+  });
+  void resumeCheckout();
+  window.addEventListener("pageshow", event => { if (event.persisted) void resumeCheckout(); });
+  orderForm.elements.phone.addEventListener("input", event => event.target.setCustomValidity(""));
 
   // List Input Method
   const listInputMethod = orderForm.querySelectorAll("input[name='method']");
@@ -454,6 +537,7 @@ if (orderForm) {
 
   listInputMethod.forEach(inputMethod => {
     inputMethod.addEventListener("change", () => {
+      if (feedback.textContent.startsWith("Số dư ví không đủ.")) feedback.textContent = "";
       if (inputMethod.value == "bank") {
         elementInfoBank.classList.add("active");
       } else {
@@ -559,22 +643,6 @@ if (formSearch) {
 }
 // End Form Search
 
-// Show Alert
-const showTravelNotice = (message, icon = "warning") => {
-  return Swal.fire({
-    icon: icon,
-    title: icon === "warning"
-      ? "Thông báo"
-      : "Kết quả",
-    text: message,
-    confirmButtonText: "Đã hiểu",
-    confirmButtonColor: "#2563eb",
-    heightAuto: false
-  });
-};
-// End Show Alert
-
-// Validation số lượng hành khách
 const readPassengerQuantity = (value, maximum) => {
   const raw = String(value).trim();
   const limit = Number(maximum);
@@ -751,17 +819,18 @@ const drawCart = () => {
   })
     .then(res => res.json())
     .then(data => {
+      if (localStorage.getItem("cart") !== cart) return;
       if (data.code == "success") {
         // Hiển thị các item
         const htmlCart = data.cart.map(item => `
           <div class="inner-tour-item">
             <div class="inner-actions">
-              <button class="inner-delete" button-delete tour-id="${item.tourId}">
-                <i class="fa-solid fa-xmark"></i>
+              <button class="inner-delete" button-delete tour-id="${item.tourId}" aria-label="Bỏ tour khỏi giỏ">
+                <i class="fa-solid fa-xmark" aria-hidden="true"></i>
               </button>
               <input 
                 class="inner-check" 
-                type="checkbox" ${item.checked ? 'checked' : ''}
+                type="checkbox" aria-label="Chọn tour để đặt" ${item.checked ? 'checked' : ''}
                 input-check
                 tour-id="${item.tourId}"
               >
@@ -971,14 +1040,24 @@ const drawCart = () => {
         // Sự kiện xóa item
         const listButtonDelete = document.querySelectorAll("[button-delete]");
         listButtonDelete.forEach(button => {
-          button.addEventListener("click", () => {
+          button.addEventListener("click", async () => {
             const tourId = button.getAttribute("tour-id");
-
-            const cart = JSON.parse(localStorage.getItem("cart"));
-            const indexItem = cart.findIndex(tour => tour.tourId == tourId);
-            cart.splice(indexItem, 1);
-            localStorage.setItem("cart", JSON.stringify(cart));
-            drawCart();
+            if (button.disabled) return;
+            button.disabled = true;
+            try {
+              if (!await confirmTravelAction({
+                title: "Bỏ tour khỏi giỏ?",
+                message: "Bạn có thể thêm lại tour từ trang chi tiết.",
+                confirmText: "Bỏ tour"
+              })) return;
+              const cart = JSON.parse(localStorage.getItem("cart") || "[]");
+              localStorage.setItem("cart", JSON.stringify(cart.filter(tour => tour.tourId !== tourId)));
+              drawCart();
+            } catch {
+              showTravelNotice("Không thể cập nhật giỏ hàng.", "error");
+            } finally {
+              button.disabled = false;
+            }
           })
         })
         // Hết Sự kiện xóa item

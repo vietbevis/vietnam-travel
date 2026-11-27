@@ -1,61 +1,12 @@
 extends ../layouts/default.pug
+include ../mixins/list-pagination.pug
 
 block main
   if (permissions.includes("tour-view"))
     h1.box-title Quản lý tour
 
-    //- Section 4
-    .section-4
-      .inner-wrap
-        .inner-item.inner-label
-          <i class="fa-solid fa-filter"></i> Bộ lọc
-        .inner-item
-          select
-            option(value="") Trạng thái
-            option(value="") Hoạt động
-            option(value="") Tạm dừng
-        .inner-item
-          select
-            option(value="") Người tạo
-            option(value="") Lê Văn A
-            option(value="") Lê Văn B
-        .inner-item.inner-date
-          input(type="date")
-          span -
-          input(type="date")
-        .inner-item
-          select
-            option(value="") Danh mục
-            option(value="") Danh mục 1
-            option(value="") Danh mục 2
-        .inner-item
-          select
-            option(value="") Mức giá
-            option(value="") Dưới 2tr
-            option(value="") 2tr đến 4tr
-            option(value="") 4tr đến 8tr
-            option(value="") Trên 8tr
-        .inner-item.inner-reset
-          <i class="fa-solid fa-rotate-left"></i> Xóa bộ lọc
-    //- End Section 4
-
-    //- Section 5
     .section-5
       .inner-wrap
-        .inner-change-status
-          .inner-item
-            select
-              option(value="") -- Hành động --
-              if (permissions.includes("tour-edit"))
-                option(value="") Hoạt động
-                option(value="") Dừng hoạt động
-              if (permissions.includes("tour-delete"))
-                option(value="") Xóa
-          .inner-item
-            button Áp dụng
-        .inner-search
-          <i class="fa-solid fa-magnifying-glass"></i>
-          input(type="text" placeholder="Tìm kiếm")
         if (permissions.includes("tour-create"))
           .inner-button-create
             a(href=`/${pathAdmin}/tour/create`) + Tạo mới
@@ -70,8 +21,6 @@ block main
         table
           thead
             tr
-              th(class="inner-center")
-                input(type="checkbox" class="inner-check")
               th Tên tour
               th Ảnh đại diện
               th(style="width: 130px") Giá
@@ -84,15 +33,13 @@ block main
           tbody
             each item in tourList
               tr
-                td(class="inner-center")
-                  input(type="checkbox" class="inner-check")
                 td #{item.name}
                 td
                   img(src=item.avatar class="inner-avatar")
                 td
-                  div NL: #{item.priceNewAdult.toLocaleString("vi-VN")}đ
-                  div TE: #{item.priceNewChildren.toLocaleString("vi-VN")}đ
-                  div EB: #{item.priceNewBaby.toLocaleString("vi-VN")}đ
+                  div NL: #{item.priceNewAdult.toLocaleString("vi-VN")} đ
+                  div TE: #{item.priceNewChildren.toLocaleString("vi-VN")} đ
+                  div EB: #{item.priceNewBaby.toLocaleString("vi-VN")} đ
                 td
                   div NL: #{item.stockAdult}
                   div TE: #{item.stockChildren}
@@ -120,15 +67,14 @@ block main
                       button(
                         class="inner-delete"
                         button-delete
+                        data-confirm="trash"
+                        aria-label=`Chuyển ${item.name} vào thùng rác`
                         data-api=`/${pathAdmin}/tour/delete/${item.id}`
                       ) <i class="fa-regular fa-trash-can"></i>
     //- End Section 6
 
-    //- Section 7
-    .section-7
-      span(class="inner-label") Hiển thị 1 - 9 của 78
-      select(class="inner-pagination")
-        option Trang 1
-        option Trang 2
-        option Trang 3
-    //- End Section 7
+            else
+              tr
+                td(colspan="9") Chưa có tour.
+
+    +listPagination(pagination, tourList.length, 'Trang tour')

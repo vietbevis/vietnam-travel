@@ -1,0 +1,61 @@
+extends ../layouts/default
+
+block main
+  - const person = accountCustomer
+  - const dob = person.dob ? person.dob.toISOString().slice(0, 10) : ''
+  main.card-account(data-customer-profile data-card-id=card.cardId data-dob=dob.replace(/-/g,''))
+    .container
+      header.card-page-head
+        h1.card-page-title Thông tin cá nhân
+        a.card-btn.card-btn-outline(href="/account/card") Thẻ của tôi
+      p.card-hint(data-customer-status role="status" aria-live="polite")
+      section.card-panel
+        h2.card-panel-title Hồ sơ thành viên
+        dl.card-profile
+          div
+            dt Họ tên
+            dd= person.fullName || 'Chưa cập nhật'
+          div
+            dt Ngày sinh
+            dd= dob ? dob.split('-').reverse().join('/') : 'Chưa cập nhật'
+          div
+            dt Email
+            dd= person.email
+        p.card-hint Liên hệ nhân viên để cập nhật họ tên, ngày sinh, email hoặc ảnh chân dung trên thẻ.
+        form.card-form.card-form-grid(method="post" data-card-profile)
+          input(type="hidden" name="revision" value=chipRevision)
+          .card-field
+            label(for="profile-gender") Giới tính
+            select#profile-gender(name="gender")
+              option(value="" selected=!person.gender disabled=Boolean(person.gender)) Chưa cập nhật
+              each item in [['male','Nam'],['female','Nữ'],['other','Khác']]
+                option(value=item[0] selected=item[0]===person.gender)= item[1]
+          .card-field
+            label(for="profile-phone") Số điện thoại
+            input#profile-phone(type="tel" name="phone" maxlength="15" value=person.phone || '')
+          .card-field
+            label(for="profile-emergency-name") Người liên hệ khẩn cấp
+            input#profile-emergency-name(name="emergencyName" maxlength="60" value=person.emergencyName || '')
+          .card-field
+            label(for="profile-emergency-phone") Điện thoại khẩn cấp
+            input#profile-emergency-phone(type="tel" name="emergencyPhone" maxlength="15" value=person.emergencyPhone || '')
+          button.card-btn(type="submit") Ghi thông tin lên thẻ
+        p.card-hint Cắm thẻ của bạn và nhập PIN để ghi thông tin.
+        button.card-btn.card-btn-outline(type="button" data-card-change-pin) Đổi PIN
+      section.card-panel
+        h2.card-panel-title Hồ sơ trên website
+        form.card-form(method="post" enctype="multipart/form-data" data-web-profile)
+          input(type="hidden" name="revision" value=webRevision)
+          .card-field
+            label(for="profile-address") Địa chỉ
+            textarea#profile-address(name="address" maxlength="300" rows="3")= person.address || ''
+          .card-field
+            label(for="profile-avatar") Ảnh đại diện website
+            if person.webAvatar
+              img.card-photo(data-web-avatar src=person.webAvatar width="100" height="100" alt="Ảnh đại diện website")
+              label.card-checkbox-label
+                input(type="checkbox" name="clearAvatar" value="true")
+                |  Bỏ ảnh khi lưu
+            input#profile-avatar(type="file" name="webAvatar" accept="image/jpeg,image/png,image/gif,image/webp")
+            p.card-hint JPEG, PNG, GIF hoặc WebP, tối đa 5 MB.
+          button.card-btn(type="submit") Lưu hồ sơ web

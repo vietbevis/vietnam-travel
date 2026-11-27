@@ -7,13 +7,13 @@ block main
           i.fa-solid.fa-shield-halved(aria-hidden="true")
         h1.card-page-title Khóa thẻ bị mất
         p.card-hint Nhập email chủ thẻ để nhận mã OTP. Mã có hiệu lực 5 phút, tối đa 5 lần nhập. Khóa thẻ giữ nguyên số dư và các khoản đang chờ.
-        form.card-form(data-card-lock-send)
+        form.card-form(method="post" data-card-lock-send)
           .card-step Bước 1
           .card-field
             label(for="lock-send-email") Email chủ thẻ
             input#lock-send-email(type="email" name="email" required maxlength="254" autocomplete="email")
           button.card-btn(type="submit") Gửi mã OTP
-        form.card-form(data-card-lock-confirm)
+        form.card-form(method="post" data-card-lock-confirm)
           .card-step Bước 2
           .card-field
             label(for="lock-confirm-email") Email chủ thẻ

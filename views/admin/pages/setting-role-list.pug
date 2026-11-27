@@ -1,52 +1,35 @@
 extends ../layouts/default.pug
 
+include ../mixins/list-pagination.pug
+
 block main
   h1.box-title Nhóm quyền
-
-  //- Section 5
-  .section-5
-    .inner-wrap
-      .inner-change-status
-        .inner-item
-          select
-            option(value="") -- Hành động --
-            option(value="") Xóa
-        .inner-item
-          button Áp dụng
-      .inner-search
-        <i class="fa-solid fa-magnifying-glass"></i>
-        input(type="text" placeholder="Tìm kiếm")
-      .inner-button-create
-        a(href=`/${pathAdmin}/setting/role/create`) + Tạo mới
-  //- End Section 5
-
-  //- Section 6
+  if permissions.includes("role-create")
+    .section-5
+      .inner-wrap
+        .inner-button-create
+          a(href=`/${pathAdmin}/setting/role/create`) + Tạo mới
   .section-6
-    .table-2
+    .table-2(tabindex="0" aria-label="Danh sách nhóm quyền")
       table
         thead
           tr
-            th(class="inner-center")
-              input(type="checkbox" class="inner-check")
             th Tên nhóm quyền
             th Mô tả ngắn
             th Hành động
         tbody
           each item in roleList
             tr
-              td(class="inner-center")
-                input(type="checkbox" class="inner-check")
-              td #{item.name}
-              td #{item.description}
+              td= item.name
+              td= item.description || 'Chưa có mô tả'
               td
-                .inner-buttons
-                  a(
-                    href=`/${pathAdmin}/setting/role/edit/${item.id}`
-                    class="inner-edit"
-                  ) <i class="fa-regular fa-pen-to-square"></i>
-                  button(
-                    class="inner-delete"
-                    button-delete
-                    data-api=`/${pathAdmin}/setting/role/delete/${item.id}`
-                  ) <i class="fa-regular fa-trash-can"></i>
-  //- End Section 6
+                if permissions.includes("role-edit")
+                  .inner-buttons
+                    a.inner-edit(href=`/${pathAdmin}/setting/role/edit/${item.id}` aria-label="Sửa nhóm quyền")
+                      i.fa-regular.fa-pen-to-square(aria-hidden="true")
+                else
+                  span Không có quyền sửa
+          else
+            tr
+              td(colspan="3") Chưa có nhóm quyền.
+  +listPagination(pagination, roleList.length, 'Trang nhóm quyền')

@@ -44,6 +44,8 @@ it('walletRevenueMonth chỉ tính debit/order/done trong tháng hiện tại gi
   await tx({fields:{amount:3200,status:'failed'},createdAt:new Date('2026-11-10T00:00:00Z')});
   await tx({fields:{amount:6400,source:'refund'},createdAt:new Date('2026-11-10T00:00:00Z')});
   await tx({fields:{amount:12800,type:'credit'},createdAt:new Date('2026-11-10T00:00:00Z')});
+  await tx({fields:{amount:25600,source:'transfer',type:'debit'},createdAt:new Date('2026-11-10T00:00:00Z')});
+  await tx({fields:{amount:25600,source:'transfer',type:'credit'},createdAt:new Date('2026-11-10T00:00:00Z')});
   assert.equal((await stats.cardStats(now)).walletRevenueMonth,300);
   assert.equal((await stats.cardStats(new Date('2026-12-02T00:00:00Z'))).walletRevenueMonth,800);
 });

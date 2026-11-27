@@ -1,18 +1,17 @@
 const router = require('express').Router();
-const multer  = require('multer');
 
 const profileController = require("../../controllers/admin/profile.controller");
 
-const cloudinaryHelper = require("../../helpers/cloudinary.helper");
-
-const upload = multer({ storage: cloudinaryHelper.storage });
+const { asyncRoute } = require('../../middlewares/http-route.middleware');
+const { cardInput } = require('../../controllers/admin/account.controller');
+const { upload, storeImages } = require('../../middlewares/admin/image-upload.middleware');
 
 router.get('/edit', profileController.edit)
 
-router.patch('/edit', upload.single('avatar'), profileController.editPatch)
+router.patch('/edit', upload.single('avatar'), asyncRoute(storeImages), asyncRoute(profileController.editPatch))
 
 router.get('/change-password', profileController.changePassword)
 
-router.patch('/change-password', profileController.changePasswordPatch)
+router.patch('/change-password', cardInput(), asyncRoute(profileController.changePasswordPatch))
 
 module.exports = router;

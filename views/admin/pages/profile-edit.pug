@@ -4,16 +4,16 @@ block main
   h1.box-title Thông tin cá nhân
 
   .section-8
-    form#profile-edit-form
+    form#profile-edit-form(method="post")
       .inner-group
         label(class="inner-label" for="fullName") Họ tên
-        input(type="text" id="fullName" name="fullName" value=account.fullName)
+        input(type="text" id="fullName" name="fullName" value=account.fullName required minlength="5" maxlength="50")
       .inner-group
         label(class="inner-label" for="email") Email
-        input(type="email" id="email" name="email" value=account.email)
+        input(type="email" id="email" name="email" value=account.email readonly)
       .inner-group
         label(class="inner-label" for="phone") Số điện thoại
-        input(type="text" id="phone" name="phone" value=account.phone)
+        input(type="tel" id="phone" name="phone" value=account.phone maxlength="25")
       .inner-group
         label(class="inner-label" for="positionCompany") Chức vụ
         input(type="text" id="positionCompany" value=account.positionCompany readonly)
@@ -23,8 +23,9 @@ block main
       .inner-group.inner-two-col
         label(class="inner-label" for="avatar") Ảnh đại diện
         div(class="inner-upload-image" image-default=(account.avatar || ""))
-          input(type="file" id="avatar" accept="image/*" filepond-image name="avatar")
+          input(type="file" id="avatar" accept="image/*" filepond-image name="avatar" data-clear-image)
+      p.form-status.inner-two-col(data-form-status role="status")
       .inner-button.inner-two-col
-        button Cập nhật
+        button(type="submit") Cập nhật
     .inner-back
       a(href=`/${pathAdmin}/profile/change-password`) Đổi mật khẩu

@@ -16,9 +16,11 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -86,6 +88,9 @@ class AgentHttpServerTest {
         assertEquals("sim", o.get("mode").getAsString());
         assertTrue(o.get("cardPresent").getAsBoolean());
         assertEquals(0, o.get("slot").getAsInt());
+        assertTrue(o.has("slotCount"), "simulator exposes its actual slot count");
+        assertEquals(4, o.get("slotCount").getAsInt());
+        assertEquals(false, o.get("busy").getAsBoolean());
     }
 
     @Test
@@ -165,6 +170,52 @@ class AgentHttpServerTest {
         assertEquals(2, json(call("GET", "/v1/status", null, null)).get("slot").getAsInt());
         assertEquals(400, post("/v1/sim/slot", "{\"slot\":9}").statusCode());
         assertEquals(200, post("/v1/sim/reset", "{\"slot\":2}").statusCode());
+    }
+
+    @Test
+    void slotSwitchIsRejectedWhileSimulatorExecutesBatch() throws Exception {
+        CountDownLatch inBatch = new CountDownLatch(1);
+        CountDownLatch releaseBatch = new CountDownLatch(1);
+        SimCardPort simulator = new SimCardPort(3);
+        start(new SimulatorPort() {
+            public List<byte[]> transmitBatch(List<byte[]> apdus) throws NoCardException {
+                inBatch.countDown();
+                try {
+                    if (!releaseBatch.await(5, TimeUnit.SECONDS)) throw new NoCardException("Batch wait timed out");
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new NoCardException("Batch interrupted", e);
+                }
+                return simulator.transmitBatch(apdus);
+            }
+            public String readerName() { return simulator.readerName(); }
+            public boolean cardPresent() { return true; }
+            public Integer slot() { return simulator.slot(); }
+            public String mode() { return "sim"; }
+            public int slotCount() { return simulator.slotCount(); }
+            public void selectSlot(int slot) { simulator.selectSlot(slot); }
+            public void resetSlot(int slot) { simulator.resetSlot(slot); }
+        });
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            Future<HttpResponse<String>> batch = pool.submit(() -> post("/v1/transmit", apdus(SELECT, "8010000000")));
+            assertTrue(inBatch.await(3, TimeUnit.SECONDS));
+            JsonObject status = json(call("GET", "/v1/status", null, null));
+            assertTrue(status.get("busy").getAsBoolean());
+            assertEquals(3, status.get("slotCount").getAsInt());
+            Future<HttpResponse<String>> change = pool.submit(() -> post("/v1/sim/slot", "{\"slot\":1}"));
+            HttpResponse<String> rejected = change.get(2, TimeUnit.SECONDS);
+            assertEquals(409, rejected.statusCode());
+            assertEquals("busy", json(rejected).get("error").getAsString());
+            assertEquals(0, simulator.slot());
+            releaseBatch.countDown();
+            assertEquals(200, batch.get(3, TimeUnit.SECONDS).statusCode());
+            assertEquals(200, post("/v1/sim/slot", "{\"slot\":1}").statusCode());
+            assertEquals(1, simulator.slot());
+        } finally {
+            releaseBatch.countDown();
+            pool.shutdownNow();
+        }
     }
 
     @Test

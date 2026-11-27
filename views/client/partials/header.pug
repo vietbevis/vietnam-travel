@@ -1,3 +1,15 @@
+mixin headerCategories(items)
+  each item in items
+    li(data-nav-category)
+      .inner-category-row
+        a(href=`/category/${item.slug}`)= item.name
+        if item.children && item.children.length
+          button.inner-category-toggle(type="button" data-nav-toggle aria-expanded="false" aria-controls=`category-menu-${item.id}` aria-label=`Danh mục con: ${item.name}`)
+            i.fa-solid.fa-caret-down(aria-hidden="true")
+      if item.children && item.children.length
+        ul.inner-category-panel(id=`category-menu-${item.id}` hidden)
+          +headerCategories(item.children)
+
 // Top Header
 .top-header
   .container
@@ -20,50 +32,51 @@ header.header
   .container
     .inner-wrap
       // Menu Mobile
-      button.inner-menu-mobile
-        i.fa-solid.fa-bars
+      button.inner-menu-mobile(type="button" aria-label="Mở danh mục điều hướng" aria-controls="site-navigation" aria-expanded="false")
+        i.fa-solid.fa-bars(aria-hidden="true")
       // Logo
       .inner-logo
         a(href="/")
-          img(
-            alt=settingWebsiteInfo.websiteName
-            src=settingWebsiteInfo.logo
-            )
+          if settingWebsiteInfo.logo
+            img(alt=settingWebsiteInfo.websiteName || "Trang chủ" src=settingWebsiteInfo.logo)
+          else
+            span= settingWebsiteInfo.websiteName || "Trang chủ"
       // Menu
-      nav.inner-menu
+      nav#site-navigation.inner-menu(aria-label="Điều hướng chính")
         ul
+          li.inner-mobile-close
+            button(type="button" data-nav-close aria-label="Đóng điều hướng")
+              i.fa-solid.fa-xmark(aria-hidden="true")
           li
-            a.active(href="/") Trang chủ
-          each item in categoryList
-            li
-              a(href=`/category/${item.slug}`) #{item.name}
-              if(item.children)
-                i.fa-solid.fa-caret-down
-                ul
-                  each itemChild in item.children
-                    li
-                      a(href=`/category/${itemChild.slug}`) #{itemChild.name}
+            a(href="/") Trang chủ
+          +headerCategories(categoryList)
+          if categoryList.length
+            li(data-nav-more hidden)
+              button.inner-more-toggle(type="button" data-nav-toggle aria-expanded="false" aria-controls="category-menu-more")
+                | Xem thêm
+                i.fa-solid.fa-caret-down(aria-hidden="true")
+              ul#category-menu-more.inner-category-panel(hidden)
           li
-            a(href="#") Tin tức
-          li
-            a(href="#") Liên hệ
+            a(href="/#lien-he") Liên hệ
         .inner-overlay
       // Cart
       .card-session
         if typeof customer !== 'undefined' && customer
           span.card-session-name= customer.fullName
-          a.card-session-link(href="/account/card")
+          a.card-session-link(href="/account/card" aria-label="Thẻ của tôi")
             i.fa-solid.fa-credit-card(aria-hidden="true")
-            |  Thẻ của tôi
+            span Thẻ của tôi
+          a.card-session-link(href="/account/profile" aria-label="Thông tin cá nhân" title="Thông tin cá nhân")
+            i.fa-solid.fa-user(aria-hidden="true")
           button.card-session-logout(type="button" data-card-logout) Đăng xuất
         else
-          a.card-session-link(href="/account/login")
+          a.card-session-link(href="/account/login" aria-label="Đăng nhập bằng thẻ")
             i.fa-solid.fa-credit-card(aria-hidden="true")
-            |  Đăng nhập bằng thẻ
+            span Đăng nhập bằng thẻ
       .inner-cart
-        a(href="/cart")
+        a(href="/cart" aria-label="Giỏ hàng")
           img(
-            alt="Cart" 
+            alt=""
             src="/assets/images/icon-cart.svg"
             )
           span(mini-cart) 0

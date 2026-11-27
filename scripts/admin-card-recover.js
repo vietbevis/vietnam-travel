@@ -1,4 +1,5 @@
 'use strict';
+const os = require('node:os');
 // Khôi phục tài khoản admin bị kẹt vì cardRequired=true nhưng không còn thẻ nhân viên hoạt động.
 // Dùng: node scripts/admin-card-recover.js <email> [--yes] [--force] [--reason "lý do"]
 // Không có --yes: chỉ chạy thử (dry run), không ghi gì.
@@ -36,7 +37,7 @@ function describeCards(cards) {
   return cards.map(card => `  - ${card.cardId} | ${card.cardType} | ${card.status}${card.isCurrent ? ' | hiện hành' : ''}`);
 }
 
-function logEntry({ account, cards, reason, force }) {
+function logEntry({ account, cards, reason, force, operator }) {
   const staff = cards.find(card => card.cardType === 'staff');
   return {
     action: 'admin-card-recover',
@@ -44,8 +45,41 @@ function logEntry({ account, cards, reason, force }) {
     actorType: 'system',
     actorId: 'cli',
     result: 'success',
-    detail: { accountId: String(account._id || account.id), email: account.email, reason, force: !!force, previousCards: cards.map(card => ({ cardId: card.cardId, status: card.status, isCurrent: !!card.isCurrent })) }
+    detail: { accountId: String(account._id || account.id), reason, force: !!force, ...(operator ? { operator } : {}), previousCards: cards.map(card => ({ cardId: card.cardId, status: card.status, isCurrent: !!card.isCurrent })) }
   };
+}
+
+async function recoverAccount({ email, force, reason, operator }) {
+  const mongoose = require('mongoose');
+  const Account = require('../models/account-admin.model');
+  const Card = require('../models/card.model');
+  const CardLog = require('../models/card-log.model');
+  const session = await mongoose.startSession();
+  try {
+    return await session.withTransaction(async () => {
+      const account = await Account.findOne({ email, deleted: false, status: 'active' }).session(session);
+      const cards = account ? await Card.find({ ownerId: account.id, cardType: 'staff' })
+        .sort({ createdAt: -1 }).session(session).lean() : [];
+      const verdict = decide({ account, cards, force });
+      if (!verdict.proceed) return verdict;
+
+      // Conflict with concurrent lock, revoke or issuance commit on the same card.
+      for (const card of cards.filter(row => row.isCurrent)) {
+        const written = await Card.updateOne({ _id: card._id, status: card.status, isCurrent: true }, { $inc: { __v: 1 } }, { session });
+        if (written.matchedCount !== 1) throw new Error('Trạng thái thẻ vừa thay đổi.');
+      }
+      const updated = await Account.updateOne(
+        { _id: account._id, email, cardRequired: true, deleted: false, status: 'active' },
+        { $set: { cardRequired: false }, $inc: { sessionVersion: 1 } },
+        { session }
+      );
+      if (updated.modifiedCount !== 1) throw new Error('Trạng thái tài khoản vừa thay đổi.');
+      await CardLog.create([logEntry({ account, cards, reason, force, operator })], { session });
+      return { proceed: true, currentCard: cards.some(card => card.isCurrent) };
+    });
+  } finally {
+    await session.endSession();
+  }
 }
 
 async function main(argv = process.argv.slice(2), log = console.log) {
@@ -60,7 +94,6 @@ async function main(argv = process.argv.slice(2), log = console.log) {
   const mongoose = require('mongoose');
   const Account = require('../models/account-admin.model');
   const Card = require('../models/card.model');
-  const CardLog = require('../models/card-log.model');
   await mongoose.connect(process.env.DATABASE);
   try {
     const account = await Account.findOne({ email: args.email, deleted: false, status: 'active' });
@@ -70,20 +103,20 @@ async function main(argv = process.argv.slice(2), log = console.log) {
     if (!verdict.proceed) { log(verdict.reason); return 1; }
     if (!args.yes) { log('\nChạy thử (dry run): chưa thay đổi gì. Thêm --yes để đặt cardRequired=false cho tài khoản này.'); return 0; }
     const reason = args.reason || 'Khôi phục tài khoản admin mất/khóa thẻ nhân viên qua CLI';
-    const updated = await Account.updateOne({ _id: account._id, cardRequired: true }, { $set: { cardRequired: false } });
-    if (updated.modifiedCount !== 1) { log('Không cập nhật được tài khoản (có thể vừa thay đổi). Hãy chạy lại.'); return 1; }
-    await CardLog.create(logEntry({ account, cards, reason, force: args.force }));
+    const changed = await recoverAccount({ email: args.email, reason, force: args.force, operator: os.userInfo().username });
+    if (!changed.proceed) { log(changed.reason); return 1; }
     log('\nĐã tắt cardRequired và ghi Nhật ký thẻ (admin-card-recover).');
     log('Bước tiếp theo:');
     log('  1. Đăng nhập trang admin chỉ bằng email + mật khẩu.');
-    log('  2. Vào Phát hành thẻ -> Nhân viên, phát hành thẻ nhân viên mới cho tài khoản này (việc này bật lại cardRequired).');
+    if (changed.currentCard) log('  2. Xử lý thẻ hiện hành theo luồng cấp lại trước khi phát hành thẻ thay thế.');
+    else log('  2. Vào Phát hành thẻ -> Nhân viên để phát hành thẻ mới và bật lại cardRequired.');
     log('  3. Từ lần đăng nhập sau, dùng thẻ mới.');
     return 0;
   } finally { await mongoose.disconnect(); }
 }
 
-module.exports = { parseArgs, decide, hasActiveStaffCard, describeCards, logEntry, main };
+module.exports = { parseArgs, decide, hasActiveStaffCard, describeCards, logEntry, recoverAccount, main };
 
 if (require.main === module) {
-  main().then(code => { process.exitCode = code; }, error => { console.error('Không thể khôi phục: ' + (error && error.message ? error.message : error)); process.exitCode = 1; });
+  main().then(code => { process.exitCode = code; }, () => { console.error('Không thể khôi phục. Kiểm tra kết nối replica set và nhật ký vận hành.'); process.exitCode = 1; });
 }

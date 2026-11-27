@@ -2,7 +2,7 @@ extends ../layouts/default
 
 block main
   - const money = value => Number(value).toLocaleString('vi-VN') + ' đ'
-  main.card-account.card-narrow(data-card-pay data-order-id=orderDetail.id data-card-id=cardInfo.cardId data-phone=orderDetail.phone data-balance=cardInfo.balance data-total=orderDetail.total)
+  main.card-account.card-narrow(data-card-pay data-order-id=orderDetail.id data-card-id=cardInfo.cardId data-balance=cardInfo.balance data-total=orderDetail.total)
     .container
       .card-panel.card-focus
         .card-focus-icon
@@ -26,8 +26,17 @@ block main
             dt Số dư ví hiện tại
             dd
               strong(data-pay-balance)= money(cardInfo.balance)
-        if cardInfo.balance < orderDetail.total
-          p.card-alert.card-alert-warning.card-warning Số dư ví không đủ. Vui lòng nạp thêm trước khi thanh toán.
-        p.card-hint Cắm thẻ vào đầu đọc, bấm Thanh toán và nhập PIN. Mỗi giao dịch đều cần PIN.
-        button.card-btn.card-btn-block(type="button" data-card-pay-button disabled=cardInfo.balance < orderDetail.total) Thanh toán
+        if unresolved
+          p.card-alert.card-alert-warning Cắm đúng thẻ đã dùng để đối soát biên nhận. Đơn vẫn giữ chỗ cho đến khi có kết quả.
+          button.card-btn.card-btn-block(type="button" data-card-pay-recover) Đối soát biên nhận
+        else if expired
+          p.card-alert.card-alert-warning Đã hết thời gian giữ chỗ. Kiểm tra trạng thái đơn trước khi đặt lại.
+          a.card-btn(href=`/order/success?orderId=${orderDetail.id}`) Xem đơn hàng
+        else
+          if holdUntil
+            p.card-hint Giữ chỗ đến #{holdUntil} (giờ Việt Nam).
+          if cardInfo.balance < orderDetail.total
+            p.card-alert.card-alert-warning.card-warning Số dư ví không đủ. Vui lòng nạp thêm trước khi thanh toán.
+          p.card-hint Cắm thẻ vào đầu đọc, bấm Thanh toán và nhập PIN. Mỗi giao dịch đều cần PIN.
+          button.card-btn.card-btn-block(type="button" data-card-pay-button disabled=cardInfo.balance < orderDetail.total) Thanh toán
         p.card-alert.card-alert-info(data-customer-status role="status" aria-live="polite")

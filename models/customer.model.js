@@ -11,6 +11,8 @@ const schema = new mongoose.Schema({
   bloodType:String,
   allergies:String,
   avatar:String,
+  address:String,
+  webAvatar:String,
   totalSpent:{type:Number,default:0,min:0,validate:Number.isSafeInteger},
   status:{type:String,required:true,default:'active',enum:['active']},
   createdBy:String,

@@ -1,0 +1,11 @@
+mixin profileAvatar(url, name, extraClass)
+  - const words = (name || '').trim().split(/\s+/).filter(Boolean)
+  - const initials = words.slice(-2).map(word => Array.from(word)[0].toLocaleUpperCase('vi')).join('')
+  span.profile-avatar(class=extraClass aria-hidden="true")
+    if url
+      img(src=url alt="" decoding="async" data-profile-avatar)
+    span(hidden=Boolean(url))
+      if initials
+        = initials
+      else
+        i.fa-solid.fa-user

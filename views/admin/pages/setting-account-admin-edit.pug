@@ -1,41 +1,48 @@
 extends ../layouts/default.pug
 
 block main
+  - const currentRoleId = (accountAdminDetail.role || '').toLowerCase()
   h1.box-title Chỉnh sửa tài khoản quản trị
 
   .section-8
-    form#setting-account-admin-edit-form
+    form#setting-account-admin-edit-form(method="post")
+      if !subjectEditable
+        p.form-status.inner-two-col Nhóm quyền hiện tại của tài khoản vượt phạm vi bạn được quản lý.
+      else if isOwnAccount
+        p.form-status.inner-two-col Bạn chỉ có thể sửa họ tên, số điện thoại, chức vụ và ảnh tại đây. Quyền, trạng thái và email được quản lý bởi tài khoản khác. Đổi mật khẩu trong Hồ sơ cá nhân.
       .inner-group(style="display: none;")
         label(class="inner-label" for="id") Id
         input(type="text" id="id" name="id" value=accountAdminDetail.id)
       .inner-group
         label(class="inner-label" for="fullName") Họ tên
-        input(type="text" id="fullName" name="fullName" value=accountAdminDetail.fullName)
+        input(type="text" id="fullName" name="fullName" value=accountAdminDetail.fullName minlength="5" maxlength="50" disabled=!subjectEditable)
       .inner-group
         label(class="inner-label" for="email") Email
-        input(type="email" id="email" name="email" value=accountAdminDetail.email)
+        input(type="email" id="email" name="email" value=accountAdminDetail.email maxlength="254" disabled=(isOwnAccount || !subjectEditable))
       .inner-group
         label(class="inner-label" for="phone") Số điện thoại
-        input(type="text" id="phone" name="phone" value=accountAdminDetail.phone)
+        input(type="tel" id="phone" name="phone" value=accountAdminDetail.phone maxlength="25" disabled=!subjectEditable)
       .inner-group
         label(class="inner-label" for="role") Nhóm quyền
-        select(id="role" name="role")
+        select(id="role" name="role" disabled=(isOwnAccount || !subjectEditable))
+          option(value="" selected=(!roleList.some(item => currentRoleId === item.id))) Chưa có nhóm quyền hợp lệ
           each item in roleList
             option(
               value=item.id
-              selected=(accountAdminDetail.role == item.id ? true : false)
+              selected=(currentRoleId === item.id)
             ) #{item.name}
       .inner-group
-        label(class="inner-label" for="positionCompany") Chức vụ
+        label(class="inner-label" for="positionCompany") Chức vụ (không bắt buộc)
         input(
           type="text" 
           id="positionCompany" 
           name="positionCompany" 
           value=accountAdminDetail.positionCompany
+          disabled=!subjectEditable
         )
       .inner-group
         label(class="inner-label" for="status") Trạng thái
-        select(id="status" name="status")
+        select(id="status" name="status" disabled=(isOwnAccount || !subjectEditable))
           option(
             value="initial"
             selected=(accountAdminDetail.status == "initial" ? true : false)
@@ -50,12 +57,15 @@ block main
           ) Tạm dừng
       .inner-group
         label(class="inner-label" for="password") Mật khẩu
-        input(type="text" id="password" name="password")
+        input(type="password" id="password" name="password" minlength="8" maxlength="128" autocomplete="new-password" disabled=(isOwnAccount || !subjectEditable))
+        small Bỏ trống để giữ mật khẩu hiện tại.
       .inner-group.inner-two-col
         label(class="inner-label" for="avatar") Ảnh đại diện
         div(class="inner-upload-image" image-default=(accountAdminDetail.avatar || ""))
-          input(type="file" id="avatar" accept="image/*" filepond-image name="avatar")
-      .inner-button.inner-two-col
-        button Cập nhật
+          input(type="file" id="avatar" accept="image/*" filepond-image name="avatar" data-clear-image disabled=!subjectEditable)
+      if subjectEditable
+        p.form-status.inner-two-col(data-form-status role="status")
+        .inner-button.inner-two-col
+          button(type="submit") Cập nhật
     .inner-back
       a(href=`/${pathAdmin}/setting/account-admin/list`) Quay lại danh sách

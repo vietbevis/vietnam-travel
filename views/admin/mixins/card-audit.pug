@@ -1,0 +1,46 @@
+mixin cardAudit(logs, showCard)
+  .ca-table-wrap(tabindex="0" aria-label="Bảng nhật ký thẻ")
+    table.ca-table
+      thead
+        tr
+          th Thời gian
+          if showCard
+            th Mã thẻ
+          th Thao tác
+          th Người thực hiện
+          th Kết quả
+          th Chi tiết
+      tbody
+        each entry in logs
+          tr(data-card-log-row="")
+            td= new Date(entry.createdAt).toLocaleString('vi-VN', {timeZone:'Asia/Ho_Chi_Minh', year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit'})
+            if showCard
+              td.ca-code= entry.cardId || '—'
+            td= entry.label
+            td
+              span= entry.actor
+              if entry.actor !== entry.actorRole
+                small.ca-audit-role= entry.actorRole
+            td
+              span.badge(class=({success:'badge-green',fail:'badge-red'})[entry.outcome] || 'badge-grey')= entry.outcomeLabel
+            td
+              if entry.hint
+                p.ca-audit-hint= entry.hint
+              if entry.action || entry.actorId || entry.detail.length
+                details.ca-audit-detail
+                  summary Mã đối soát
+                  dl
+                    if entry.action
+                      dt Mã thao tác
+                      dd= entry.action
+                    if entry.actorId
+                      dt Mã người thực hiện
+                      dd= entry.actorId
+                    each field in entry.detail
+                      dt= field[0]
+                      dd= field[1]
+        else
+          tr.ca-empty
+            td(colspan=showCard ? 6 : 5)
+              i.fa-regular.fa-clipboard(aria-hidden="true")
+              | Không có nhật ký phù hợp.

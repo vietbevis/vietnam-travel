@@ -7,7 +7,7 @@ block main
           i.fa-solid.fa-id-card(aria-hidden="true")
         h1.card-page-title Đăng nhập bằng thẻ
         p.card-hint Mở Card Agent, cắm thẻ khách hàng rồi bấm đăng nhập. Thẻ mới phải đổi PIN trước khi sử dụng.
-        button.card-btn.card-btn-block(type="button" data-card-login) Đăng nhập bằng thẻ
+        button.card-btn.card-btn-block(type="button" data-card-login data-card-login-target=loginTarget) Đăng nhập bằng thẻ
         p.card-alert.card-alert-info(data-customer-status role="status" aria-live="polite")
         p.card-lock-link
           a(href="/account/card-lock") Mất thẻ? Khóa thẻ qua email

@@ -3,29 +3,15 @@ const multer = require("multer");
 const controller = require("../../controllers/admin/category.controller");
 const { save } = require("../../validates/admin/category.validate");
 const { isCategoryId } = require("../../helpers/category.helper");
+const { asyncRoute } = require("../../middlewares/http-route.middleware");
+const { requirePermission } = require("../../middlewares/admin/permission.middleware");
+const { imageMatchesType } = require("../../middlewares/admin/image-upload.middleware");
 
-const avatarFormats = {
-  "image/jpeg": bytes => bytes.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff])),
-  "image/png": bytes => bytes.subarray(0, 8).equals(Buffer.from("89504e470d0a1a0a", "hex")),
-  "image/gif": bytes => ["GIF87a", "GIF89a"].includes(bytes.toString("ascii", 0, 6)),
-  "image/webp": bytes => bytes.toString("ascii", 0, 4) === "RIFF" && bytes.toString("ascii", 8, 12) === "WEBP"
-};
 const avatarMessage = "Ảnh đại diện phải là tệp JPEG, PNG, GIF hoặc WebP hợp lệ!";
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024, files: 1 }
 }).single("avatar");
-
-const asyncRoute = handler => (req, res, next) => Promise.resolve().then(() => handler(req, res)).catch(next);
-
-function requirePermission(permission) {
-  return (req, res, next) => {
-    if (req.permissions.includes(permission)) return next();
-    const message = "Không có quyền sử dụng tính năng này!";
-    if (req.method === "GET") return res.status(403).send(message);
-    return res.status(403).json({ code: "error", message });
-  };
-}
 
 function validateId(req, res, next) {
   if (isCategoryId(req.params.id)) return next();
@@ -42,8 +28,7 @@ function parseAvatar(req, res, next) {
       });
     }
     if (req.file) {
-      const { mimetype, buffer } = req.file;
-      if (!Object.hasOwn(avatarFormats, mimetype) || !avatarFormats[mimetype](buffer)) {
+      if (!imageMatchesType(req.file)) {
         return res.status(400).json({ code: "error", message: avatarMessage });
       }
     }
@@ -61,7 +46,7 @@ router.patch("/change-multi", asyncRoute(controller.changeMultiPatch));
 
 router.use((error, req, res, next) => {
   if (res.headersSent) return next(error);
-  console.error("Lỗi quản lý danh mục", error);
+  console.error("Không thể xử lý yêu cầu danh mục.", req.method);
   const message = "Không thể xử lý yêu cầu danh mục. Vui lòng thử lại!";
   if (req.method === "GET") return res.status(500).send(message);
   return res.status(500).json({ code: "error", message });

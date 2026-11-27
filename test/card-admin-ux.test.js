@@ -38,7 +38,7 @@ test('cash top-up request limit is 20,000,000 and matches the form and daily lim
   const ok=amount=>!V.schemas.cash.validate({cardId:'AB'.repeat(16),amount},{convert:false}).error;
   assert.equal(ok(10000),true);assert.equal(ok(20000000),true);
   assert.equal(ok(20000001),false);assert.equal(ok(50000000),false);assert.equal(ok(9999),false);
-  assert.match(fs.readFileSync('views/admin/pages/card-detail.pug','utf8'),/max="20000000"/);
+  assert.match(fs.readFileSync('views/admin/pages/card-detail.pug','utf8'),/data-vnd[^\n]*data-max="20000000"/);
 });
 
 function stepUp({staffCard,decoded}){

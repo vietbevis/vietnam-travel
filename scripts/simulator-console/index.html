@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mô phỏng thẻ · Vietnam Travel</title>
+  <link rel="stylesheet" href="/console.css">
+  <script src="/console.js" defer></script>
+</head>
+<body>
+  <main class="console">
+    <header class="console-header">
+      <div>
+        <h1>Mô phỏng thẻ</h1>
+        <p>Chọn thẻ trong đầu đọc jCardSim để thao tác trên tab Admin hoặc Client.</p>
+      </div>
+      <button type="button" id="refresh">Làm mới trạng thái</button>
+    </header>
+    <section aria-labelledby="agent-title" class="panel">
+      <div class="section-heading">
+        <h2 id="agent-title">Card Agent</h2>
+        <span class="connection" id="connection" role="status">Đang kết nối…</span>
+      </div>
+      <dl class="agent-data">
+        <div><dt>Cổng Agent</dt><dd id="agent-port">—</dd></div>
+        <div><dt>Chế độ</dt><dd id="mode">—</dd></div>
+        <div><dt>Đầu đọc</dt><dd id="reader">—</dd></div>
+        <div><dt>Có thẻ</dt><dd id="card-present">—</dd></div>
+      </dl>
+    </section>
+    <section aria-labelledby="slots-title" class="panel">
+      <div class="section-heading">
+        <h2 id="slots-title">Khe thẻ</h2>
+        <span id="active-slot" class="active-slot">Chưa đọc trạng thái</span>
+      </div>
+      <p class="note">Chờ hoàn tất các thao tác Admin và Client, kể cả bước xác nhận giao dịch, trước khi chuyển khe. Agent chặn chuyển khe trong từng lượt thực thi lệnh thẻ. Giữa các lượt, một giao dịch vẫn có thể đang chờ xác nhận.</p>
+      <p class="note">Màu và nhãn là quy ước vị trí. Loại thẻ được xác định khi đọc thẻ.</p>
+      <div id="slots" class="slots" aria-labelledby="slots-title" role="group"></div>
+      <p id="availability" role="status"></p>
+      <p id="result" role="status"></p>
+    </section>
+  </main>
+  <dialog id="confirm" aria-labelledby="confirm-title" aria-describedby="confirm-note">
+    <h2 id="confirm-title">Chuyển khe</h2>
+    <p id="confirm-note">Hãy xác nhận các thao tác ở tab Admin và Client đã hoàn tất. Việc chuyển khe kết thúc phiên PIN hiện tại trên đầu đọc.</p>
+    <div class="dialog-actions">
+      <button type="button" id="cancel-switch" autofocus>Hủy</button>
+      <button type="button" id="confirm-switch" class="primary">Chuyển khe</button>
+    </div>
+  </dialog>
+</body>
+</html>

@@ -10,4 +10,7 @@ block main
       .inner-wrap
         each item in tourList
           +product-item(item)
+        else
+          p.travel-empty Không tìm thấy tour phù hợp với nội dung tìm kiếm.
+          a.button-outline(href="/") Về trang chủ
   // End Section 4

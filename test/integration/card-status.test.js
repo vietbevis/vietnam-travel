@@ -137,7 +137,9 @@ it('detail shows owner server funds pending credits ticket items recent transact
 it('pending credit section excludes unsigned failed credits but retains failed signed liability',async()=>{
   const c=await card();
   await Tx.create([{cardId:c.cardId,txRef:'AB'.repeat(8),type:'credit',source:'cash',amount:11000,status:'failed'},{cardId:c.cardId,txRef:'CD'.repeat(8),type:'credit',source:'cash',amount:12000,status:'failed',signedOpId:'11'.repeat(12)}]);
-  const r=await get('detail/'+c.cardId);assert.equal(r.status,200);const pending=r.html.slice(r.html.indexOf('Credit đang chờ'),r.html.indexOf('Giao dịch (100'));assert.ok(!pending.includes('ABABABABABABABAB'));assert.ok(pending.includes('CDCDCDCDCDCDCDCD'));
+  const r=await get('detail/'+c.cardId);assert.equal(r.status,200);assert.match(r.html,/Khoản ghi có đang chờ/);
+  const pending=r.html.match(/data-pending-credits=""[^>]*>(.*?)<\/ul>/)?.[1];
+  assert.ok(pending);assert.ok(!pending.includes('ABABABABABABABAB'));assert.ok(pending.includes('CDCDCDCDCDCDCDCD'));
 });
 it('readonly log requires own permission and filters card action inclusive dates with no delete route',async()=>{
   const c=await card();await Log.create([{cardId:c.cardId,action:'lock',actorType:'admin',result:'success',createdAt:new Date('2026-01-10T12:00:00Z')},{cardId:c.cardId,action:'unlock',actorType:'admin',result:'success',createdAt:new Date('2026-01-11T12:00:00Z')}]);

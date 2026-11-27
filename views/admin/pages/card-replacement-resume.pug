@@ -1,0 +1,19 @@
+extends ../layouts/default.pug
+
+block main
+  .ca-page
+    a.ca-back(href=`/${pathAdmin}/card/list`)
+      i.fa-solid.fa-arrow-left(aria-hidden="true")
+      | Danh sách thẻ
+    h1.box-title Tiếp tục cấp lại thẻ
+    .ca-card
+      if requiresStepUp
+        p Phiên xác thực thao tác đã hết hạn. Trước hết hãy cắm thẻ nhân viên của tài khoản hiện tại rồi xác thực bằng PIN.
+        p.ca-note Sau khi xác thực, đổi sang thẻ trắng, chọn ảnh chân dung và tiếp tục cấp lại. Số dư vẫn được giữ trong thời gian chờ.
+        button.ca-btn(type="button" data-issue-step-up data-card-base=`/${pathAdmin}/card`)
+          i.fa-solid.fa-shield(aria-hidden="true")
+          | Xác thực thẻ nhân viên
+        p.ca-status(data-card-status role="status" aria-live="polite")
+      else
+        p(role="alert")= issueError
+  script(src="/admin/assets/js/card-admin.js" defer)

@@ -2,6 +2,7 @@ const Category = require("../../models/category.model");
 const Tour = require("../../models/tour.model");
 const City = require("../../models/city.model");
 const moment = require("moment");
+const { sanitizeTourHtml } = require("../../helpers/tour-rich-text.helper");
 
 module.exports.detail = async (req, res) => {
   const slug = req.params.slug;
@@ -22,6 +23,10 @@ module.exports.detail = async (req, res) => {
   );
 
   if (tourDetail) {
+    tourDetail.information = sanitizeTourHtml(tourDetail.information);
+    tourDetail.schedules = (tourDetail.schedules || []).map(item => ({
+      ...item, description: sanitizeTourHtml(item?.description)
+    }));
     // Breadcrumb
     const breadcrumb = {
       image: tourDetail.avatar,
@@ -85,7 +90,7 @@ module.exports.detail = async (req, res) => {
       cityList: cityList
     })
   } else {
-    res.redirect("/");
+    res.status(404).render('client/pages/error-404', { pageTitle: 'Không tìm thấy tour' });
   }
   // Hết Tìm tour theo slug
 }

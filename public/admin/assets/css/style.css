@@ -14,6 +14,15 @@ body {
   margin: 0;
 }
 
+:focus-visible { outline: 3px solid #2b5ac6; outline-offset: 3px; }
+button:disabled { cursor: not-allowed; }
+.travel-inline-notice { position: fixed; z-index: 10001; inset: auto 16px 16px; width: fit-content; max-width: calc(100% - 32px); margin: 0 auto; padding: 12px 18px; border-radius: 10px; background: #193575; color: #fff; }
+.section-10 > i { color: #2b5ac6; font-size: 44px; }
+.table-2 { max-width: 100%; }
+@media (max-width: 991.98px) {
+  .sider:not(.active) { visibility: hidden; }
+}
+
 a {
   text-decoration: none;
 }
@@ -128,9 +137,12 @@ a {
   font-size: 12px;
 }
 
-.form-account .inner-confirm .inner-check {
-  width: 24px;
-  height: 24px;
+input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  flex: none;
+  vertical-align: middle;
 }
 
 .form-account .inner-confirm .inner-label {
@@ -208,11 +220,6 @@ a {
   .form-account .inner-group .inner-label {
     margin-bottom: 10px;
     font-size: 16px;
-  }
-
-  .form-account .inner-confirm .inner-check {
-    width: 18px;
-    height: 18px;
   }
 
   .form-account .inner-confirm .inner-label {
@@ -964,11 +971,6 @@ a {
   text-align: center;
 }
 
-.table-2 table .inner-check {
-  width: 20px;
-  height: 20px;
-}
-
 .table-2 table tbody tr td {
   border-bottom: 1px solid #D5D5D5;
   background-color: #fff;
@@ -1131,7 +1133,7 @@ a {
   color: #606060;
 }
 
-.section-8 form .inner-group input,
+.section-8 form .inner-group input:where(:not([type="checkbox"])),
 .section-8 form .inner-group select,
 .section-8 form .inner-group textarea {
   height: 52px;
@@ -1168,7 +1170,6 @@ a {
 
 .section-8 form .inner-upload-image .filepond--root {
   margin-bottom: 0;
-  height: 100% !important;
 }
 
 .section-8 form .inner-upload-image .filepond--credits {
@@ -1310,12 +1311,6 @@ a {
   gap: 14px;
 }
 
-.section-8 form .inner-checkbox-item input {
-  width: 20px;
-  height: 20px;
-  margin: 0;
-}
-
 .section-8 form .inner-checkbox-item label {
   font-weight: 500;
   font-size: 14px;
@@ -1454,7 +1449,6 @@ a {
 
 .section-8 form .inner-upload-image-multi .filepond--root {
   width: 300px;
-  max-height: 600px;
 }
 
 .section-8 form .inner-upload-image-multi .filepond--drop-label label {

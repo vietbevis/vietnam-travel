@@ -1,4 +1,5 @@
 extends ../layouts/default.pug
+include ../mixins/profile-avatar.pug
 
 block main
   h1.box-title Quản lý khách hàng
@@ -29,8 +30,7 @@ block main
             tr
               td= customer.fullName || 'Chưa cung cấp'
               td
-                if customer.avatar
-                  img(src=customer.avatar alt="Ảnh khách hàng" class="inner-avatar")
+                +profileAvatar(customer.avatar, customer.fullName, 'inner-avatar')
               td= customer.email
               td= customer.phone || 'Chưa cung cấp'
               td

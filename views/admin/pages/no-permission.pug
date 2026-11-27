@@ -1,5 +1,8 @@
 extends ../layouts/default.pug
 
 block main
-  h1.box-title= pageTitle
-  p(data-no-permission)= message
+  section.section-10(aria-labelledby="access-denied-title")
+    i.fa-solid.fa-lock(aria-hidden="true")
+    h1.inner-title#access-denied-title Không có quyền truy cập
+    p(data-no-permission)= message
+    a.inner-back(href=`/${pathAdmin}/start`) Về trang quản trị

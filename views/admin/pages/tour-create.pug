@@ -1,4 +1,5 @@
 extends ../layouts/default.pug
+include ../mixins/tinymce.pug
 include ../mixins/options.pug
 
 block main
@@ -6,10 +7,10 @@ block main
     h1.box-title Tạo tour
 
     .section-8
-      form#tour-create-form
+      form#tour-create-form(method="post")
         .inner-group
           label(class="inner-label" for="name") Tên tour
-          input(type="text" id="name" name="name")
+          input(type="text" id="name" name="name" required)
         .inner-group
           label(class="inner-label" for="category") Danh mục
           select(id="category" name="category")
@@ -34,27 +35,27 @@ block main
         .inner-group
           label(class="inner-label") Giá cũ
           .inner-input-list
-            .inner-input-item
-              label Người lớn
-              input(type="number" name="priceAdult")
-            .inner-input-item
-              label Trẻ em
-              input(type="number" name="priceChildren")
-            .inner-input-item
-              label Em bé
-              input(type="number" name="priceBaby")
+            .inner-input-item.money-item
+              label(for="priceAdult") Người lớn
+              input(type="text" inputmode="numeric" data-vnd="tour" id="priceAdult" name="priceAdult")
+            .inner-input-item.money-item
+              label(for="priceChildren") Trẻ em
+              input(type="text" inputmode="numeric" data-vnd="tour" id="priceChildren" name="priceChildren")
+            .inner-input-item.money-item
+              label(for="priceBaby") Em bé
+              input(type="text" inputmode="numeric" data-vnd="tour" id="priceBaby" name="priceBaby")
         .inner-group
           label(class="inner-label") Giá mới
           .inner-input-list
-            .inner-input-item
-              label Người lớn
-              input(type="number" name="priceNewAdult")
-            .inner-input-item
-              label Trẻ em
-              input(type="number" name="priceNewChildren")
-            .inner-input-item
-              label Em bé
-              input(type="number" name="priceNewBaby")
+            .inner-input-item.money-item
+              label(for="priceNewAdult") Người lớn
+              input(type="text" inputmode="numeric" data-vnd="tour" id="priceNewAdult" name="priceNewAdult")
+            .inner-input-item.money-item
+              label(for="priceNewChildren") Trẻ em
+              input(type="text" inputmode="numeric" data-vnd="tour" id="priceNewChildren" name="priceNewChildren")
+            .inner-input-item.money-item
+              label(for="priceNewBaby") Em bé
+              input(type="text" inputmode="numeric" data-vnd="tour" id="priceNewBaby" name="priceNewBaby")
         .inner-group
           label(class="inner-label") Còn lại
           .inner-input-list
@@ -72,8 +73,8 @@ block main
           .inner-checkbox-list
             each item in cityList
               .inner-checkbox-item
-                input(type="checkbox" name="locations" value=item.id)
-                label #{item.name}
+                input(type="checkbox" name="locations" id=`tour-location-${item.id}` value=item.id)
+                label(for=`tour-location-${item.id}`)= item.name
         .inner-group
           label(class="inner-label" for="time") Thời gian
           input(type="text" id="time" name="time")
@@ -101,8 +102,11 @@ block main
                     <i class="fa-solid fa-angle-down"></i>
                 .inner-schedule-body
                   textarea(textarea-mce)
-            .inner-schedule-create + Thêm lich trình
+            .inner-schedule-create + Thêm lịch trình
+        p.form-status.inner-two-col(data-form-status role="status")
         .inner-button.inner-two-col
-          button Tạo mới
+          button(type="submit") Tạo mới
       .inner-back
         a(href=`/${pathAdmin}/tour/list`) Quay lại danh sách
+block editor
+  +tinyMce

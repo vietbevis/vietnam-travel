@@ -1,12 +1,31 @@
 extends ../layouts/default.pug
 
 block main
-  .container
-    .section-11(style="padding-top: 20px;")
-      .inner-wrap(data-payment-processing)
-        h4 Chúng tôi đã nhận thông tin thanh toán của quý khách và đang xử lý đơn hàng.
-        p Mã đơn hàng: #{orderCode}
-        p Số tiền: #{Number(amount).toLocaleString('vi-VN')} đ
-        p Cổng thanh toán: #{gatewayName}
-        p Trạng thái đơn hàng có thể chưa cập nhật ngay. Vui lòng không thanh toán lại; nếu sau ít phút đơn vẫn chưa được ghi nhận, hãy liên hệ bộ phận hỗ trợ và cung cấp mã đơn hàng để được đối soát.
-        a(href="/") Về trang chủ
+  main.card-account.card-narrow
+    .container
+      .card-panel.card-focus(data-payment-processing)
+        .card-focus-icon(aria-hidden="true")
+          i.fa-solid.fa-arrows-rotate
+        if returnOnly
+          h1.card-page-title Đã quay lại từ cổng thanh toán
+          if returnKind === 'topup'
+            p.card-hint Về thẻ của bạn để kiểm tra khoản nạp trên hệ thống.
+          else
+            p.card-hint Mở đơn hàng từ phiên đã dùng để đặt tour.
+        else
+          if statusOnly
+            h1.card-page-title Chưa ghi nhận thanh toán
+          else
+            h1.card-page-title Đang kiểm tra thanh toán
+            p.card-hint Chúng tôi đã nhận thông tin từ cổng thanh toán và đang đối chiếu đơn hàng.
+          if orderCode
+            p Mã đơn hàng: #{orderCode}
+          if Number.isSafeInteger(amount)
+            p Số tiền: #{amount.toLocaleString('vi-VN')} đ
+          if gatewayName
+            p Cổng thanh toán: #{gatewayName}
+          p.card-hint Nếu đã thanh toán, hãy kiểm tra trạng thái hoặc liên hệ hỗ trợ trước khi thanh toán lại.
+        .card-actions
+          if continueUrl
+            a.card-btn(href=continueUrl)= returnKind === 'topup' ? 'Về thẻ của tôi' : statusOnly ? 'Xem đơn hàng' : 'Mở đơn hàng'
+          a.card-btn.card-btn-outline(href="/") Về trang chủ

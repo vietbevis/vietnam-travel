@@ -4,29 +4,39 @@ block main
   h1.box-title Chỉnh sửa nhóm quyền
 
   .section-8
-    form#setting-role-edit-form
+    form#setting-role-edit-form(method="post")
+      if !editable
+        p.form-status.inner-two-col Nhóm này có quyền vượt phạm vi được quản lý. Bạn có thể xem quyền hiện có.
+      else if isOwnRole
+        p.form-status.inner-two-col Đây là nhóm quyền của chính bạn. Bạn có thể đổi tên và mô tả. Một quản trị viên khác cần thực hiện thay đổi quyền.
       .inner-group(style="display: none;")
         label(class="inner-label" for="id") Id
         input(type="text" id="id" name="id" value=roleDetail.id)
       .inner-group
         label(class="inner-label" for="name") Tên nhóm quyền
-        input(type="text" id="name" name="name" value=roleDetail.name)
+        input(type="text" id="name" name="name" value=roleDetail.name required maxlength="100" readonly=!editable)
       .inner-group
         label(class="inner-label" for="description") Mô tả ngắn
-        input(type="text" id="description" name="description" value=roleDetail.description)
+        input(type="text" id="description" name="description" value=roleDetail.description maxlength="500" readonly=!editable)
       .inner-group
         label(class="inner-label") Phân quyền
+        if editable && !isOwnRole
+          small Bạn chỉ có thể cấp các quyền trong phạm vi của mình.
         .inner-checkbox-list
           each item in permissionList
             .inner-checkbox-item
               input(
                 type="checkbox" 
+                id=`grant-${item.value}`
                 name="permissions" 
                 value=item.value
                 checked=roleDetail.permissions.includes(item.value)
+                disabled=(isOwnRole || !editable || !grantable.includes(item.value))
               )
-              label #{item.label}
-      .inner-button.inner-two-col
-        button Cập nhật
+              label(for=`grant-${item.value}`)= item.label
+      if editable
+        p.form-status.inner-two-col(data-form-status role="status")
+        .inner-button.inner-two-col
+          button(type="submit") Cập nhật
     .inner-back
       a(href=`/${pathAdmin}/setting/role/list`) Quay lại danh sách

@@ -1,5 +1,5 @@
 /* Smart-card customer pages. Reuses --color-primary (#4502C7) and Lexend Deca from style.css */
-.card-account {
+.card-account, .card-pin-dialog, .card-autofill {
   --cc-primary: var(--color-primary, #4502C7);
   --cc-primary-dark: #2f0190;
   --cc-ink: #1d1b2e;
@@ -9,6 +9,8 @@
   --cc-ok: #12805c;
   --cc-warn: #8a5a00;
   --cc-err: #c0262d;
+}
+.card-account {
   font-family: "Lexend Deca", sans-serif;
   color: var(--cc-ink);
   padding: 32px 0 64px;
@@ -68,6 +70,7 @@
 .card-panel-title i { color: var(--cc-primary); margin-right: 6px; }
 .card-sub-title { font-size: 14px; font-weight: 600; margin: 18px 0 6px; color: var(--cc-ink); }
 .card-hint { font-size: 14px; color: var(--cc-muted); margin: 0 0 16px; }
+.card-form + .card-hint { margin-top: 14px; }
 .card-pre { margin: 0; padding: 12px 14px; background: #faf9fd; border: 1px solid var(--cc-line); border-radius: 10px; font: inherit; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; min-height: 44px; }
 .card-pre:empty::before { content: "Chưa có dữ liệu — bấm Đọc thẻ."; color: var(--cc-muted); }
 .card-photo { display: block; width: 120px; height: auto; max-height: 160px; object-fit: cover; border-radius: 12px; margin: 16px 0 0; border: 1px solid var(--cc-line); }
@@ -79,7 +82,21 @@
 .card-form-grid .card-btn { grid-column: 1 / -1; justify-self: start; }
 .card-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .card-field label { font-size: 14px; font-weight: 500; }
-.card-account input:not([type="radio"]), .card-account select, .card-pin-dialog input {
+[data-customer-profile] .card-page-head .card-btn,
+[data-card-account] .card-page-head .card-btn { margin-top: 12px; }
+[data-customer-profile] textarea {
+  width: 100%; padding: 10px 14px; border: 1px solid #cfc9e3; border-radius: 10px;
+  font: inherit; color: var(--cc-ink); resize: vertical;
+}
+.card-field .card-checkbox-label {
+  display: flex; align-items: center; gap: 8px; align-self: start; cursor: pointer;
+}
+.card-checkbox-label input { accent-color: var(--cc-primary); }
+.card-account[data-customer-profile] input[type="file"] { height: auto; padding: 10px; }
+.card-account [data-card-log-more] > summary {
+  width: fit-content; margin-top: 10px; color: var(--cc-primary-dark); cursor: pointer;
+}
+.card-account input:where(:not([type="checkbox"])):not([type="radio"]), .card-account select, .card-pin-dialog input {
   width: 100%; height: 46px; padding: 0 14px; border: 1px solid #cfc9e3; border-radius: 10px; background: #fff;
   font: inherit; font-size: 15px; color: var(--cc-ink); min-width: 0;
 }
@@ -99,7 +116,7 @@
 }
 .card-btn:hover:not(:disabled) { background: var(--cc-primary-dark); box-shadow: 0 6px 16px rgba(69, 2, 199, .25); }
 .card-btn:disabled { opacity: .55; cursor: not-allowed; box-shadow: none; }
-.card-btn-outline, .card-account button.card-btn-outline { background: #fff; color: var(--cc-primary); }
+.card-btn-outline, .card-account button.card-btn-outline, .card-pin-dialog .card-btn-outline { background: #fff; color: var(--cc-primary); }
 .card-btn-outline:hover:not(:disabled) { background: var(--cc-soft); color: var(--cc-primary-dark); box-shadow: none; }
 .card-btn-danger { background: var(--cc-err); border-color: var(--cc-err); }
 .card-btn-danger:hover:not(:disabled) { background: #961c22; box-shadow: none; }
@@ -184,9 +201,18 @@
 @media (prefers-reduced-motion: reduce) { .card-btn { transition: none; } }
 
 /* Header: link thẻ chiếm thêm chỗ nên thu gọn khoảng cách menu để chữ không xuống dòng. */
-@media (min-width: 992px) {
-  .header .inner-menu > ul > li { margin: 0 14px; display: flex; align-items: center; white-space: nowrap; }
-  .header .inner-menu > ul > li > a { white-space: nowrap; }
-}
 .card-session-link { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; background: rgba(69, 2, 199, .08); text-decoration: none; }
 .card-session-link:hover { background: rgba(69, 2, 199, .14); text-decoration: none; }
+.card-sync-summary, .card-profile { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr)); gap: .75rem; margin: 0 0 1rem; }
+.card-sync-summary > div, .card-profile > div { min-width: 0; background: #faf9fd; border: 1px solid var(--cc-line); border-radius: 10px; padding: .75rem; }
+.card-sync-summary dt, .card-profile dt { color: var(--cc-muted); font-size: .82rem; }
+.card-sync-summary dd, .card-profile dd { margin: .25rem 0 0; font-weight: 600; overflow-wrap: anywhere; }
+.card-person { display: grid; grid-template-columns: minmax(0, 1fr); gap: .75rem; margin: 1rem 0; }
+.card-person .card-photo { width: 84px; height: 105px; object-fit: cover; margin: 0; }
+.card-activity, .card-ticket-list { display: grid; gap: .5rem; padding: 0; margin: .75rem 0; list-style: none; }
+.card-activity[hidden] { display: none; }
+.card-activity li, .card-ticket-list li { min-width: 0; border: 1px solid var(--cc-line); border-radius: 10px; padding: .75rem; overflow-wrap: anywhere; }
+.card-activity i { color: var(--cc-primary); margin-right: .5rem; }
+.card-ticket-list .card-badge { margin-inline-start: .5rem; max-width: 100%; white-space: normal; }
+.card-ticket-list .card-hint { margin: .35rem 0 0; }
+.card-focus .card-btn { text-decoration: none; }

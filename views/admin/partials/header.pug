@@ -1,17 +1,15 @@
+include ../mixins/profile-avatar.pug
+
 header.header
   .inner-logo
-    a(href=`/${pathAdmin}/dashboard`)
+    a(href=`/${pathAdmin}/start`)
       span KMA.
       span Admin
   .inner-wrap
-    .inner-notify
-      img(src="/admin/assets/images/icon-bell.svg", alt="")
-      span 6
     .inner-account
-      .inner-avatar
-        img(src=account.avatar, alt=account.fullName)
+      +profileAvatar(account.avatar, account.fullName, 'inner-avatar')
       .inner-text
         .inner-name #{account.fullName}
         .inner-role #{account.roleName}
-    button.inner-button-menu
-      <i class="fa-solid fa-bars"></i>
+    button.inner-button-menu(type="button" aria-label="Mở menu quản trị" aria-expanded="false" aria-controls="admin-navigation")
+      i.fa-solid.fa-bars(aria-hidden="true")

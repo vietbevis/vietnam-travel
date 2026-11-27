@@ -1,48 +1,52 @@
 const router = require('express').Router();
-const multer  = require('multer');
-
-const cloudinaryHelper = require("../../helpers/cloudinary.helper");
 
 const tourController = require("../../controllers/admin/tour.controller");
 
 const tourValidate = require("../../validates/admin/tour.validate");
+const { requirePermission } = require('../../middlewares/admin/permission.middleware');
+const { asyncRoute, requireObjectId } = require('../../middlewares/http-route.middleware');
+const { upload, storeTourImages } = require('../../middlewares/admin/image-upload.middleware');
 
-const upload = multer({ storage: cloudinaryHelper.storage });
+router.get('/list', requirePermission('tour-view'), asyncRoute(tourController.list));
 
-router.get('/list', tourController.list)
-
-router.get('/create', tourController.create)
+router.get('/create', requirePermission('tour-create'), asyncRoute(tourController.create));
 
 router.post(
-  '/create', 
+  '/create',
+  requirePermission('tour-create'),
   upload.fields([
     { name: 'avatar', maxCount: 1 },
     { name: 'images', maxCount: 10 }
   ]),
   tourValidate.createPost,
-  tourController.createPost
+  asyncRoute(storeTourImages),
+  asyncRoute(tourController.createPost)
 )
 
-router.get('/trash', tourController.trash)
+router.get('/trash', requirePermission('tour-trash'), asyncRoute(tourController.trash));
 
-router.get('/edit/:id', tourController.edit)
+router.get('/edit/:id', requirePermission('tour-edit'), requireObjectId, asyncRoute(tourController.edit));
 
 router.patch(
-  '/edit/:id', 
+  '/edit/:id',
+  requirePermission('tour-edit'),
+  requireObjectId,
   upload.fields([
     { name: 'avatar', maxCount: 1 },
     { name: 'images', maxCount: 10 }
   ]), 
   tourValidate.createPost,
-  tourController.editPatch
+  asyncRoute(tourController.prepareTourImages),
+  asyncRoute(storeTourImages),
+  asyncRoute(tourController.editPatch)
 )
 
-router.patch('/delete/:id', tourController.deletePatch)
+router.patch('/delete/:id', requirePermission('tour-delete'), requireObjectId, asyncRoute(tourController.deletePatch));
 
-router.patch('/undo/:id', tourController.undoPatch)
+router.patch('/undo/:id', requirePermission('tour-trash'), requireObjectId, asyncRoute(tourController.undoPatch));
 
-router.patch('/delete-destroy/:id', tourController.deleteDestroyPatch)
+router.patch('/delete-destroy/:id', requirePermission('tour-trash'), requireObjectId, asyncRoute(tourController.deleteDestroyPatch));
 
-router.patch('/trash/change-multi', tourController.trashChangeMultiPatch)
+router.patch('/trash/change-multi', requirePermission('tour-trash'), asyncRoute(tourController.trashChangeMultiPatch));
 
 module.exports = router;

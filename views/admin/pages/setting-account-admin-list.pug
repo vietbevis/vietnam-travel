@@ -1,50 +1,15 @@
 extends ../layouts/default.pug
+include ../mixins/profile-avatar.pug
+include ../mixins/list-pagination.pug
 
 block main
   h1.box-title Tài khoản quản trị
 
-  //- Section 4
-  .section-4
-    .inner-wrap
-      .inner-item.inner-label
-        <i class="fa-solid fa-filter"></i> Bộ lọc
-      .inner-item
-        select
-          option(value="") Trạng thái
-          option(value="") Hoạt động
-          option(value="") Tạm dừng
-      .inner-item.inner-date
-        input(type="date")
-        span -
-        input(type="date")
-      .inner-item
-        select
-          option(value="") Nhóm quyền
-          option(value="") Quản trị viên
-          option(value="") Quản lý tour
-          option(value="") Quản lý đơn hàng
-      .inner-item.inner-reset
-        <i class="fa-solid fa-rotate-left"></i> Xóa bộ lọc
-  //- End Section 4
-
-  //- Section 5
-  .section-5
-    .inner-wrap
-      .inner-change-status
-        .inner-item
-          select
-            option(value="") -- Hành động --
-            option(value="") Hoạt động
-            option(value="") Dừng hoạt động
-            option(value="") Xóa
-        .inner-item
-          button Áp dụng
-      .inner-search
-        <i class="fa-solid fa-magnifying-glass"></i>
-        input(type="text" placeholder="Tìm kiếm")
-      .inner-button-create
-        a(href=`/${pathAdmin}/setting/account-admin/create`) + Tạo mới
-  //- End Section 5
+  if permissions.includes("account-admin-create")
+    .section-5
+      .inner-wrap
+        .inner-button-create
+          a(href=`/${pathAdmin}/setting/account-admin/create`) + Tạo mới
 
   //- Section 6
   .section-6
@@ -52,8 +17,6 @@ block main
       table
         thead
           tr
-            th(class="inner-center")
-              input(type="checkbox" class="inner-check")
             th Họ tên
             th(class="inner-center") Ảnh đại diện
             th Email
@@ -65,11 +28,9 @@ block main
         tbody
           each item in accountAdminList
             tr
-              td(class="inner-center")
-                input(type="checkbox" class="inner-check")
               td #{item.fullName}
               td(class="inner-center")
-                img(src=item.avatar class="inner-avatar")
+                +profileAvatar(item.avatar, item.fullName, 'inner-avatar')
               td #{item.email}
               td #{item.phone}
               td #{item.roleName}
@@ -82,23 +43,14 @@ block main
                 else if(item.status == "initial")
                   .badge.badge-orange Khởi tạo
               td
-                .inner-buttons
-                  a(
-                    href=`/${pathAdmin}/setting/account-admin/edit/${item.id}` 
-                    class="inner-edit"
-                  ) <i class="fa-regular fa-pen-to-square"></i>
-                  button(
-                    class="inner-delete"
-                    button-delete 
-                    data-api=`/${pathAdmin}/setting/account-admin/delete/${item.id}`
-                  ) <i class="fa-regular fa-trash-can"></i>
-  //- End Section 6
+                if permissions.includes("account-admin-edit")
+                  .inner-buttons
+                    a.inner-edit(href=`/${pathAdmin}/setting/account-admin/edit/${item.id}` aria-label="Sửa tài khoản")
+                      i.fa-regular.fa-pen-to-square(aria-hidden="true")
+                else
+                  span Không có quyền sửa
+          else
+            tr
+              td(colspan="8") Chưa có tài khoản quản trị.
 
-  //- Section 7
-  .section-7
-    span(class="inner-label") Hiển thị 1 - 9 của 78
-    select(class="inner-pagination")
-      option Trang 1
-      option Trang 2
-      option Trang 3
-  //- End Section 7
+  +listPagination(pagination, accountAdminList.length, 'Trang tài khoản')

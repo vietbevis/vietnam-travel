@@ -113,15 +113,26 @@ it("renders zero results for an empty database, missing keyword and combined fil
 
 it("keeps the effective page and handles malformed and out-of-range page numbers", async () => {
   for (let n = 1; n <= 12; n++) await category("Mục thử " + n, { position: n });
-  assert.match((await listing({ page: "2" })).data, /Hiển thị 6 - 10 của 12/);
+  assert.match((await listing({ page: "2", pageSize: "5" })).data, /Hiển thị 6 - 10 của 12/);
   for (const page of ["3", "99", "99999999999999999999999"]) {
-    const response = await listing({ page });
+    const response = await listing({ page, pageSize: "5" });
     assert.match(response.data, /Hiển thị 11 - 12 của 12/);
     assert.match(response.data, /<option value="3" selected(?:="selected")?>Trang 3/);
   }
   for (const page of ["0", "-1", "2.5", "2xyz"]) {
-    assert.match((await listing({ page })).data, /Hiển thị 1 - 5 của 12/);
+    assert.match((await listing({ page, pageSize: "5" })).data, /Hiển thị 1 - 5 của 12/);
   }
+});
+
+it("accepts allowed page sizes with a default of ten and clamps again after deletion", async () => {
+  const rows = [];
+  for (let n = 1; n <= 11; n++) rows.push(await category("Mục phân trang " + n, { position: n }));
+  assert.match((await listing()).data, /Hiển thị 1 - 10 của 11/);
+  assert.match((await listing({ pageSize: "20" })).data, /Hiển thị 1 - 11 của 11/);
+  assert.match((await listing({ pageSize: "11" })).data, /Hiển thị 1 - 10 của 11/);
+  assert.match((await listing({ page: "2", pageSize: "10" })).data, /Hiển thị 11 - 11 của 11/);
+  await remove(rows[0].id);
+  assert.match((await listing({ page: "2", pageSize: "10" })).data, /Hiển thị 1 - 10 của 10/);
 });
 
 it("rejects malformed filters and treats search metacharacters as literal input", async () => {
@@ -316,7 +327,9 @@ it("rejects invalid avatars, preserves the current URL and handles provider fail
       next();
     },
     final(next) {
-      callback(providerError, providerError ? null : { secure_url: assetUrl, format: "png" });
+      callback(providerError, providerError ? null : {
+        secure_url: assetUrl, public_id: options.public_id, resource_type: "image", format: "png"
+      });
       next();
     }
   }));

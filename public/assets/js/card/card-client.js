@@ -171,10 +171,18 @@
       return { cardId: S.toHex(bytes.subarray(0, 16)), cardType: bytes[16], state: bytes[17], mustChangePin: bytes[18] === 1, triesRemaining: bytes[19], version: bytes[20] };
     }
     async function challenge() { return S.toHex(exact(await cmd(S.INS.GET_CHALLENGE, 0, 0), 16)); }
-    async function execute(apdu, confirmUrl, body, credentials) {
+    async function execute(apdu, confirmUrl, body, credentials, retryConfirmation = false) {
       const [raw] = await transmit([apdu]);
       let result;
-      try { result = await server(confirmUrl, { ...body, response: raw.data, sw: raw.sw }, credentials, raw.sw !== '9000'); }
+      const confirm = () => server(confirmUrl, { ...body, response: raw.data, sw: raw.sw }, credentials, raw.sw !== '9000');
+      try {
+        try { result = await confirm(); }
+        catch (error) {
+          const lostResponse = error instanceof TypeError || error instanceof SyntaxError || error.code === 'REQUEST_TIMEOUT';
+          if (!retryConfirmation || !lostResponse) throw error;
+          result = await confirm();
+        }
+      }
       catch (error) { if (raw.sw === '9000') throw error; const cardError = new CardError(raw.sw); cardError.confirmationFailed = true; throw cardError; }
       if (raw.sw !== '9000') throw new CardError(raw.sw);
       return result;
@@ -241,7 +249,11 @@
             try { result = await server(base + '/receipt', { cardId: info.cardId, txRef: step.txRef, ...observed, challenge: fresh, response: raw.data, sw: raw.sw }, credentials, raw.sw !== '9000'); }
             catch (error) { if (raw.sw === '9000') throw error; const cardError = new CardError(raw.sw); cardError.confirmationFailed = true; throw cardError; }
             if (raw.sw !== '9000' && result.released !== true) throw new CardError(raw.sw);
-          } else if (step.kind === 'op' && hex(step.opId, 12)) await execute(step.apdu, base + '/confirm', { opId: step.opId }, credentials);
+            settings.onSyncStep?.(result.released === true ? 'released' : 'receipt');
+          } else if (step.kind === 'op' && hex(step.opId, 12)) {
+            const result = await execute(step.apdu, base + '/confirm', { opId: step.opId }, credentials);
+            settings.onSyncStep?.(result.result?.type || 'op');
+          }
           else throw fail('SERVER_RESPONSE');
           info = await publicInfo();
         }
@@ -258,13 +270,17 @@
         await cmd(S.INS.CHANGE_PIN, 0, 0, new TextEncoder().encode(oldPin + newPin));
       }),
       getChallenge: () => serial(challenge),
-      runSignedOp: ({ signUrl, confirmUrl, opId }) => serial(async () => {
+      runSignedOp: ({ signUrl, confirmUrl, opId, expectedCardId, retryConfirmation }) => serial(async () => {
         serverUrl(signUrl); serverUrl(confirmUrl);
         if (!hex(opId, 12)) throw fail('INVALID_OP_ID');
+        if (expectedCardId && (await publicInfo()).cardId !== expectedCardId.toUpperCase()) {
+          throw new Error('Đang cắm thẻ khác. Hãy quét lại đúng thẻ.');
+        }
         const signed = await server(signUrl, { opId, challenge: await challenge() });
         if (!validApdu(signed.apdu)) throw fail('INVALID_APDU');
-        return execute(signed.apdu, confirmUrl, { opId });
+        return execute(signed.apdu, confirmUrl, { opId }, undefined, retryConfirmation);
       }),
+      clearPhoto,
       writeTarget: (target, bytes) => serial(async () => {
         if (!(bytes instanceof Uint8Array) || bytes.length > targetMax(target)) throw fail('TARGET_LENGTH');
         await cmd(S.INS.BEGIN_WRITE, target, 0, new Uint8Array([bytes.length >> 8, bytes.length & 255]));

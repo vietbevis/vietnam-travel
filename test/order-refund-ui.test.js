@@ -22,14 +22,20 @@ function render(extra={}) {
 }
 test('order edit page announces the wallet refund amount for a card-paid order',()=> {
   const html=render({cardRefund:{amount:1500000}});
-  assert.match(html,/<form id="order-edit-form" data-card-refund="1500000">/);
+  assert.match(html,/<form id="order-edit-form"[^>]*data-card-refund="1500000"[^>]*data-order-status="initial">/);
   assert.match(html,/sẽ tự hoàn/);
-  assert.match(html,/1\.500\.000đ/);
+  assert.match(html,/1\.500\.000 đ/);
 });
 test('order edit page has no refund prompt when nothing would be refunded',()=> {
   const html=render();
-  assert.match(html,/<form id="order-edit-form">/);
+  assert.match(html,/<form id="order-edit-form"[^>]*data-order-status="initial">/);
+  assert.doesNotMatch(html,/data-card-refund/);
   assert.doesNotMatch(html,/sẽ tự hoàn/);
+});
+test('order edit uses an explicit submit button and keeps native form data out of the URL',()=> {
+  const html=render({permissions:['order-edit']});
+  assert.match(html,/<form id="order-edit-form" method="post" data-api="\/admin\/order\/edit\/[a-f0-9]{24}"/);
+  assert.match(html,/<button type="submit">Cập nhật<\/button>/);
 });
 test('cancelled order shows the refund transaction and its card delivery state',()=> {
   const html=render({orderDetail:{id:'a'.repeat(24),orderCode:'OD1',fullName:'Khách A',phone:'0901111111',note:'',paymentMethod:'card',paymentStatus:'paid',status:'cancel',createdAtFormat:'',items:[],subTotal:1500000,discount:0,total:1500000},refundInfo:{txRef:'AB'.repeat(8),amount:1500000,statusLabel:'Chờ ghi lên thẻ ở lần cắm thẻ tiếp theo'}});

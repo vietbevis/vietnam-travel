@@ -12,6 +12,7 @@ const orderPaymentHelper = require("../../helpers/order-payment.helper");
 const cardOpHelper = require("../../helpers/card-op.helper");
 const cardLogHelper = require("../../helpers/card-log.helper");
 const cardCrypto = require("../../helpers/card-crypto.helper");
+const { restoreOrderStock } = require("../../helpers/order-stock.helper");
 
 // Debit ví thẻ đã gửi/đã ký mà chưa done: thẻ có thể đã trừ tiền, chỉ biên nhận của thẻ mới kết thúc được giao dịch.
 const IN_FLIGHT_MESSAGE = "Đơn đang có giao dịch ví thẻ chưa đối soát; hãy để khách cắm thẻ đồng bộ trước";
@@ -33,8 +34,10 @@ const CARD_LOCKED_MESSAGE = "Thẻ hiện tại của khách đang bị khoá. H
 const CARD_ISSUING_MESSAGE = "Thẻ của khách đang trong quá trình phát hành/cấp lại. Hãy hoàn tất phát hành thẻ trước khi huỷ đơn để hoàn tiền vào ví thẻ.";
 const CARD_CHANGED_MESSAGE = "Trạng thái thẻ của khách vừa thay đổi. Hãy tải lại trang.";
 const USED_TICKET_MESSAGE = "Đơn có vé đã check-in, không thể huỷ và hoàn tiền tự động. Vui lòng xử lý thủ công.";
+const CHECKIN_PENDING_MESSAGE = "Đơn có vé đang chờ xác nhận check-in. Cần đối soát trước khi hủy hoặc hoàn tiền.";
 // Vé đã check-in (use-ticket ghi ticketStatus used + checkedInAt): tour đã được dùng, không huỷ/hoàn tự động.
 const hasUsedTicket = order => Array.isArray(order?.items) && order.items.some(item => item?.ticketStatus === "used" || !!item?.checkedInAt);
+const hasPendingCheckin = order => order.items?.some(item => Boolean(item.checkinOpId));
 // Trần số dư chip (applet từ chối credit vượt mức); đồng bộ sẽ giữ khoản vượt trần chờ đối soát.
 const WALLET_CAP = 50_000_000;
 const OBJECT_ID = /^[a-fA-F0-9]{24}$/;
@@ -381,24 +384,24 @@ module.exports.edit = async (req, res) => {
       _id: id,
       deleted: false
     })
+    if (!orderDetail) return res.status(404).render("admin/pages/error-404", { pageTitle: "Không tìm thấy đơn hàng" });
 
     orderDetail.createdAtFormat = moment(orderDetail.createdAt).format("YYYY-MM-DDTHH:mm");
 
     for (const item of orderDetail.items) {
-      const city = await City.findOne({
-        _id: item.locationFrom
-      });
-      item.locationFromName = city.name;
+      const city = OBJECT_ID.test(String(item.locationFrom || "")) ? await City.findById(item.locationFrom) : null;
+      item.locationFromName = city?.name || "Chưa xác định";
       item.departureDateFormat = moment(item.departureDate).format("DD/MM/YYYY");
     }
 
     // Đơn có vé đã check-in: không cho huỷ (và hoàn tiền tự động) từ form.
     const usedTicket = orderDetail.status !== "cancel" && hasUsedTicket(orderDetail);
+    const pendingCheckin = orderDetail.status !== "cancel" && hasPendingCheckin(orderDetail);
 
     // Đơn đã trừ ví thẻ (debit có biên nhận): huỷ đơn sẽ tự hoàn tiền về ví thẻ của khách.
     let cardRefund = null;
     if (
-      !usedTicket &&
+      !usedTicket && !pendingCheckin &&
       orderDetail.paymentMethod === "card" &&
       orderDetail.paymentStatus === "paid" &&
       orderDetail.status !== "cancel" &&
@@ -431,6 +434,7 @@ module.exports.edit = async (req, res) => {
       cardRefund,
       refundInfo,
       usedTicket,
+      pendingCheckin,
       paymentMethod: variableConfig.paymentMethod,
       paymentStatus: variableConfig.paymentStatus,
       orderStatus: variableConfig.orderStatus
@@ -540,6 +544,7 @@ module.exports.editPatch = async (req, res) => {
           }
 
           const orderId = String(current._id);
+          if (hasPendingCheckin(current)) throw new EditRefusal(CHECKIN_PENDING_MESSAGE);
 
           // Debit đã ký hoặc đã gửi mà chưa có biên nhận: thẻ có thể đã trừ tiền,
           // chỉ lần cắm thẻ đồng bộ tiếp theo mới kết thúc được giao dịch.
@@ -588,65 +593,6 @@ module.exports.editPatch = async (req, res) => {
             }
           }
 
-          if (!Array.isArray(current.items) || !current.items.length) {
-            throw new EditRefusal("Đơn không có danh sách tour hợp lệ.");
-          }
-
-          // Gộp số lượng của các item thuộc cùng một tour.
-          const stockByTour = new Map();
-          let totalPassengers = 0;
-
-          for (const item of current.items) {
-            const tourId = String(item.tourId || "");
-            const adult = item.quantityAdult;
-            const children = item.quantityChildren;
-            const baby = item.quantityBaby;
-
-            if (
-              !/^[a-fA-F0-9]{24}$/.test(tourId) ||
-              ![adult, children, baby].every(
-                n => Number.isSafeInteger(n) && n >= 0
-              )
-            ) {
-              throw new EditRefusal(
-                "Số lượng hoặc mã tour trong đơn không hợp lệ."
-              );
-            }
-
-            const quantity = adult + children + baby;
-            if (
-              !Number.isSafeInteger(quantity) ||
-              !Number.isSafeInteger(totalPassengers + quantity)
-            ) {
-              throw new EditRefusal("Số lượng khách không hợp lệ.");
-            }
-
-            totalPassengers += quantity;
-
-            const previous = stockByTour.get(tourId) || {
-              adult: 0,
-              children: 0,
-              baby: 0
-            };
-
-            const next = {
-              adult: previous.adult + adult,
-              children: previous.children + children,
-              baby: previous.baby + baby
-            };
-
-            if (!Object.values(next).every(Number.isSafeInteger)) {
-              throw new EditRefusal("Số lượng hoàn kho vượt giới hạn.");
-            }
-
-            stockByTour.set(tourId, next);
-          }
-
-          if (totalPassengers < 1) {
-            throw new EditRefusal("Đơn không có hành khách hợp lệ.");
-          }
-
-          // Chỉ chuyển trạng thái nếu đơn chưa hủy
           // và chưa từng ghi nhận hoàn tồn kho / hoàn tiền.
           const fieldsToSet = {
             status: "cancel",
@@ -669,7 +615,8 @@ module.exports.editPatch = async (req, res) => {
             stockRestoredAt: { $exists: false },
             // Chốt lại trong điều kiện ghi: không phần tử nào đã check-in.
             "items.ticketStatus": { $ne: "used" },
-            "items.checkedInAt": { $exists: false }
+            "items.checkedInAt": { $exists: false },
+            "items.checkinOpId": { $exists: false }
           };
 
           if (refund) {
@@ -691,26 +638,7 @@ module.exports.editPatch = async (req, res) => {
             );
           }
 
-          // Hoàn chỗ bằng $inc, không ghi đè tồn kho hiện tại.
-          for (const [tourId, quantity] of stockByTour) {
-            const result = await Tour.updateOne(
-              { _id: tourId },
-              {
-                $inc: {
-                  stockAdult: quantity.adult,
-                  stockChildren: quantity.children,
-                  stockBaby: quantity.baby
-                }
-              },
-              { session }
-            );
-
-            if (result.matchedCount !== 1) {
-              throw new EditRefusal(
-                "Không tìm thấy tour để hoàn chỗ. Đã rollback."
-              );
-            }
-          }
+          await restoreOrderStock(current.items, session, message => new EditRefusal(message));
 
           if (refund) {
             await applyCardRefund(current, refund, req, session);

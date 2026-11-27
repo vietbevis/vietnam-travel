@@ -2,22 +2,42 @@ const {test}=require('node:test'),assert=require('node:assert/strict'),fs=requir
 const file='../public/assets/js/card-customer';
 const UI=fs.existsSync(require('node:path').resolve('public/assets/js/card-customer.js'))?require(file):{};
 const id='A0'.repeat(16);
-test('reconciliation return tells the customer money was received and does not attempt a credit',()=>{
+test('manual customer sync requires a current session before issuing signed steps and refreshes pending data',async()=>{
+  const f=fixture();
+  let fetches=0;
+  const steps=[];
+  f.client.openSession=async options=>{
+    f.calls.push(['open',options]);
+    if(options.onSyncStep)options.onSyncStep('write-ticket');
+    return{cardId:id,cardType:1,state:2,mustChangePin:false};
+  };
+  const result=await UI.walletSyncFlow({client:f.client,cardId:id,onStep:step=>steps.push(step),fetch:async()=>{
+    fetches++;
+    return{ok:true,json:async()=>({code:'success',balance:700000,pendingCredit:0,pending:{}})};
+  }});
+  assert.equal(fetches,2);
+  assert.deepEqual(steps,['write-ticket']);
+  assert.equal(result.balance,700000);
+  await assert.rejects(UI.walletSyncFlow({client:f.client,cardId:id,fetch:async()=>({ok:false,status:401,json:async()=>({code:'error'})})}),{code:'AUTH_REQUIRED'});
+  assert.equal(f.calls.length,1);
+});
+test('query parameters alone cannot report a paid topup or attempt a credit',()=>{
   let opens=0;
   const f=browserFixture({openSession:async()=>{opens++;}});
   f.window.location.search='?topup=reconciliation';
   f.mount();
-  assert.match(f.status.textContent,/đã nhận.*đối soát/i);
+  assert.equal(f.status.textContent,'');
   assert.equal(opens,0);
 });
 const vm=require('node:vm');
 function browserFixture(client){
   const listeners={},nodes={},body={cleared:false,replaceChildren(){this.cleared=true;}};
-  function node(selector,extra={}){const item={textContent:'',disabled:false,hidden:false,handlers:{},addEventListener(name,fn){this.handlers[name]=fn;},...extra};nodes[selector]=item;return item;}
+  function createNode(extra={}){return{ textContent:'', children:[], disabled:false, hidden:false, handlers:{}, addEventListener(name,fn){this.handlers[name]=fn;}, setAttribute(){}, append(...items){this.children.push(...items);this.textContent=this.children.map(item=>item.textContent).join('');}, replaceChildren(...items){this.children=[];this.append(...items);}, ...extra };}
+  function node(selector,extra){const item=createNode(extra);nodes[selector]=item;return item;}
   const status=node('[data-customer-status]'),account=node('[data-card-account]',{dataset:{cardId:id,serverBalance:'700000'}}),balance=node('strong[data-server-balance]');
   nodes['[data-server-balance]']=account;
   node('[data-card-profile-read]');node('[data-card-balance]');node('[data-card-log]');node('[data-card-tickets]');node('[data-card-photo]',{removeAttribute(name){delete this[name];}});node('[data-card-mismatch]');
-  const document={body,querySelector:selector=>nodes[selector]||null,querySelectorAll:selector=>selector==='[data-card-logout]'&&nodes[selector]?[nodes[selector]]:[]};
+  const document={body,createElement:()=>createNode(),querySelector:selector=>nodes[selector]||null,querySelectorAll:selector=>selector==='[data-card-logout]'&&nodes[selector]?[nodes[selector]]:[]};
   const window={document,CardShared:require('../public/assets/js/card/card-shared'),cardClient:client,addEventListener:(name,fn)=>{listeners[name]=fn;},location:{replace(url){window.redirect=url;},reload(){window.reloaded=true;},assign(url){window.redirect=url;}},fetch:async()=>({ok:true,json:async()=>({code:'success'})})};
   return{window,document,status,account,balance,node,nodes,listeners,mount(){vm.runInNewContext(fs.readFileSync('public/assets/js/card-customer.js','utf8'),{window,AbortController,setTimeout,clearTimeout,TypeError,console});}};
 }
@@ -54,25 +74,13 @@ test('login fails closed on profile read errors other than known initial 6985 an
   for(const initial of [false,true]){let authenticated=false;const f=fixture({openSession:async()=>({cardId:id,cardType:1,state:2,mustChangePin:initial}),readProfile:async()=>{throw Object.assign(new Error('thẻ không đọc được'),{sw:'6F00'});},authenticate:async()=>{authenticated=true;}});await assert.rejects(UI.loginFlow({client:f.client}));assert.equal(authenticated,false);}
   let authenticated=false;const f=fixture({readProfile:async()=>({fullName:'Không ngày sinh'}),authenticate:async()=>{authenticated=true;return{code:'success'};}});await UI.loginFlow({client:f.client});assert.equal(authenticated,true);
 });
-test('topup=1 return page reports the real outcome: credited, pending, waiting, login, wrong card, no card',async()=>{
-  const cases=[
-    ['credited',{balance:800000,pendingCredit:0},'Đã ghi 100.000 đ vào thẻ.'],
-    ['pending',{balance:700000,pendingCredit:100000},/chưa ghi được vào thẻ/],
-    ['waiting',{balance:700000,pendingCredit:0},/chờ cổng thanh toán/],
-    ['login',null,/đăng nhập lại/],
-    ['wrong',{balance:700000,pendingCredit:0},/thẻ khác/],
-    ['nocard',{balance:700000,pendingCredit:0},'Cắm thẻ để nhận tiền']
-  ];
-  for(const [name,snapshot,expected] of cases){
-    const f=fixture({openSession:async opts=>{f.calls.push(['open',opts]);if(name==='nocard')throw new Error('no card');return{cardId:name==='wrong'?'B0'.repeat(16):id,cardType:1,state:2,mustChangePin:false};}});
-    const browser=browserFixture(f.client);browser.window.location.search='?topup=1';
-    browser.window.fetch=async()=>snapshot?{ok:true,json:async()=>({code:'success',...snapshot})}:{ok:false,json:async()=>({code:'error'})};
-    browser.mount();await new Promise(r=>setImmediate(r));await new Promise(r=>setImmediate(r));
-    if(expected instanceof RegExp)assert.match(browser.status.textContent,expected);else assert.equal(browser.status.textContent,expected);
-    assert.equal(f.calls.filter(call=>call[0]==='open').length,1);
+test('gateway returns with query strings never invoke card operations or show a payment outcome',async()=>{
+  for (const search of ['?from=topup','?topup=1','?topup=fail']) {
+    const f=fixture(),browser=browserFixture(f.client);
+    browser.window.location.search=search;
+    browser.mount();
+    await new Promise(resolve=>setImmediate(resolve));
+    assert.deepEqual(f.calls,[]);
+    assert.equal(browser.status.textContent,'');
   }
-  // Return thất bại từ cổng: báo lỗi, không đụng tới thẻ.
-  const f=fixture(),failed=browserFixture(f.client);failed.window.location.search='?topup=fail';failed.mount();await new Promise(r=>setImmediate(r));
-  assert.match(failed.status.textContent,/không thành công/);assert.equal(f.calls.length,0);
-  const idle=fixture(),plain=browserFixture(idle.client);plain.mount();await new Promise(r=>setImmediate(r));assert.equal(idle.calls.length,0);
 });

@@ -1,9 +1,10 @@
+const { asyncRoute } = require('../../middlewares/http-route.middleware');
 const router = require('express').Router();
 
 const cartController = require("../../controllers/client/cart.controller");
 
-router.get('/', cartController.cart)
+router.get('/', asyncRoute(cartController.cart))
 
-router.post('/detail', cartController.detail)
+router.post('/detail', asyncRoute(cartController.detail))
 
 module.exports = router;

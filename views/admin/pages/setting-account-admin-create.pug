@@ -4,23 +4,24 @@ block main
   h1.box-title Tạo tài khoản quản trị
 
   .section-8
-    form#setting-account-admin-create-form
+    form#setting-account-admin-create-form(method="post")
       .inner-group
         label(class="inner-label" for="fullName") Họ tên
-        input(type="text" id="fullName" name="fullName")
+        input(type="text" id="fullName" name="fullName" required minlength="5" maxlength="50")
       .inner-group
         label(class="inner-label" for="email") Email
-        input(type="email" id="email" name="email")
+        input(type="email" id="email" name="email" required maxlength="254" autocomplete="off")
       .inner-group
         label(class="inner-label" for="phone") Số điện thoại
-        input(type="text" id="phone" name="phone")
+        input(type="tel" id="phone" name="phone" required pattern="(?:84|0[35789])[0-9]{8}" title="Ví dụ: 0912345678")
       .inner-group
         label(class="inner-label" for="role") Nhóm quyền
-        select(id="role" name="role")
+        select(id="role" name="role" required)
+          option(value="") Chọn nhóm quyền
           each item in roleList
             option(value=item.id) #{item.name}
       .inner-group
-        label(class="inner-label" for="positionCompany") Chức vụ
+        label(class="inner-label" for="positionCompany") Chức vụ (không bắt buộc)
         input(type="text" id="positionCompany" name="positionCompany")
       .inner-group
         label(class="inner-label" for="status") Trạng thái
@@ -30,12 +31,14 @@ block main
           option(value="inactive") Tạm dừng
       .inner-group
         label(class="inner-label" for="password") Mật khẩu
-        input(type="text" id="password" name="password")
+        input(type="password" id="password" name="password" required minlength="8" maxlength="128" autocomplete="new-password")
+        small Gồm chữ hoa, chữ thường, chữ số và ký tự đặc biệt.
       .inner-group.inner-two-col
         label(class="inner-label" for="avatar") Ảnh đại diện
         div(class="inner-upload-image")
           input(type="file" id="avatar" accept="image/*" filepond-image name="avatar")
+      p.form-status.inner-two-col(data-form-status role="status")
       .inner-button.inner-two-col
-        button Tạo mới
+        button(type="submit") Tạo mới
     .inner-back
       a(href=`/${pathAdmin}/setting/account-admin/list`) Quay lại danh sách

@@ -1,0 +1,96 @@
+:root {
+  font-family: system-ui, sans-serif;
+  color: #132449;
+  background: #edf2fa;
+  color-scheme: light;
+  --border: #c8d4e7;
+  --accent: #194dc3;
+  --muted: #425578;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; }
+button { color: inherit; font: inherit; }
+h1, h2, p, dl, dd { margin: 0; }
+h1 { font-size: clamp(1.9rem, 7vw, 2.6rem); letter-spacing: -.035em; }
+h2 { font-size: 1.2rem; }
+p { line-height: 1.5; }
+
+.console { width: min(100% - 2rem, 58rem); margin: clamp(1rem, 6vw, 4rem) auto; }
+.console-header, .section-heading { display: flex; align-items: center; justify-content: space-between; gap: .75rem 1.5rem; flex-wrap: wrap; }
+.console-header p { margin-top: .4rem; color: var(--muted); }
+.panel { background: white; border: 1px solid var(--border); border-radius: 1rem; padding: clamp(1rem, 4vw, 1.7rem); margin-top: 1.35rem; }
+.connection, .active-slot { font-size: .9rem; font-weight: 650; padding: .35rem .7rem; border-radius: .5rem; background: #edf2fa; color: #263e6d; }
+.connection[data-connected="true"] { color: #12603d; background: #e3f7eb; }
+.connection[data-connected="false"] { color: #982c37; background: #fbe9ec; }
+.agent-data, .slots { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr)); gap: .7rem; margin-top: 1rem; }
+.agent-data > div { background: #f4f7fc; padding: .65rem .8rem; border-radius: .5rem; min-width: 0; }
+.agent-data dt { color: var(--muted); font-size: .85rem; }
+.agent-data dd { font-weight: 650; margin-top: .2rem; overflow-wrap: anywhere; }
+.note { color: var(--muted); font-size: .94rem; margin-top: .7rem; }
+
+button { background: white; border: 1px solid var(--border); border-radius: .5rem; min-height: 2.75rem; padding: .6rem .8rem; cursor: pointer; }
+button:hover:not(:disabled) { border-color: var(--accent); background: #f0f5ff; }
+button:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+button:disabled { cursor: default; opacity: .65; }
+.slots { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.slots .slot-card {
+  --slot-color: #475569;
+  display: grid;
+  position: relative;
+  align-content: space-between;
+  gap: .45rem;
+  min-width: 0;
+  min-height: 9.5rem;
+  aspect-ratio: 1.74;
+  border: 2px solid transparent;
+  border-radius: 1rem;
+  padding: clamp(.85rem, 3vw, 1.35rem);
+  text-align: start;
+  background: linear-gradient(156deg, var(--slot-color), #18233d);
+  color: white;
+}
+.slot-card[data-slot="0"] { --slot-color: #2563eb; }
+.slot-card[data-slot="1"] { --slot-color: #6d28d9; }
+.slots .slot-card:hover:not(:disabled) { background: linear-gradient(135deg, var(--slot-color), #152748); }
+.slots .slot-card[aria-pressed="true"] { border-color: #22c55e; box-shadow: 0 0 0 2px #166534; opacity: 1; }
+.slot-brand { font-weight: 750; letter-spacing: .07em; }
+.slot-chip {
+  width: 2.7rem;
+  height: 2rem;
+  border: 1px solid #765519;
+  border-radius: .42rem;
+  background: linear-gradient(90deg, transparent 29%, #866021 30% 32%, transparent 33% 66%, #866021 67% 69%, transparent 70%),
+    linear-gradient(0deg, transparent 31%, #866021 32% 35%, transparent 36% 64%, #866021 65% 68%, transparent 69%),
+    linear-gradient(125deg, #fff1ba, #d9a545);
+}
+.slot-number { font-size: clamp(1rem, 4vw, 1.35rem); font-weight: 740; letter-spacing: .12em; }
+.slot-name { font-size: .9rem; }
+.slot-active {
+  display: none;
+  justify-self: end;
+  align-items: center;
+  gap: .35rem;
+  font-size: .8rem;
+  font-weight: 700;
+  color: #dcfce7;
+}
+.slot-card[aria-pressed="true"] .slot-active { display: flex; }
+.slot-active::before {
+  content: '';
+  width: .65rem;
+  height: .37rem;
+  border-left: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: translateY(-.1rem) rotate(-45deg);
+}
+@media (max-width: 479px) { .slots { grid-template-columns: 1fr; } }
+
+#availability:not(:empty), #result:not(:empty) { margin-top: .8rem; }
+#result[data-error="true"] { color: #982c37; }
+dialog { width: min(30rem, 100% - 2rem); border: 1px solid var(--border); border-radius: 1rem; padding: 1.25rem; background: white; color: inherit; }
+dialog::backdrop { background: #1023458a; }
+dialog p { margin: .75rem 0 1rem; color: var(--muted); }
+.dialog-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: .6rem; }
+.primary { background: var(--accent); border-color: var(--accent); color: white; }
+.primary:hover:not(:disabled) { background: #123986; }

@@ -40,7 +40,13 @@ module.exports.dashboard = async (req, res) => {
 }
 
 module.exports.revenueChartPost = async (req, res) => {
-  const { currentMonth, currentYear, previousMonth, previousYear, arrayDay } = req.body;
+  const { currentMonth, currentYear, previousMonth, previousYear, arrayDay } = req.body || {};
+  const inRange = (value, min, max) => Number.isInteger(value) && value >= min && value <= max;
+  if (!inRange(currentMonth, 1, 12) || !inRange(previousMonth, 1, 12) ||
+      !inRange(currentYear, 1900, 9999) || !inRange(previousYear, 1900, 9999) ||
+      !Array.isArray(arrayDay) || arrayDay.length > 31 || !arrayDay.every(day => inRange(day, 1, 31))) {
+    return res.status(400).json({ code: 'error', message: 'Khoảng ngày không hợp lệ.' });
+  }
 
   // Truy vấn tất cả đơn hàng trong tháng hiện tại
   const ordersCurrentMonth = await Order.find({

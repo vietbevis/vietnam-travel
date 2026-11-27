@@ -1,4 +1,5 @@
 extends ../layouts/default.pug
+include ../mixins/card-audit.pug
 
 block main
   .ca-page
@@ -26,6 +27,14 @@ block main
           dd= card.owner && card.owner.email || 'Chưa có'
           dt Số điện thoại
           dd= card.owner && card.owner.phone || 'Chưa có'
+          if permissions.includes('card-edit') && card.cardType==='customer' && card.owner
+            if card.owner.address
+              dt Địa chỉ trên website
+              dd= card.owner.address
+            if card.owner.webAvatar
+              dt Ảnh đại diện website
+              dd
+                img.profile-avatar(src=card.owner.webAvatar alt="Ảnh đại diện website" width="42" height="42")
           if card.revokedReason || card.lockedReason
             dt Lý do khóa / thu hồi
             dd= card.revokedReason || card.lockedReason
@@ -33,18 +42,20 @@ block main
         h2
           i.fa-solid.fa-wallet
           | Ví thẻ
-        .ca-label Số dư server (đ)
+        .ca-label= card.isCurrent && card.status === 'active' ? 'Số dư khả dụng trên server' : 'Số dư ghi nhận trên server'
         p.ca-balance= card.balance.toLocaleString('vi-VN')
           small  đ
         p.ca-note Số dư trên thẻ (chip) được đối chiếu khi cắm thẻ và đồng bộ.
-        h3.ca-label(style="margin-top:18px") Credit đang chờ
-        ul.ca-tickets.ca-pending
+        if !card.isCurrent
+          p.ca-note Thẻ này không còn là thẻ hiện hành. Số dư ở đây là dữ liệu để đối soát.
+        h3.ca-label(style="margin-top:18px") Khoản ghi có đang chờ
+        ul.ca-tickets.ca-pending(data-pending-credits="")
           each tx in pendingCredits
             li
               i.fa-solid.fa-hourglass-half
-              | #{tx.txRef}: #{tx.amount.toLocaleString('vi-VN')} đ — #{tx.status}
+              | #{tx.txRef} · #{tx.amount.toLocaleString('vi-VN')} đ · #{cardTxStatus(tx.status)}
           if !pendingCredits.length
-            li.ca-none Không có credit đang chờ.
+            li.ca-none Không có khoản ghi có đang chờ.
     .ca-card(style="margin-top:20px")
       h2
         i.fa-solid.fa-ticket
@@ -55,7 +66,7 @@ block main
             if ['pending','written','used','pending-delete','deleted'].includes(item.ticketStatus)
               li
                 i.fa-solid.fa-ticket-simple
-                | #{order.orderCode || order._id} — #{item.title || item.tourName || item.tourId || 'Vé du lịch'} — #{item.ticketStatus}
+                | #{order.orderCode || order._id} · #{item.name || item.title || item.tourName || item.tourId || 'Vé du lịch'} · #{ticketStatusLabel(item.ticketStatus)}
         if !orders.length
           li.ca-none Chưa có vé.
 
@@ -71,7 +82,7 @@ block main
               i.fa-solid.fa-rotate
               | Tiếp tục cấp lại thẻ
         else if ['active','locked'].includes(card.status)
-          form.ca-subform(data-card-replace-form data-card-id=card.cardId data-card-base=`/${pathAdmin}/card`)
+          form.ca-subform(method="post" data-card-replace-form data-card-id=card.cardId data-card-base=`/${pathAdmin}/card`)
             h3 Cấp lại thẻ
             .ca-field
               label(for="replacementReason") Lý do cấp lại
@@ -81,7 +92,7 @@ block main
               | Cấp lại thẻ
             p.ca-status(data-card-replace-message role="status" aria-live="polite") Thu hồi thẻ cũ, giữ nguyên số dư đến khi thẻ mới hoàn tất.
       if permissions.includes('card-edit') && card.cardType==='customer' && card.status==='active' && card.owner
-        form.ca-subform(data-card-profile-form data-card-id=card.cardId data-card-base=`/${pathAdmin}/card`)
+        form.ca-subform(method="post" data-card-profile-form data-card-id=card.cardId data-card-base=`/${pathAdmin}/card`)
           h2 Sửa hồ sơ / ảnh trên thẻ
           .ca-grid
             each field in [{name:'fullName',label:'Họ tên',max:60},{name:'dob',label:'Ngày sinh',type:'date'},{name:'gender',label:'Giới tính (male / female / other)',max:6},{name:'phone',label:'Số điện thoại',max:15},{name:'idNumber',label:'Số giấy tờ',max:20},{name:'emergencyName',label:'Liên hệ khẩn cấp',max:60},{name:'emergencyPhone',label:'Số liên hệ khẩn cấp',max:15},{name:'bloodType',label:'Nhóm máu',max:3},{name:'allergies',label:'Dị ứng',max:120}]
@@ -101,7 +112,7 @@ block main
               i.fa-solid.fa-arrows-rotate
               | Tải lại hồ sơ đã xác nhận
           p.ca-status(data-card-profile-message role="status" aria-live="polite") Khách nhập PIN của đúng thẻ đang xem. Hồ sơ và ảnh được xác nhận riêng; có thể chỉ một phần thành công.
-      form.ca-subform(data-card-status-form data-card-id=card.cardId data-card-base=`/${pathAdmin}/card`)
+      form.ca-subform(method="post" data-card-status-form data-card-id=card.cardId data-card-base=`/${pathAdmin}/card`)
         h3 Trạng thái thẻ
         if permissions.includes('card-lock') || permissions.includes('card-revoke')
           .ca-field
@@ -132,18 +143,18 @@ block main
         p.ca-status(data-card-status-message role="status" aria-live="polite") Cắm thẻ đang xem để đồng bộ trạng thái từ server.
       if card.status==='active'
         if permissions.includes('card-reset-pin')
-          form.ca-subform(data-card-reset-pin-form data-card-id=card.cardId data-card-base=`/${pathAdmin}/card`)
+          form.ca-subform(method="post" data-card-reset-pin-form data-card-id=card.cardId data-card-base=`/${pathAdmin}/card`)
             h3 Reset PIN
             button.ca-btn.ca-btn-orange(type="submit")
               i.fa-solid.fa-key
               |  Reset PIN
             p.ca-note PIN mới chỉ hiện một lần sau khi xác nhận. Chủ thẻ cần đổi PIN trước khi sử dụng.
         if permissions.includes('card-topup') && card.cardType==='customer'
-          form.ca-subform(data-card-topup-cash-form data-card-id=card.cardId data-card-base=`/${pathAdmin}/card`)
+          form.ca-subform(method="post" data-card-topup-cash-form data-card-id=card.cardId data-card-base=`/${pathAdmin}/card` data-owner-name=owner && owner.fullName)
             h3 Nạp tiền mặt
             .ca-field(style="max-width:360px")
               label(for="cash-amount") Số tiền mặt đã nhận (đ)
-              input#cash-amount(name="amount" type="number" required min="10000" max="20000000" step="1" inputmode="numeric")
+              input#cash-amount(name="amount" type="text" required data-vnd data-min="10000" data-max="20000000" data-step="1" inputmode="numeric")
             .ca-btn-row
               button.ca-btn.ca-btn-green(type="submit")
                 i.fa-solid.fa-money-bill-wave
@@ -179,10 +190,10 @@ block main
             tr
               td= new Date(tx.createdAt).toLocaleString('vi-VN', {timeZone:'Asia/Ho_Chi_Minh'})
               td= tx.txRef
-              td #{tx.type} / #{tx.source}
+              td #{cardTxType(tx.type)} · #{cardTxSource(tx.source)}
               td.ca-num= tx.amount.toLocaleString('vi-VN')
               td
-                span.badge(class=/^(completed|success|settled)$/i.test(String(tx.status)) ? 'badge-green' : /^(failed|cancelled|rejected)$/i.test(String(tx.status)) ? 'badge-red' : 'badge-grey')= tx.status
+                span.badge(class=tx.status==='done' ? 'badge-green' : tx.status==='failed' ? 'badge-red' : 'badge-grey')= cardTxStatus(tx.status)
           if !transactions.length
             tr.ca-empty
               td(colspan="5")
@@ -190,27 +201,5 @@ block main
                 | Chưa có giao dịch.
 
     h2.ca-dash-title 50 nhật ký gần nhất
-    .ca-table-wrap
-      table.ca-table
-        thead
-          tr
-            th Thời gian
-            th Thao tác
-            th Người thực hiện
-            th Kết quả
-            th Chi tiết
-        tbody
-          each entry in logs
-            tr(data-card-log-row)
-              td= new Date(entry.createdAt).toLocaleString('vi-VN', {timeZone:'Asia/Ho_Chi_Minh'})
-              td= entry.action
-              td #{entry.actorType} #{entry.actorId || ''}
-              td
-                span.badge(class=/^(success|ok)$/i.test(String(entry.result)) ? 'badge-green' : 'badge-grey')= entry.result
-              td.ca-detail-json= entry.detail ? JSON.stringify(entry.detail) : ''
-          if !logs.length
-            tr.ca-empty
-              td(colspan="5")
-                i.fa-regular.fa-clipboard
-                | Chưa có nhật ký.
+    +cardAudit(logs, false)
   script(src="/admin/assets/js/card-admin.js" defer)

@@ -5,11 +5,14 @@ const Role=require('../models/role.model');
 const Card=require('../models/card.model');
 const verified=new WeakMap();
 const objectId=value=>typeof value==='string'&&/^[a-fA-F0-9]{24}$/.test(value);
-const flags={httpOnly:true,sameSite:'strict'};
+const flags={httpOnly:true,sameSite:'strict',secure:process.env.NODE_ENV==='production',path:'/'};
+const version=account=>account.sessionVersion ?? 0;
+const isCurrent=(decoded,account)=>(decoded.sv ?? 0)===version(account);
+const versionFilter=account=>version(account)===0?{$in:[0,null]}:version(account);
 function issue(res,{account,cardId,stepUpAt,remember=false,expiresAt}) {
   const now=Math.floor(Date.now()/1000),exp=expiresAt===undefined?now+(remember?30:1)*86400:Math.floor(expiresAt);
   if(!Number.isFinite(exp)||exp<=now)throw new Error('AUTH_EXPIRED');
-  const payload={id:String(account._id||account.id),email:account.email,iat:now,exp};
+  const payload={id:String(account._id||account.id),email:account.email,sv:version(account),iat:now,exp};
   if(cardId)payload.cardId=cardId;
   if(stepUpAt!==undefined)payload.stepUpAt=new Date(stepUpAt).getTime();
   res.cookie('token',jwt.sign(payload,process.env.JWT_SECRET,{algorithm:'HS256'}),{...flags,maxAge:(exp-now)*1000});
@@ -18,7 +21,7 @@ function decode(token){return jwt.verify(token,process.env.JWT_SECRET,{algorithm
 async function resolve(decoded) {
   if(!decoded||decoded.stage!==undefined||!objectId(decoded.id)||typeof decoded.email!=='string')return null;
   const account=await Account.findOne({_id:decoded.id,email:decoded.email,status:'active',deleted:false});
-  if(!account||!objectId(account.role))return null;
+  if(!account||!isCurrent(decoded,account)||!objectId(account.role))return null;
   const role=await Role.findOne({_id:account.role,deleted:false});
   if(!role)return null;
   let card;
@@ -36,4 +39,5 @@ function attach(req,context){
 const context=req=>verified.get(req);
 const stepUp={isFresh(req){const ctx=verified.get(req),at=ctx?.decoded.stepUpAt;return !!ctx?.card&&typeof at==='number'&&Number.isFinite(at)&&at<=Date.now()&&Date.now()-at<=300000;}};
 function resetTag(account){return crypto.createHmac('sha256',process.env.JWT_SECRET).update(account.password||'').digest('hex');}
-module.exports={issue,decode,resolve,attach,context,stepUp,flags,resetTag};
+function clear(res){for(const name of ['token','preToken','resetToken'])res.clearCookie(name,flags);}
+module.exports={issue,decode,resolve,attach,context,stepUp,flags,resetTag,version,isCurrent,versionFilter,clear};

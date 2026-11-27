@@ -112,14 +112,14 @@ block main
                       img(src=item.avatar, alt=item.name)
                     .inner-content
                       .inner-name #{item.name}
-                      .inner-quantity Người lớn: #{item.quantityAdult} x #{item.priceNewAdult.toLocaleString("vi-VN")}đ
-                      .inner-quantity Trẻ em: #{item.quantityChildren} x #{item.priceNewChildren.toLocaleString("vi-VN")}đ
-                      .inner-quantity Em bé: #{item.quantityBaby} x #{item.priceNewBaby.toLocaleString("vi-VN")}đ
+                      .inner-quantity Người lớn: #{item.quantityAdult} x #{item.priceNewAdult.toLocaleString("vi-VN")} đ
+                      .inner-quantity Trẻ em: #{item.quantityChildren} x #{item.priceNewChildren.toLocaleString("vi-VN")} đ
+                      .inner-quantity Em bé: #{item.quantityBaby} x #{item.priceNewBaby.toLocaleString("vi-VN")} đ
               td
-                div Tạm tính: #{orderDetail.subTotal.toLocaleString("vi-VN")}đ
-                div Giảm: #{orderDetail.discount.toLocaleString("vi-VN")}đ
+                div Tạm tính: #{orderDetail.subTotal.toLocaleString("vi-VN")} đ
+                div Giảm: #{orderDetail.discount.toLocaleString("vi-VN")} đ
                 //- div Mã giảm: TOURMUAHE2024
-                div Thanh toán: #{orderDetail.total.toLocaleString("vi-VN")}đ
+                div Thanh toán: #{orderDetail.total.toLocaleString("vi-VN")} đ
                 div PTTT: #{orderDetail.paymentMethodName}
                 div TTTT: #{orderDetail.paymentStatusName}
               td

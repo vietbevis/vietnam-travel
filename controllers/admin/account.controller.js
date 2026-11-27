@@ -1,14 +1,15 @@
 const AccountAdmin = require("../../models/account-admin.model")
-const ForgotPassword = require("../../models/forgot-password.model")
 const bcrypt = require("bcryptjs")
 const jwt = require('jsonwebtoken')
 const Card=require('../../models/card.model');
 const adminToken=require('../../helpers/admin-token.helper');
 const cardAuth=require('../../helpers/card-auth.helper');
 const Joi=require('joi');
+const { newPassword } = require('../../validates/admin/credential-fields');
 
-const generateHelper = require("../../helpers/generate.helper");
+const adminOtp = require("../../helpers/admin-otp.helper");
 const mailHelper = require("../../helpers/mail.helper");
+const adminStart = '/' + require('../../config/variable').pathAdmin + '/start';
 
 module.exports.login = async (req, res) => {
   res.render("admin/pages/login", {
@@ -20,17 +21,18 @@ module.exports.loginPost=async(req,res)=>{
   const {email,password,rememberPassword}=req.body||{};
   const invalid=()=>res.json({code:'error',message:'Email, mật khẩu không đúng hoặc tài khoản chưa được kích hoạt.'});
   // Chỉ nhận chuỗi: object toán tử ({"$ne":null}) không được chọn tài khoản, mật khẩu không phải chuỗi không làm bcrypt ném lỗi.
-  if(typeof email!=='string'||typeof password!=='string'||!email||!password)return invalid();
+  if(typeof email!=='string'||typeof password!=='string'||!email||!password||email.length>254||password.length>256)return invalid();
+  if(!await adminOtp.quota('login',email.trim().toLowerCase(),req.ip||'',new Date()))return invalid();
   const account=await AccountAdmin.findOne({email,deleted:false});
   if(!account||typeof account.password!=='string'||!await bcrypt.compare(password,account.password)||account.status!=='active')return invalid();
   if(account.cardRequired){
     if(!await Card.exists({ownerId:account.id,cardType:'staff',status:'active',isCurrent:true}))return res.json({code:'error',message:'Thẻ nhân viên đã bị khoá hoặc thu hồi. Liên hệ quản trị viên.'});
     res.clearCookie('token');res.clearCookie('resetToken');
-    res.cookie('preToken',jwt.sign({id:account.id,email:account.email,stage:'card',remember:rememberPassword===true},process.env.JWT_SECRET,{algorithm:'HS256',expiresIn:'5m'}),{...adminToken.flags,maxAge:300000});
+    res.cookie('preToken',jwt.sign({id:account.id,email:account.email,sv:adminToken.version(account),stage:'card',remember:rememberPassword===true},process.env.JWT_SECRET,{algorithm:'HS256',expiresIn:'5m'}),{...adminToken.flags,maxAge:300000});
     return res.json({code:'card-required'});
   }
   res.clearCookie('preToken');res.clearCookie('resetToken');adminToken.issue(res,{account,remember:rememberPassword===true});
-  res.json({code:'success'});
+  res.json({code:'success',redirectTo:adminStart});
 };
 
 module.exports.register = async (req, res) => {
@@ -85,58 +87,50 @@ module.exports.forgotPassword = async (req, res) => {
   })
 }
 
-module.exports.forgotPasswordPost = async (req, res) => {
-  const { email } = req.body;
+const otpEmail = Joi.string().trim().email({ tlds: { allow: false } }).max(254).required();
+const otpInput = Joi.object({ email: otpEmail, otp: Joi.string().pattern(/^\d{6}$/).required() }).unknown(false);
+const otpFailure = 'Mã OTP sai, đã dùng, hết hạn hoặc vượt giới hạn thử. Vui lòng kiểm tra mã hoặc yêu cầu mã mới.';
+let pendingMail = 0;
 
-  // Kiểm tra xem email có tồn tại trong hệ thống không
-  const existAccount = await AccountAdmin.findOne({
-    email: email
-  })
-
-  if(!existAccount) {
-    res.json({
-      code: "error",
-      message: "Email không tồn tại trong hệ thông!"
-    })
-    return;
-  }
-
-  // Kiểm tra email đã tồn tại trong ForgotPassword chưa
-  const existEmailInForgotPassword = await ForgotPassword.findOne({
-    email: email,
-    $or:[{purpose:'admin-reset'},{purpose:{$exists:false}}]
-  })
-
-  if(existEmailInForgotPassword) {
-    res.json({
-      code: "error",
-      message: "Vui lòng gửi lại yêu cầu sau 5 phút!"
-    })
-    return;
-  }
-
-  // Tạo mã OTP
-  const otp = generateHelper.generateRandomNumber(6);
-
-  // Lưu vào database: email, otp. sau 5 phút sẽ tự động xóa bản ghi.
-  const newRecord = new ForgotPassword({
-    email: email,
-    purpose:'admin-reset',
-    otp: otp,
-    expireAt: Date.now() + 5*60*1000
-  })
-  await newRecord.save();
-
-  // Gửi mã OTP qua email cho người dùng tự động
-  const subject = `Mã OTP lấy lại mật khẩu`;
-  const content = `Mã OTP của bạn là <b style="color: green;">${otp}</b>. Mã OTP có hiệu lực trong 5 phút, vui lòng không cung cấp cho bất kỳ ai.`;
-  mailHelper.sendMail(email, subject, content);
-
-  res.json({
-    code: "success",
-    message: "Đã gửi mã OTP qua email"
-  });
+async function activeResetAccount(email) {
+  const escaped = email.replace(/[.*+?^$\{\}()|[\]\\]/g, '\\$&');
+  const matches = await AccountAdmin.find({ email: new RegExp('^' + escaped + '$', 'i'), status: 'active', deleted: false }).limit(2);
+  return matches.length === 1 ? matches[0] : null;
 }
+
+module.exports.forgotPasswordPost = async (req, res) => {
+  const started = Date.now();
+  const checked = otpEmail.validate(req.body?.email);
+  if (!checked.error) {
+    const email = checked.value.toLowerCase();
+    try {
+      const now = new Date();
+      if (await adminOtp.quota('send', email, req.ip || '', now)) {
+        const account = await activeResetAccount(email);
+        if (!account) {
+          await adminOtp.createCode(email, null, now);
+        } else if (pendingMail < 4) {
+          pendingMail++;
+          let code;
+          try {
+            code = await adminOtp.createCode(email, account, now);
+          } finally {
+            if (!code) pendingMail--;
+          }
+          if (code) {
+            Promise.resolve().then(() => mailHelper.sendMail(account.email, 'Mã OTP lấy lại mật khẩu',
+              'Mã xác nhận của bạn là <b>' + code + '</b>. Mã có hiệu lực 5 phút.'))
+              .catch(() => {}).finally(() => { pendingMail--; });
+          }
+        }
+      }
+    } catch {
+      console.error('Không thể xử lý yêu cầu gửi OTP Admin.');
+    }
+  }
+  await new Promise(resolve => setTimeout(resolve, Math.max(0, 120 - (Date.now() - started))));
+  return res.json({ code: 'success', message: 'Nếu tài khoản hợp lệ, mã OTP sẽ được gửi tới email.' });
+};
 
 module.exports.otpPassword = async (req, res) => {
   res.render("admin/pages/otp-password", {
@@ -144,18 +138,23 @@ module.exports.otpPassword = async (req, res) => {
   })
 }
 
-module.exports.otpPasswordPost=async(req,res)=>{
-  const {otp,email}=req.body;
-  if(typeof otp!=='string'||typeof email!=='string')return res.json({code:'error',message:'Mã OTP không chính xác!'});
-  const account=await AccountAdmin.findOne({email,status:'active',deleted:false});
-  if(!account)return res.json({code:'error',message:'Tài khoản không khả dụng.'});
-  const record=await ForgotPassword.findOneAndDelete({email,otp,expireAt:{$gt:new Date()},$or:[{purpose:'admin-reset'},{purpose:{$exists:false}}]});
-  if(!record)return res.json({code:'error',message:'Mã OTP không chính xác hoặc đã hết hạn!'});
-  if(account.cardRequired){
-    res.clearCookie('token');res.clearCookie('preToken');
-    res.cookie('resetToken',jwt.sign({id:account.id,email:account.email,stage:'reset-password',passwordTag:adminToken.resetTag(account)},process.env.JWT_SECRET,{algorithm:'HS256',expiresIn:'5m'}),{...adminToken.flags,maxAge:300000});
-  }else{res.clearCookie('resetToken');adminToken.issue(res,{account});}
-  res.json({code:'success'});
+module.exports.otpPasswordPost = async (req, res) => {
+  const { error, value } = otpInput.validate(req.body);
+  if (error) return res.json({ code: 'error', message: otpFailure });
+  const email = value.email.toLowerCase();
+  const now = new Date();
+  if (!await adminOtp.quota('verify', email, req.ip || '', now)) return res.json({ code: 'error', message: otpFailure });
+  const account = await activeResetAccount(email);
+  if (!account || !await adminOtp.consumeCode(email, value.otp, account, now)) {
+    return res.json({ code: 'error', message: otpFailure });
+  }
+  res.clearCookie('token', adminToken.flags);
+  res.clearCookie('preToken', adminToken.flags);
+  res.cookie('resetToken', jwt.sign({
+    id: account.id, email: account.email, sv: adminToken.version(account),
+    stage: 'reset-password', passwordTag: adminToken.resetTag(account)
+  }, process.env.JWT_SECRET, { algorithm: 'HS256', expiresIn: '5m' }), { ...adminToken.flags, maxAge: 300000 });
+  return res.json({ code: 'success' });
 };
 
 module.exports.resetPassword = async (req, res) => {
@@ -164,12 +163,15 @@ module.exports.resetPassword = async (req, res) => {
   })
 }
 
-module.exports.resetPasswordPost=async(req,res)=>{
-  const hashedPassword=await bcrypt.hash(req.body.password,10);
-  const result=await AccountAdmin.updateOne({_id:req.account.id,deleted:false,status:'active',...(req.resetOnly?{password:req.account.password}:{})},{$set:{password:hashedPassword}});
-  if(!result.matchedCount)return res.status(403).json({code:'error'});
-  res.clearCookie('resetToken');if(req.resetOnly)res.clearCookie('token');
-  res.json({code:'success',requiresLogin:!!req.resetOnly});
+module.exports.resetPasswordPost = async (req, res) => {
+  const password = await bcrypt.hash(req.body.password, 10);
+  const result = await AccountAdmin.updateOne({
+    _id: req.account.id, deleted: false, status: 'active', password: req.account.password,
+    sessionVersion: adminToken.versionFilter(req.account)
+  }, { $set: { password }, $inc: { sessionVersion: 1 } });
+  if (!result.matchedCount) return res.status(403).json({ code: 'error' });
+  adminToken.clear(res);
+  return res.json({ code: 'success', requiresLogin: true });
 };
 
 module.exports.logoutPost = async (req, res) => {
@@ -183,7 +185,7 @@ module.exports.logoutPost = async (req, res) => {
 }
 const authHex=n=>Joi.string().pattern(new RegExp('^[a-fA-F0-9]{'+n+'}$')).required();
 const cardSchemas={challenge:Joi.object({}).required().unknown(false),verify:Joi.object({cardId:authHex(32),nonce:authHex(32),counter:Joi.number().integer().min(0).max(0xffffffff).required(),signature:authHex(256)}).required().unknown(false)};
-cardSchemas.reset=Joi.object({password:Joi.string().min(8).max(72).pattern(/^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[@$!%*?&]).+$/).required()}).required().unknown(false);
+cardSchemas.reset=Joi.object({password:newPassword.required()}).required().unknown(false);
 module.exports.cardInput=(schema)=>async(req,res,next)=>{
   res.set('Cache-Control','no-store');
   if(!req.is('application/json'))return res.status(415).json({code:'error',errorCode:'INVALID_INPUT'});
@@ -195,7 +197,7 @@ async function preAccount(req){
   const decoded=adminToken.decode(req.cookies?.preToken);
   if(decoded.stage!=='card'||typeof decoded.id!=='string'||!(/^[a-fA-F0-9]{24}$/).test(decoded.id)||typeof decoded.email!=='string'||typeof decoded.remember!=='boolean')throw new Error();
   const account=await AccountAdmin.findOne({_id:decoded.id,email:decoded.email,status:'active',deleted:false,cardRequired:true});
-  if(!account||!await Card.exists({ownerId:account.id,cardType:'staff',status:'active',isCurrent:true}))throw new Error();
+  if(!account||!adminToken.isCurrent(decoded,account)||!await Card.exists({ownerId:account.id,cardType:'staff',status:'active',isCurrent:true}))throw new Error();
   return {account,remember:decoded.remember};
 }
 module.exports.loginCardChallenge=async(req,res)=>{
@@ -206,8 +208,8 @@ module.exports.loginCardVerify=async(req,res)=>{
   try{
     const result=await cardAuth.verify({...req.body,purpose:'login-staff',accountId:ctx.account.id});
     if(result.error)return res.status(403).json({code:'error',errorCode:result.error,message:'Thẻ không hợp lệ hoặc đã bị khoá.'});
-    const current=await adminToken.resolve({id:ctx.account.id,email:ctx.account.email,cardId:result.card.cardId});
+    const current=await adminToken.resolve({id:ctx.account.id,email:ctx.account.email,sv:adminToken.version(ctx.account),cardId:result.card.cardId});
     if(!current)return res.status(403).json({code:'error',errorCode:'OP_FORBIDDEN'});
-    adminToken.issue(res,{account:current.account,cardId:result.card.cardId,stepUpAt:Date.now(),remember:ctx.remember});res.clearCookie('preToken');res.json({code:'success'});
+    adminToken.issue(res,{account:current.account,cardId:result.card.cardId,stepUpAt:Date.now(),remember:ctx.remember});res.clearCookie('preToken',adminToken.flags);res.json({code:'success',redirectTo:adminStart});
   }catch{res.status(500).json({code:'error',errorCode:'INTERNAL'});}
 };

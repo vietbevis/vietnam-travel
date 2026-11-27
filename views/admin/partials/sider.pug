@@ -1,4 +1,4 @@
-nav.sider
+nav#admin-navigation.sider(aria-label="Điều hướng quản trị")
   ul.inner-menu
     if (permissions.includes("dashboard-view"))
       li
@@ -27,12 +27,14 @@ nav.sider
     if (permissions.includes("card-log-view"))
       li
         a(href=`/${pathAdmin}/card/log`) <i class="fa-solid fa-clock-rotate-left"></i> Nhật ký thẻ
-    li
-      a(href=`/${pathAdmin}/contact/list`) <i class="fa-solid fa-user-group"></i> Thông tin liên hệ
+    if permissions.includes("contact-view")
+      li
+        a(href=`/${pathAdmin}/contact/list`) <i class="fa-solid fa-user-group"></i> Thông tin liên hệ
   hr
   ul.inner-menu
-    li
-      a(href=`/${pathAdmin}/setting/list`) <i class="fa-solid fa-gear"></i> Cài đặt chung
+    if permissions.includes("website-view") || permissions.includes("account-admin-view") || permissions.includes("role-view")
+      li
+        a(href=`/${pathAdmin}/setting/list`) <i class="fa-solid fa-gear"></i> Cài đặt chung
     li
       a(href=`/${pathAdmin}/profile/edit`) <i class="fa-solid fa-user-gear"></i> Thông tin cá nhân
     li

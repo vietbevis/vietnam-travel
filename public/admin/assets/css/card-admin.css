@@ -38,7 +38,6 @@ dialog[card-pin-modal] :focus-visible, .ca-dialog :focus-visible { outline: 3px 
 .ca-field input:disabled, .ca-field select:disabled { background: #F1F2F6; color: var(--ca-muted); cursor: not-allowed; }
 .ca-field input:focus, .ca-field select:focus { border-color: var(--ca-primary); }
 .ca-field-check label { display: flex; align-items: center; gap: 10px; font-weight: 600; cursor: pointer; }
-.ca-field-check input { width: 18px; height: 18px; }
 .ca-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 0 20px; }
 
 /* Buttons */
@@ -62,8 +61,24 @@ dialog[card-pin-modal] :focus-visible, .ca-dialog :focus-visible { outline: 3px 
 .ca-card fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .ca-card legend { font-weight: 800; font-size: 16px; padding: 0; margin-bottom: 14px; }
 .ca-layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 20px; align-items: start; }
-.ca-layout-detail { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; }
+.ca-layout-detail { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); gap: 20px; }
 .ca-layout-detail > .ca-card { margin-bottom: 0; }
+.ca-checkin-layout { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+.ca-checkin-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(145px, 100%), 1fr)); gap: 12px; margin: 0 0 20px; }
+.ca-checkin-metrics > div { padding: 14px 16px; background: #fff; border: 1px solid #e0e7f3; border-radius: 12px; }
+.ca-checkin-metrics dt { color: #475569; }
+.ca-checkin-metrics dd { margin: 4px 0 0; font-size: 24px; font-weight: 700; color: #18376b; }
+.ca-checkin-select { min-width: 0; padding: 10px; border: 1px solid #d9e3f3; border-radius: 10px; }
+.ca-checkin-select ul { display: grid; gap: 6px; padding: 0; margin: 0; list-style: none; }
+.ca-checkin-select li { padding: 8px; border-radius: 8px; background: #f2f5fa; overflow-wrap: anywhere; }
+.ca-checkin-select label { display: flex; align-items: start; gap: 8px; cursor: pointer; }
+.ca-audit-role { display: block; margin-top: 4px; color: #536173; }
+.ca-audit-hint { margin: 0 0 6px; }
+.ca-audit-detail summary { color: #204ca9; cursor: pointer; }
+.ca-audit-detail dl { margin: 8px 0 0; }
+.ca-audit-detail dt { font-weight: 600; }
+.ca-audit-detail dd { margin: 0 0 5px; overflow-wrap: anywhere; white-space: normal; }
+@media (max-width: 1199.98px) { .ca-checkin-layout { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 991.98px) { .ca-layout { grid-template-columns: 1fr; } }
 .ca-note { color: var(--ca-muted); font-size: 13px; font-weight: 600; line-height: 1.5; margin: 6px 0; }
 .ca-note-warn { color: #B45309; background: rgba(255,168,86,.15); border-radius: 10px; padding: 10px 14px; }

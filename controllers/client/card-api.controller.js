@@ -20,6 +20,8 @@ const zalopayHelper=require('../../helpers/zalopay.helper');
 const vnpayHelper=require('../../helpers/vnpay.helper');
 const {checkOnlineTopup}=require('../../helpers/wallet-rule.helper');
 const customerValidation=require('../../validates/client/card.validate');
+const {contactRevision}=require('../../helpers/customer-profile.helper');
+const walletHold=require('../../helpers/wallet-hold.helper');
 const hex=n=>Joi.string().pattern(new RegExp(`^[a-fA-F0-9]{${n}}$`)).required();
 const response=Joi.string().allow('').pattern(/^([a-fA-F0-9]{2})*$/).max(332).required();
 const schemas={
@@ -384,10 +386,21 @@ module.exports.logout=customerHandler(customerValidation.empty,'customer-logout'
   res.json({code:'success',message:'Đã đăng xuất.'});
 });
 module.exports.profileBuild=customerHandler(customerValidation.profile,'customer-profile-build',async(req,res,body)=>{
-  const profile={...req.customer,...body};
+  const {revision,...fields}=body;
+  if (revision && revision !== contactRevision(req.customer)) {
+    return res.status(409).json({code:'error',errorCode:'PROFILE_CHANGED',message:'Hồ sơ đã thay đổi. Vui lòng tải lại trang trước khi ghi.'});
+  }
+  for (const name of ['phone','emergencyPhone']) {
+    const number = fields[name];
+    if (number && number !== req.customer[name] &&
+        (!/^\+?[0-9 .()-]+$/.test(number) || number.replace(/\D/g,'').length < 7)) {
+      return res.status(400).json({code:'error',errorCode:'INVALID_PROFILE',message:'Số điện thoại không đúng định dạng.'});
+    }
+  }
+  const profile={...req.customer,...fields};
   if(profile.dob instanceof Date)profile.dob=profile.dob.toISOString().slice(0,10).replace(/-/g,'');
   let profileHex;try{profileHex=Buffer.from(S.encodeProfile(profile)).toString('hex').toUpperCase();}catch{throw new E.CardOpError('INVALID_PROFILE');}
-  const op=await E.createOp({cardId:req.card.cardId,type:'commit-write',params:{target:1,dataHex:profileHex,customerUpdate:body},actorType:'customer',actorId:String(req.customer._id)});
+  const op=await E.createOp({cardId:req.card.cardId,type:'commit-write',params:{target:1,dataHex:profileHex,customerUpdate:fields},actorType:'customer',actorId:String(req.customer._id)});
   await cardLog.write({action:'customer-profile-build',cardId:req.card.cardId,actorType:'customer',actorId:String(req.customer._id),result:'success',detail:{opId:op.id},req});
   res.json({code:'success',message:'Đã chuẩn bị hồ sơ; dữ liệu chỉ đổi sau khi xác nhận ghi thẻ.',opId:op.id,profileHex});
 },true);
@@ -396,30 +409,43 @@ const refused=(code,message)=>{const error=new E.CardOpError(code);error.userMes
 // U5: chuẩn bị trừ ví cho một đơn. Không bao giờ ký lại tiền khi giao dịch cũ chưa đối soát xong.
 module.exports.payPrepare=customerHandler(customerValidation.payPrepare,'card-pay-prepare',async(req,res,body)=>{
   const customerId=String(req.customer._id);
-  const order=await Order.findOne({_id:body.orderId,customerId,deleted:false,paymentMethod:'card',paymentStatus:'unpaid',status:{$ne:'cancel'}}).lean();
-  if(!order||!Number.isSafeInteger(order.total)||order.total<1)throw refused('OP_STATE','Đơn hàng không hợp lệ hoặc đã được thanh toán.');
-  // Đơn đã từng được trừ ví thành công (dù trạng thái đơn bị sửa về unpaid) không bao giờ được trừ lần hai.
-  if(await Tx.exists({orderId:String(order._id),type:'debit',status:'done'}))throw refused('OP_STATE','Đơn hàng không hợp lệ hoặc đã được thanh toán.');
-  // Thẻ còn giao dịch đã ký/đã gửi chưa đối soát (của bất kỳ đơn nào): phải khôi phục biên nhận trước, không tạo debit mồ côi.
-  if(await Tx.exists(E.unresolvedFilter({cardId:req.card.cardId})))throw refused('OP_STATE',PAY_SYNC_MESSAGE);
-  const open=await Tx.find({orderId:String(order._id),type:'debit',status:{$ne:'done'}}).lean();
-  // Giao dịch đã ký (sent, hoặc pending-card/failed còn dấu signedOpId) cần khôi phục biên nhận trước.
-  if(open.some(tx=>tx.status==='sent'||tx.signedOpId))throw refused('OP_STATE',PAY_SYNC_MESSAGE);
-  if(req.card.balance<order.total)throw refused('INSUFFICIENT_BALANCE','Số dư ví không đủ');
-  // Giao dịch chưa từng ký (người dùng bỏ giữa chừng) dùng lại được, tránh kẹt đơn vĩnh viễn.
-  let tx=open.find(item=>item.cardId===req.card.cardId&&item.status==='pending-card'&&item.amount===order.total&&item.txRef===order.cardTxRef);
-  if(!tx){
-    const txRef=crypto.randomBytes(8).toString('hex').toUpperCase();
-    const claim=await Order.updateOne({_id:order._id,customerId,deleted:false,paymentMethod:'card',paymentStatus:'unpaid',status:{$ne:'cancel'},total:order.total,cardTxRef:order.cardTxRef===undefined?{$exists:false}:order.cardTxRef},{$set:{cardTxRef:txRef}});
-    if(claim.modifiedCount!==1)throw refused('OP_STATE','Đơn hàng vừa thay đổi, vui lòng thử lại.');
-    tx=await Tx.create({txRef,cardId:req.card.cardId,type:'debit',source:'order',amount:order.total,orderId:String(order._id),createdBy:customerId});
+  const orderFilter={_id:body.orderId,customerId,deleted:false,paymentMethod:'card',paymentStatus:'unpaid',status:{$ne:'cancel'}};
+  const session=await mongoose.startSession();
+  let tx;
+  try{
+    tx=await session.withTransaction(async()=>{
+      const card=await Card.findOneAndUpdate({cardId:req.card.cardId,ownerId:customerId,cardType:'customer',status:'active',isCurrent:true},{$inc:{__v:1}},{session,new:true}).lean();
+      if(!card)throw refused('AUTH_REQUIRED','Thẻ không còn hoạt động. Vui lòng đăng nhập lại.');
+      const order=await Order.findOne(orderFilter).session(session).lean();
+      if(!order||!Number.isSafeInteger(order.total)||order.total<1)throw refused('OP_STATE','Đơn hàng không hợp lệ hoặc đã được thanh toán.');
+      const debit={orderId:String(order._id),type:'debit'};
+      // Đơn đã trừ thành công dù bị sửa về unpaid không được trừ lần hai.
+      if(await Tx.exists({...debit,status:'done'}).session(session))throw refused('OP_STATE','Đơn hàng không hợp lệ hoặc đã được thanh toán.');
+      if(await Tx.exists(E.unresolvedFilter({cardId:card.cardId})).session(session))throw refused('OP_STATE',PAY_SYNC_MESSAGE);
+      const open=await Tx.find({...debit,status:{$ne:'done'}}).session(session).lean();
+      if(open.some(item=>item.status==='sent'||item.signedOpId))throw refused('OP_STATE',PAY_SYNC_MESSAGE);
+      if(walletHold.holdExpired(order))throw refused('WALLET_HOLD_EXPIRED',walletHold.EXPIRED_MESSAGE);
+      if(await walletHold.availableBalance(card,session,order._id)<order.total)throw refused('INSUFFICIENT_BALANCE','Số dư ví không đủ');
+      const reusable=open.find(item=>item.cardId===card.cardId&&item.status==='pending-card'&&item.amount===order.total&&item.txRef===order.cardTxRef);
+      if(reusable)return reusable;
+      const txRef=crypto.randomBytes(8).toString('hex').toUpperCase();
+      const claim=await Order.updateOne({...orderFilter,total:order.total,cardTxRef:order.cardTxRef===undefined?{$exists:false}:order.cardTxRef},{$set:{cardTxRef:txRef}},{session});
+      if(claim.modifiedCount!==1)throw refused('OP_STATE','Đơn hàng vừa thay đổi, vui lòng thử lại.');
+      const [created]=await Tx.create([{...debit,txRef,cardId:card.cardId,source:'order',amount:order.total,createdBy:customerId}],{session});
+      return created;
+    });
+  }catch(error){
+    if(error.code==='WALLET_HOLD_EXPIRED')await walletHold.expireWalletHold(body.orderId);
+    throw error;
+  }finally{
+    await session.endSession();
   }
-  const op=await E.createOp({cardId:req.card.cardId,type:'debit',params:{txRef:tx.txRef},actorType:'customer',actorId:customerId});
-  await cardLog.write({action:'card-pay-prepare',cardId:req.card.cardId,actorType:'customer',actorId:customerId,result:'success',detail:{opId:op.id,orderId:String(order._id),txRef:tx.txRef,amount:order.total},req});
-  res.json({code:'success',message:'Đã chuẩn bị thanh toán bằng ví thẻ.',opId:op.id,amount:order.total});
+  const op=await E.createOp({cardId:tx.cardId,type:'debit',params:{txRef:tx.txRef},actorType:'customer',actorId:customerId});
+  await cardLog.write({action:'card-pay-prepare',cardId:tx.cardId,actorType:'customer',actorId:customerId,result:'success',detail:{opId:op.id,orderId:tx.orderId,txRef:tx.txRef,amount:tx.amount},req});
+  res.json({code:'success',message:'Đã chuẩn bị thanh toán bằng ví thẻ.',opId:op.id,amount:tx.amount});
 },true);
 // U5 nạp online: tạo giao dịch credit chờ thanh toán rồi chuyển khách sang cổng.
-const TOPUP_RETURN_PATH='/account/card?topup=1';
+const TOPUP_RETURN_PATH='/account/card/return';
 async function topupZaloPay(tx) {
   return zalopayHelper.createOrder({
     appUser:'topup-'+tx.id,
@@ -532,24 +558,24 @@ module.exports.topupVnpayResult=async(req,res)=> {
     const rawAmount=req.query.vnp_Amount;
     if(!verified.valid) {
       await topupFailLog(req,'vnpay','chữ ký return không hợp lệ');
-      return res.redirect('/account/card');
+      return res.redirect(TOPUP_RETURN_PATH);
     }
     const scaled=typeof rawAmount==='string'&&/^[1-9][0-9]*$/.test(rawAmount)?Number(rawAmount):NaN;
     if(!process.env.VNPAY_CODE||req.query.vnp_TmnCode!==process.env.VNPAY_CODE||!/^[a-fA-F0-9]{16}$/.test(verified.txnRef)||!Number.isSafeInteger(scaled)||scaled%100!==0) {
       await topupFailLog(req,'vnpay','merchant, mã tham chiếu hoặc số tiền không hợp lệ');
-      return res.redirect('/account/card');
+      return res.redirect(TOPUP_RETURN_PATH);
     }
     const identity={txRef:verified.txnRef.toUpperCase(),type:'credit',source:'vnpay',amount:scaled/100};
     tx=await Tx.findOne(identity).lean();
     if(!tx||!['awaiting-payment','failed',...PAID_STATES].includes(tx.status)) {
       await topupFailLog(req,'vnpay','không tìm thấy khoản nạp khớp hoặc trạng thái không hợp lệ',undefined,{txRef:identity.txRef,amount:identity.amount});
-      return res.redirect('/account/card');
+      return res.redirect(TOPUP_RETURN_PATH);
     }
     if(!verified.success) {
       // Cổng báo thất bại (đã ký): đóng khoản chờ; nếu sau đó báo success thì giữ nghĩa vụ đối soát.
       await E.markTopupFailed(tx._id,'vnpay');
       await topupFailLog(req,'vnpay','thanh toán không thành công',tx,{responseCode:String(req.query.vnp_ResponseCode||'')});
-      return res.redirect('/account/card?topup=fail');
+      return res.redirect(TOPUP_RETURN_PATH);
     }
     const changed=await E.markTopupPaid(tx._id,'vnpay',req);
     if(!changed&&!await Tx.exists({...identity,$or:PAID_MATCH})) {
@@ -557,14 +583,13 @@ module.exports.topupVnpayResult=async(req,res)=> {
         await topupManual(req,'vnpay',tx);
       else
         await topupFailLog(req,'vnpay','khoản nạp đã đóng, không cộng tiền',tx);
-      return res.redirect('/account/card?topup=fail');
+      return res.redirect(TOPUP_RETURN_PATH);
     }
-    const recorded=await Tx.findById(tx._id).lean();
-    return res.redirect(recorded.status==='reconciliation'?'/account/card?topup=reconciliation':TOPUP_RETURN_PATH);
+    return res.redirect(TOPUP_RETURN_PATH);
   }
   catch {
     await topupFailLog(req,'vnpay','lỗi xử lý return',tx);
-    return res.redirect('/account/card');
+    return res.redirect(TOPUP_RETURN_PATH);
   }
 };
 // Mount trực tiếp tại app để bắt cả lỗi parser xảy ra trước router con.

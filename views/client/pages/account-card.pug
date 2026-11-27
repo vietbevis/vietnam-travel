@@ -2,19 +2,22 @@ extends ../layouts/default
 block main
   - const money = value => value.toLocaleString('vi-VN') + ' đ'
   - const dob = accountCustomer.dob ? accountCustomer.dob.toISOString().slice(0,10).replace(/-/g,'') : ''
+  - const dateVN = value => value ? new Date(value).toLocaleDateString('vi-VN', { timeZone:'Asia/Ho_Chi_Minh', day:'2-digit', month:'2-digit', year:'numeric' }) : 'Chưa cập nhật'
+  - const ticketLabels = { pending:'Chờ ghi thẻ', written:'Đã ghi thẻ · Chưa check-in', used:'Đã check-in', 'pending-delete':'Đã hủy · Chờ xóa khỏi thẻ', deleted:'Đã xóa khỏi thẻ' }
+  - const txLabels = { 'awaiting-payment':'Chờ thanh toán', 'pending-card':'Chờ ghi thẻ', sent:'Đang đối soát', done:'Hoàn tất', failed:'Chưa hoàn tất', reconciliation:'Đã nhận tiền · Chờ đối soát' }
   - const tierKey = String(tier.label || 'Standard').toLowerCase()
-  - const maskedId = String(card.cardId).length > 8 ? '•••• •••• ' + String(card.cardId).slice(-4).toUpperCase() : card.cardId
   main.card-account(data-card-account data-card-id=card.cardId data-server-balance=card.balance data-dob=dob)
     .container
       header.card-page-head
         h1.card-page-title Thẻ của tôi
         p.card-page-sub Thẻ thành viên Vietnam Travel của #{accountCustomer.fullName}
+        a.card-btn.card-btn-outline(href="/account/profile") Thông tin cá nhân
       .card-hero
         .card-face(class=`card-tier-${tierKey}`)
           .card-face-top
             span.card-brand
               i.fa-solid.fa-earth-asia(aria-hidden="true")
-              |  Vietnam Travel
+              |  #{settingWebsiteInfo.websiteName || 'Vietnam Travel'}
             span.card-tier-badge(class=`card-tier-${tierKey}`) Hạng #{tier.label}
           .card-face-chip(aria-hidden="true")
           .card-face-id Mã thẻ: #{card.cardId}
@@ -27,30 +30,55 @@ block main
               .card-face-percent Giảm #{tier.percent}%
         .card-tiles
           .card-tile
-            .card-tile-label Số dư hệ thống
+            .card-tile-label Số dư đã xác nhận
             .card-tile-value
               strong(data-server-balance)= money(card.balance)
           .card-tile
             .card-tile-label Số dư trên thẻ
             .card-tile-value(data-card-balance) Chưa đọc thẻ
           .card-tile
-            .card-tile-label Credit đang chờ ghi thẻ
-            .card-tile-value= money(pendingCredit)
+            .card-tile-label Tiền chờ ghi thẻ
+            .card-tile-value(data-card-pending-total)= money(pendingCredit)
           .card-tile
             .card-tile-label Tổng chi tiêu
-            .card-tile-value= money(accountCustomer.totalSpent)
+            .card-tile-value= money(accountCustomer.totalSpent || 0)
+      if fromTopup
+        .card-alert.card-alert-info
+          if latestTopup
+            strong Khoản nạp online gần nhất
+            p #{money(latestTopup.amount)} · #{txLabels[latestTopup.status] || 'Chưa xác định'}
+            if latestTopup.status === 'reconciliation'
+              p Khoản đã nhận cần nhân viên đối soát. Hãy liên hệ hỗ trợ và cung cấp mã #{latestTopup.txRef}.
+          else
+            p Chưa tìm thấy khoản nạp online trên thẻ hiện tại. Sau khi cổng xác nhận, kiểm tra lại tại đây.
       p.card-alert.card-alert-info(data-customer-status role="status" aria-live="polite")
-      p.card-alert.card-alert-warning.card-warning(data-card-mismatch hidden) Số dư trên thẻ và hệ thống chưa khớp — đang đồng bộ
+      p.card-alert.card-alert-warning.card-warning(data-card-mismatch hidden) Số dư trên thẻ và hệ thống chưa khớp.
+      section.card-panel(aria-labelledby="card-sync-title")
+        h2#card-sync-title.card-panel-title
+          i.fa-solid.fa-arrows-rotate(aria-hidden="true")
+          | Đồng bộ với thẻ của tôi
+        p.card-hint Cắm đúng thẻ thành viên và giữ thẻ trong đầu đọc đến hết quá trình. Thao tác đồng bộ chỉ lấy khoản tiền và vé đã được hệ thống duyệt.
+        dl.card-sync-summary
+          each task in [{key:'credit',label:'Tiền nạp chờ ghi'}, {key:'refund',label:'Hoàn tiền chờ ghi'}, {key:'transfer',label:'Số dư chuyển chờ ghi'}, {key:'writeTickets',label:'Vé chờ ghi'}, {key:'deleteTickets',label:'Vé chờ xóa'}, {key:'reconciliation',label:'Giao dịch cần đối soát'}]
+            div
+              dt= task.label
+              dd(data-card-pending=task.key)= ['credit','refund','transfer'].includes(task.key) ? money(pending[task.key]) : pending[task.key]
+        .card-actions
+          button.card-btn(type="button" data-card-sync)
+            i.fa-solid.fa-rotate(aria-hidden="true")
+            |  Đồng bộ ngay
+          a.card-btn.card-btn-outline(href="/account/card" data-card-refresh hidden) Cập nhật lịch sử
+        ol.card-activity(data-card-sync-steps aria-live="polite" hidden)
       .card-grid
         section.card-panel
           h2.card-panel-title
             i.fa-solid.fa-wallet(aria-hidden="true")
             |  Nạp tiền vào ví
           p.card-hint Tối thiểu 10.000 đ; số dư cộng khoản đang chờ ghi thẻ không vượt quá 50.000.000 đ. Sau khi thanh toán, cắm thẻ để nhận tiền.
-          form.card-form(data-card-topup)
+          form.card-form(method="post" data-card-topup)
             .card-field
               label(for="card-topup-amount") Số tiền (đ)
-              input#card-topup-amount(name="amount" type="number" min="10000" max="50000000" step="1000" required placeholder="Ví dụ: 500000")
+              input#card-topup-amount(name="amount" type="text" inputmode="numeric" data-vnd data-min="10000" data-max="50000000" data-step="1000" required placeholder="Ví dụ: 500.000")
             .card-field
               label(for="card-topup-method") Cổng thanh toán
               select#card-topup-method(name="method")
@@ -64,13 +92,38 @@ block main
           .card-actions
             button.card-btn(type="button" data-card-read) Đọc thẻ
             button.card-btn.card-btn-outline(type="button" data-card-change-pin) Đổi PIN
-          img.card-photo(data-card-photo alt="Ảnh trên thẻ")
-          h3.card-sub-title Thông tin hồ sơ
-          pre.card-pre(data-card-profile-read)
-          h3.card-sub-title Nhật ký giao dịch trên thẻ
-          pre.card-pre(data-card-log)
-          h3.card-sub-title Vé trên thẻ
-          pre.card-pre(data-card-tickets)
+          .card-person
+            img.card-photo(data-card-photo alt="Ảnh chân dung đọc từ thẻ" hidden)
+            dl.card-profile(data-card-profile-read)
+              each entry in [{name:'Họ tên',value:accountCustomer.fullName}, {name:'Ngày sinh',value:dateVN(accountCustomer.dob)}, {name:'Số điện thoại',value:accountCustomer.phone}, {name:'Liên hệ khẩn cấp',value:accountCustomer.emergencyName}, {name:'Số liên hệ khẩn cấp',value:accountCustomer.emergencyPhone}]
+                div
+                  dt= entry.name
+                  dd= entry.value || 'Chưa cập nhật'
+          h3.card-sub-title Nhật ký giao dịch đọc từ thẻ
+          p.card-hint(data-card-log-empty) Chưa đọc thẻ.
+          ul.card-activity(data-card-log)
+          details(data-card-log-more hidden)
+            summary(data-card-log-summary) Xem toàn bộ nhật ký chip
+            ul.card-activity(data-card-log-rest)
+      section.card-panel
+        h2.card-panel-title
+          i.fa-solid.fa-ticket(aria-hidden="true")
+          |  Vé du lịch của tôi
+        h3.card-sub-title Trạng thái trên hệ thống
+        if tickets.length
+          ul.card-ticket-list(data-card-server-tickets)
+            each ticket in tickets
+              li(data-ticket-order=ticket.orderCode data-ticket-tour=ticket.tourId data-ticket-departure=ticket.departureDate ? dateVN(ticket.departureDate) : undefined)
+                strong(data-ticket-name)= ticket.tourName || (ticket.tourId ? `Tour ${ticket.tourId}` : 'Chưa cập nhật tour')
+                span.card-badge(data-ticket-status class=`card-badge-status-${ticket.status}`)= ticketLabels[ticket.status] || 'Chưa xác định'
+                p.card-hint Đơn #{ticket.orderCode || 'Chưa cập nhật'} · #{dateVN(ticket.departureDate)} · #{ticket.pax || 'Chưa cập nhật'} khách
+                if ticket.checkedInAt
+                  p.card-hint Check-in #{new Date(ticket.checkedInAt).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'})}
+        else
+          p.card-hint Chưa có vé trong hệ thống cho thẻ của bạn.
+        h3.card-sub-title Vé đọc được trên thẻ
+        p.card-hint(data-card-tickets-empty) Chưa đọc thẻ.
+        ul.card-ticket-list(data-card-tickets)
       section.card-panel
         h2.card-panel-title
           i.fa-solid.fa-clock-rotate-left(aria-hidden="true")
@@ -90,29 +143,13 @@ block main
                   td(data-label="Thời gian")= tx.createdAt.toLocaleString('vi-VN', {timeZone:'Asia/Ho_Chi_Minh'})
                   td(data-label="Mã giao dịch")= tx.txRef
                   td(data-label="Loại")
-                    span.card-badge(class=tx.type === 'credit' ? 'card-badge-credit' : 'card-badge-debit')= tx.type === 'credit' ? (tx.source === 'refund' ? 'Hoàn tiền' : 'Nạp') : 'Trừ'
-                  td(data-label="Số tiền")= money(tx.amount)
+                    span.card-badge(class=tx.type === 'credit' ? 'card-badge-credit' : 'card-badge-debit')= tx.source === 'transfer' ? (tx.type === 'credit' ? 'Chuyển từ thẻ cũ' : 'Chuyển sang thẻ mới') : tx.type === 'credit' ? (tx.source === 'refund' ? 'Hoàn tiền' : 'Nạp') : 'Trừ'
+                  td(data-label="Số tiền")= (tx.type === 'credit' ? '+' : '−') + money(tx.amount)
                   td(data-label="Trạng thái")
-                    span.card-badge(class=`card-badge-status-${tx.status}`)= ({'awaiting-payment':'Chờ thanh toán','pending-card':'Chờ ghi thẻ',sent:'Đang đối soát',done:'Hoàn tất',failed:'Chưa hoàn tất',reconciliation:'Đã nhận tiền — chờ đối soát'})[tx.status]
+                    span.card-badge(class=`card-badge-status-${tx.status}`)= txLabels[tx.status] || 'Chưa xác định'
               if !transactions.length
                 tr
                   td.card-empty(colspan="5") Chưa có giao dịch.
-      section.card-panel
-        h2.card-panel-title
-          i.fa-solid.fa-address-card(aria-hidden="true")
-          |  Sửa thông tin liên hệ
-        p.card-hint Hồ sơ chỉ cập nhật sau khi ghi thẻ thành công.
-        form.card-form.card-form-grid(data-card-profile)
-          .card-field
-            label(for="card-phone") Số điện thoại
-            input#card-phone(name="phone" maxlength="15" value=accountCustomer.phone || '')
-          .card-field
-            label(for="card-emergency-name") Người liên hệ khẩn cấp
-            input#card-emergency-name(name="emergencyName" maxlength="60" value=accountCustomer.emergencyName || '')
-          .card-field
-            label(for="card-emergency-phone") Điện thoại khẩn cấp
-            input#card-emergency-phone(name="emergencyPhone" maxlength="15" value=accountCustomer.emergencyPhone || '')
-          button.card-btn(type="submit") Ghi thông tin vào thẻ
       p.card-lock-link
         a(href="/account/card-lock")
           i.fa-solid.fa-lock(aria-hidden="true")

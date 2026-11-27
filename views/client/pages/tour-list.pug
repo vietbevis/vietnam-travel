@@ -113,7 +113,7 @@ block main
             .inner-count-record
               | Tất cả: 
               b #{totalTour} Tour
-            button.inner-filter-mobile
+            button.inner-filter-mobile(type="button")
               span.inner-title Bộ Lọc
               i.fa-solid.fa-filter
           .inner-list-tour
@@ -121,6 +121,8 @@ block main
               // Product Item
               +product-item(item)
               // End Product Item
+            else
+              p.travel-empty Chưa có tour phù hợp trong danh mục này.
           // Pagination
           if totalPages > 1
             .box-pagination
@@ -128,6 +130,7 @@ block main
                 type="button"
                 data-page=1
                 disabled=(page === 1)
+                aria-label="Trang đầu"
               )
                 i.fa-solid.fa-angles-left
 
@@ -142,6 +145,7 @@ block main
                 type="button"
                 data-page=totalPages
                 disabled=(page === totalPages)
+                aria-label="Trang cuối"
               )
                 i.fa-solid.fa-angles-right
           // End Pagination

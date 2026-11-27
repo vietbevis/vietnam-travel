@@ -10,6 +10,7 @@ const Card=require('../../models/card.model');
 const Customer=require('../../models/customer.model');
 const Order=require('../../models/order.model');
 const Tour=require('../../models/tour.model');
+const City=require('../../models/city.model');
 const Tx=require('../../models/card-transaction.model');
 const Op=require('../../models/card-operation.model');
 const CardLog=require('../../models/card-log.model');
@@ -18,7 +19,7 @@ const it=(name,fn)=>test(name,{skip:!db.enabled},fn);
 const key=crypto.generateKeyPairSync('rsa',{modulusLength:1024});
 const modulus=Buffer.from(key.publicKey.export({format:'jwk'}).n,'base64url').toString('hex').toUpperCase();
 const cardId='A1'.repeat(16),otherCardId='B1'.repeat(16),challenge='CD'.repeat(16);
-let server,base,A,B,cardA,cardB,tokenA,tokenB,tour;
+let server,base,A,B,cardA,cardB,tokenA,tokenB,tour,departureCity;
 before(async()=> {
   process.env.JWT_SECRET='task13-fixture-secret';
   process.env.CARD_SERVER_KEY_PATH=path.resolve('smartcard/test-vectors/server-test-key.pem');
@@ -55,7 +56,8 @@ beforeEach(async()=> {
   cardB=await Card.create({cardId:otherCardId,cardType:'customer',ownerId:B.id,status:'active',publicKeyModulus:modulus,balance:2000000});
   tokenA=jwt.sign({customerId:A.id,cardId},process.env.JWT_SECRET,{expiresIn:'1d'});
   tokenB=jwt.sign({customerId:B.id,cardId:otherCardId},process.env.JWT_SECRET,{expiresIn:'1d'});
-  tour=await Tour.create({name:'Tour thử',status:'active',deleted:false,priceNewAdult:1000000,priceNewChildren:500000,priceNewBaby:0,stockAdult:10,stockChildren:10,stockBaby:10,departureDate:new Date('2026-12-01')});
+  departureCity=await City.create({name:'Điểm xuất phát thử'});
+  tour=await Tour.create({name:'Tour thử',status:'active',deleted:false,priceNewAdult:1000000,priceNewChildren:500000,priceNewBaby:0,stockAdult:10,stockChildren:10,stockBaby:10,departureDate:new Date('2026-12-01'),locations:[departureCity.id]});
 });
 after(async()=> {
   if(server)
@@ -64,10 +66,18 @@ after(async()=> {
     await db.close();
 });
 async function request(url,body,token=tokenA) {
+  let cookie = token ? 'customerToken='+token : '';
+  if (url === '/order/create') {
+    const access = await fetch(base+'/order/checkout-session', { headers: cookie ? { cookie } : {} });
+    assert.equal(access.status, 200);
+    const guest = access.headers.get('set-cookie');
+    if (guest) cookie = [cookie, guest.split(';')[0]].filter(Boolean).join('; ');
+    body = { ...body, intentId: (await access.json()).intentId };
+  }
   const r=await fetch(base+url,{
     method:body===undefined?'GET':'POST',
     redirect:'manual',
-    headers:{...(body===undefined?{}:{'content-type':'application/json'}),...(token?{cookie:'customerToken='+token}:{})},
+    headers:{...(body===undefined?{}:{'content-type':'application/json'}),...(cookie?{cookie}:{})},
     ...(body===undefined?{}:{body:JSON.stringify(body)})
   });
   const text=await r.text();
@@ -104,7 +114,68 @@ const makeOrder=(customer,extra={})=>Order.create({
   items:[{tourId:tour.id,quantityAdult:1,quantityChildren:1,quantityBaby:0,ticketStatus:'none'}],
   ...extra
 });
-const orderBody=(extra={})=>({fullName:'Khách A',phone:'0901111111',note:'',paymentMethod:'card',items:[{tourId:tour.id,locationFrom:'x',quantityAdult:2,quantityChildren:0,quantityBaby:0}],...extra});
+const orderBody=(extra={})=>({fullName:'Khách A',phone:'0901111111',note:'',paymentMethod:'card',items:[{tourId:tour.id,locationFrom:departureCity.id,quantityAdult:2,quantityChildren:0,quantityBaby:0}],...extra});
+
+it('wallet checkout applies the current tier before reserving stock and excludes pending credits', async () => {
+  await Card.updateOne({_id:cardA.id},{$set:{balance:1899999}});
+  await Tx.create({cardId,txRef:'12'.repeat(8),type:'credit',source:'cash',amount:10000,status:'pending-card'});
+  const refused=await request('/order/create',orderBody());
+  assert.equal(refused.errorCode,'INSUFFICIENT_BALANCE');
+  assert.equal(await Order.countDocuments(),0);
+  assert.equal((await Tour.findById(tour.id)).stockAdult,10);
+  await Card.updateOne({_id:cardA.id},{$set:{balance:1900000}});
+  const accepted=await request('/order/create',orderBody());
+  assert.equal(accepted.code,'success');
+  const order=await Order.findById(accepted.orderId).lean();
+  assert.equal(order.total,1900000);
+  assert.ok(order.walletHoldExpiresAt>Date.now());
+  assert.equal((await Tour.findById(tour.id)).stockAdult,8);
+});
+
+it('concurrent wallet orders do not reserve seats against the same available funds', async () => {
+  const responses=await Promise.all([request('/order/create',orderBody()),request('/order/create',orderBody())]);
+  assert.equal(responses.filter(r=>r.code==='success').length,1);
+  assert.equal(responses.filter(r=>r.errorCode==='INSUFFICIENT_BALANCE').length,1);
+  assert.equal((await Tour.findById(tour.id)).stockAdult,8);
+});
+
+it('wallet hold expiry closes an unsigned debit and restores all quantities exactly once', async () => {
+  const created=await request('/order/create',orderBody({items:[{...orderBody().items[0],quantityAdult:1,quantityChildren:1,quantityBaby:1}]}));
+  assert.equal(created.code,'success');
+  assert.equal((await request('/card-api/pay/prepare',{orderId:created.orderId})).code,'success');
+  const order=await Order.findById(created.orderId).lean();
+  const {expireWalletHold}=require('../../helpers/wallet-hold.helper');
+  assert.equal(await expireWalletHold(order._id,new Date(+order.walletHoldExpiresAt-1)),false);
+  const releases=await Promise.all([expireWalletHold(order._id,order.walletHoldExpiresAt),expireWalletHold(order._id,order.walletHoldExpiresAt)]);
+  assert.equal(releases.filter(Boolean).length,1);
+  const stock=await Tour.findById(tour.id).lean();
+  assert.deepEqual([stock.stockAdult,stock.stockChildren,stock.stockBaby],[10,10,10]);
+  const cancelled=await Order.findById(order._id).lean();
+  assert.equal(cancelled.status,'cancel');
+  assert.equal(cancelled.paymentStatus,'unpaid');
+  assert.equal(cancelled.items[0].ticketStatus,'none');
+  assert.equal(await Tx.countDocuments({type:'credit'}),0);
+  assert.equal((await Tx.findOne({orderId:order._id.toString()})).failReason,'voided');
+  assert.equal((await Customer.findById(A.id)).totalSpent,30000000);
+});
+
+it('wallet hold remains reserved if a debit is signed and settles when receipt returns after expiry', async () => {
+  const created=await request('/order/create',orderBody());
+  assert.equal(created.code,'success');
+  const prepared=await request('/card-api/pay/prepare',{orderId:created.orderId});
+  assert.equal((await request('/card-api/op/sign',{opId:prepared.opId,challenge})).code,'success');
+  const order=await Order.findById(created.orderId).lean();
+  const {expireWalletHold}=require('../../helpers/wallet-hold.helper');
+  assert.equal(await expireWalletHold(order._id,order.walletHoldExpiresAt),false);
+  const tx=await Tx.findOne({orderId:order._id.toString()}).lean();
+  const response=receipt({txRef:tx.txRef,balance:100000,amount:1900000});
+  const recovered=await request('/card-api/sync/receipt',{cardId,txRef:tx.txRef,response,sw:'9000'});
+  assert.equal(recovered.ok,true);
+  assert.equal(await expireWalletHold(order._id,order.walletHoldExpiresAt),false);
+  assert.equal((await Tour.findById(tour.id)).stockAdult,8);
+  assert.equal((await Order.findById(order._id)).paymentStatus,'paid');
+  assert.equal((await Card.findById(cardA.id)).txCounter,1);
+});
 
 it('payOtherCustomersOrderRejected',async()=> {
   const order=await makeOrder(B);
@@ -135,7 +206,7 @@ it('pay prepare blocks while a signed pending-card debit awaits receipt recovery
   assert.equal(await Op.countDocuments(),0);
 });
 it('createPost applies tier discount',async()=> {
-  const r=await request('/order/create',orderBody({items:[{tourId:tour.id,locationFrom:'x',quantityAdult:2,quantityChildren:0,quantityBaby:0}]}));
+  const r=await request('/order/create',orderBody({items:[{tourId:tour.id,locationFrom:departureCity.id,quantityAdult:2,quantityChildren:0,quantityBaby:0}]}));
   assert.equal(r.code,'success',r.text);
   const order=await Order.findById(r.orderId).lean();
   assert.equal(order.subTotal,2000000);
@@ -249,7 +320,7 @@ it('payment page renders for owner only',async()=> {
   const guest=await request('/order/payment-card?orderId='+order.id,undefined,'');
   assert.equal(guest.status,302);
 });
-const item=(extra={})=>({tourId:tour.id,locationFrom:'x',quantityAdult:1,quantityChildren:0,quantityBaby:0,...extra});
+const item=(extra={})=>({tourId:tour.id,locationFrom:departureCity.id,quantityAdult:1,quantityChildren:0,quantityBaby:0,...extra});
 async function rejected(items,token=tokenA) {
   const before=await Tour.findById(tour.id).lean();
   const r=await request('/order/create',orderBody({items}),token);

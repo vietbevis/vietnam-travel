@@ -5,7 +5,7 @@ block main
     h2.inner-title Đăng ký
     p.inner-desc Tạo một tài khoản để tiếp tục
     
-    form.inner-form#register-form
+    form.inner-form#register-form(method="post")
       .inner-group
         label(
           class="inner-label"
@@ -15,6 +15,10 @@ block main
           type="text"
           name="fullName"
           id="fullName"
+          required
+          minlength="5"
+          maxlength="50"
+          autocomplete="name"
           placeholder="Ví dụ: Lê Văn A"
           class="inner-control"
         )
@@ -27,6 +31,9 @@ block main
           type="email"
           name="email"
           id="email"
+          required
+          maxlength="254"
+          autocomplete="email"
           placeholder="Ví dụ: levana@gmail.com"
           class="inner-control"
         )
@@ -39,6 +46,10 @@ block main
           type="password"
           name="password"
           id="password"
+          required
+          minlength="8"
+          maxlength="72"
+          autocomplete="new-password"
           class="inner-control"
         )
       .inner-meta
@@ -47,13 +58,15 @@ block main
             type="checkbox"
             name="agree"
             id="agree"
+            required
             class="inner-check"
           )
           label(
             class="inner-label"
             for="agree"
           ) Tôi chấp nhận các điều khoản và điều kiện
-      button(class="inner-button") Đăng Ký
+      p.form-status(data-form-status role="status")
+      button(class="inner-button" type="submit") Đăng ký
     
     .inner-more
       span Bạn đã có tài khoản?

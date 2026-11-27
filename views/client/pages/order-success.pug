@@ -14,6 +14,8 @@ block main
         p Phương thức thanh toán: #{orderDetail.paymentMethodName}
         p Trạng thái thanh toán: #{orderDetail.paymentStatusName}
         p Trạng thái đơn hàng: #{orderDetail.statusName}
+        if orderDetail.walletHoldReleasedAt
+          p.card-alert.card-alert-warning Thời gian giữ chỗ đã hết và số chỗ đã được trả lại. Bạn có thể bắt đầu đơn mới từ giỏ hàng.
         p Ngày đặt: #{orderDetail.createdAtFormat}
 
     .section-11(style="padding-top: 20px;")
@@ -66,10 +68,13 @@ block main
         .inner-list-price
           .inner-item
             .inner-label Tạm tính:
-            .inner-price #{orderDetail.subTotal.toLocaleString("vi-VN")}đ
+            .inner-price #{orderDetail.subTotal.toLocaleString("vi-VN")} đ
           .inner-item
             .inner-label Giảm:
-            .inner-price -#{orderDetail.discount.toLocaleString("vi-VN")}đ
+            .inner-price -#{orderDetail.discount.toLocaleString("vi-VN")} đ
           .inner-item
             .inner-label Thanh toán:
-            .inner-price-highlight #{orderDetail.total.toLocaleString("vi-VN")}đ
+            .inner-price-highlight #{orderDetail.total.toLocaleString("vi-VN")} đ
+        if orderDetail.paymentStatus === "unpaid" && orderDetail.status !== "cancel" && ["card", "vnpay", "zalopay"].includes(orderDetail.paymentMethod)
+          p
+            a(href=`/order/payment-${orderDetail.paymentMethod}?orderId=${orderDetail.id}`) Tiếp tục thanh toán

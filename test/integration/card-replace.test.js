@@ -18,6 +18,20 @@ async function replacement(){const r=await post('replace',{cardId:old.cardId,rea
 async function prepare(extra={}){return post('issue/prepare',{ownerType:'customer',customerId:customer.id,replaceOf:old.cardId,photoBase64,...extra});}
 async function done(opId,sw='9000'){await E.signOp({opId,challengeHex:'AB'.repeat(16),actorType:'admin',actorId:admin.id});return post('op/confirm',{opId,response:'',sw});}
 async function finishPrepared(r){assert.equal(r.code,'success',JSON.stringify(r));assert.equal((await post('issue/init-confirm',{cardId:r.cardId,response:modulus,sw:'9000'})).code,'success');for(const id of [r.profileOpId,r.photoOpId])assert.equal((await done(id)).ok,true);const output=await post('issue/finish',{cardId:r.cardId});assert.equal(output.code,'success',JSON.stringify(output));return output;}
+
+it('expired replacement step-up renders HTML with an explicit staff proof step', async () => {
+  await replacement();
+  const url=base+'/admin/card/issue?replaceOf='+old.cardId;
+  const response=await fetch(url,{headers:{cookie:'token='+stale,accept:'text/html'}});
+  assert.equal(response.status,403);
+  assert.match(response.headers.get('content-type'),/^text\/html/);
+  const html=await response.text();
+  assert.match(html,/data-issue-step-up/);
+  assert.doesNotMatch(html,/data-card-issue[\s>]/);
+  assert.equal(await Card.countDocuments({ownerId:customer.id,isCurrent:true}),0);
+  assert.equal((await Card.findById(old.id)).balance,700000);
+  assert.equal((await fetch(url,{headers:{cookie:'token='+token,accept:'text/html'}})).status,200);
+});
 // Mutations caught: applying Customer before receipt, allowing arbitrary fields or stale TLV, losing partial success.
 it('profile and photo apply separately only after successful bound commit; acknowledged confirm replay is safe',async()=>{const r=await post('profile/build',{cardId:old.cardId,fields:{phone:'0902222222'},photoBase64});assert.equal(r.code,'success',JSON.stringify(r));let c=await Customer.findById(customer.id);assert.equal(c.phone,'0901111111');assert.equal(c.avatar,'https://res.cloudinary.com/fixture/old.jpg');assert.equal((await done(r.profileOpId)).ok,true);assert.equal((await Customer.findById(customer.id)).phone,'0902222222');assert.equal((await post('op/confirm',{opId:r.profileOpId,response:'',sw:'9000'})).ok,true);assert.equal((await done(r.photoOpId,'6A80')).ok,false);assert.equal((await Customer.findById(customer.id)).avatar,'https://res.cloudinary.com/fixture/old.jpg');const p=await post('profile/build',{cardId:old.cardId,photoBase64});assert.equal((await done(p.photoOpId)).ok,true);assert.equal((await Customer.findById(customer.id)).avatar,'https://res.cloudinary.com/fixture/new.jpg');});
 it('profile rejects arbitrary fields staff inactive owners oversized TLV and stale concurrent updates',async()=>{for(const fields of [{email:'evil@example.invalid'},{totalSpent:900},{status:'inactive'},{phone:123}])assert.equal((await post('profile/build',{cardId:old.cardId,fields})).status,400);assert.equal((await post('profile/build',{cardId:'F0'.repeat(16),fields:{phone:'0902222222'}})).status,409);assert.equal((await post('profile/build',{cardId:old.cardId})).status,400);const a=await post('profile/build',{cardId:old.cardId,fields:{phone:'0902222222'}});assert.equal((await done(a.profileOpId)).ok,true);const b=await post('profile/build',{cardId:old.cardId,fields:{emergencyName:'Mẹ'}});await Customer.updateOne({_id:customer.id},{$set:{phone:'0903333333'}});await assert.rejects(E.signOp({opId:b.profileOpId,challengeHex:'AB'.repeat(16),actorType:'admin',actorId:admin.id}),{code:'OP_STATE'});await Customer.updateOne({_id:customer.id},{$set:{status:'inactive'}});assert.equal((await post('profile/build',{cardId:old.cardId,fields:{phone:'0902222222'}})).status,409);});

@@ -5,6 +5,7 @@ const E=require('../../helpers/card-op.helper');
 const ticket=require('../../helpers/ticket.helper');
 const cardLog=require('../../helpers/card-log.helper');
 const V=require('../../validates/admin/card.validate');
+const { ticketStatusLabel } = require('../../helpers/card-presentation.helper');
 const MSG={
   forbidden:'Bạn không có quyền sử dụng tính năng này!',
   input:'Dữ liệu check-in không hợp lệ.',
@@ -29,6 +30,7 @@ function requireCheckin(req) {
     fail(403,MSG.forbidden,'FORBIDDEN');
 }
 const pax=item=>['quantityAdult','quantityChildren','quantityBaby'].reduce((sum,k)=>sum+(Number(item[k])||0),0);
+const ticketDay = date => new Date(new Date(date).getTime() + 7 * 3600000).toISOString().slice(0, 10).replaceAll('-', '');
 async function activeCustomerCard(cardId) {
   const card=await Card.findOne({cardId:cardId.toUpperCase(),cardType:'customer',status:'active',isCurrent:true}).lean();
   if(!card)
@@ -51,6 +53,7 @@ module.exports.page=async(req,res)=>{
     }).sort({createdAt:1,_id:1}).lean();
     const tours=new Map(),bookings=[];
     const selected=typeof req.query.tourId==='string'&&/^[a-fA-F0-9]{24}$/.test(req.query.tourId)?req.query.tourId:'';
+    const keyword = typeof req.query.keyword === 'string' ? req.query.keyword.trim().slice(0, 120) : '';
     for(const order of orders) {
       for(const item of order.items) {
         if(!ticket.isWithinCheckinWindow(item.departureDate,now))
@@ -59,13 +62,18 @@ module.exports.page=async(req,res)=>{
         if(!tours.has(tourId))
           tours.set(tourId,{tourId,name:item.name||tourId,departureDate:item.departureDate});
         if(tourId===selected)
-          bookings.push({orderCode:order.orderCode,fullName:order.fullName,phone:order.phone,pax:pax(item),ticketStatus:item.ticketStatus||'none',checkedInAt:item.checkedInAt});
+          bookings.push({orderCode:order.orderCode,fullName:order.fullName,phone:order.phone,pax:pax(item),ticketStatus:item.ticketStatus||'none',checkedInAt:item.checkedInAt,departureDate:item.departureDate,checkinPending:Boolean(item.checkinOpId)});
       }
     }
-    res.render('admin/pages/card-checkin',{pageTitle:'Check-in tour',tours:[...tours.values()],selected,bookings});
+    const checkedIn = bookings.filter(booking => booking.ticketStatus === 'used').length;
+    const summary = { tickets: bookings.length, passengers: bookings.reduce((total, booking) => total + booking.pax, 0), checkedIn };
+    const search = keyword.toLocaleLowerCase('vi-VN');
+    const visibleBookings = bookings.filter(booking => [booking.orderCode, booking.fullName, booking.phone]
+      .some(value => (value || '').toLocaleLowerCase('vi-VN').includes(search)));
+    res.render('admin/pages/card-checkin',{pageTitle:'Check-in tour',tours:[...tours.values()],selected,bookings:visibleBookings,summary,keyword,ticketStatusLabel});
   }catch(error){
     // Trang GET thiếu quyền hiển thị trong layout quản trị, không trả JSON thô.
-    if(error.errorCode==='FORBIDDEN')return res.status(403).render('admin/pages/no-permission',{pageTitle:'Check-in tour',message:MSG.forbidden});
+    if(error.errorCode==='FORBIDDEN' && req.accepts(['html','json']) === 'html')return res.status(403).render('admin/pages/no-permission',{pageTitle:'Không có quyền truy cập',message:MSG.forbidden});
     reply(res,error);
   }
 };
@@ -86,7 +94,9 @@ module.exports.lookupPost=async(req,res)=>{
     }));
     const inWindow=found.filter(entry=>ticket.isWithinCheckinWindow(entry.item.departureDate,new Date()));
     if(found.length&&!inWindow.length)fail(409,MSG.window,'CHECKIN_WINDOW');
-    const items=inWindow.map(({order,item,itemIndex})=>({orderId:String(order._id),itemIndex,orderCode:order.orderCode,pax:pax(item),ticketStatus:item.ticketStatus||'none'}));
+    const counts = new Map();
+    for (const {order} of found) counts.set(order.orderCode, (counts.get(order.orderCode) || 0) + 1);
+    const items=inWindow.map(({order,item,itemIndex})=>({orderId:String(order._id),itemIndex,orderCode:order.orderCode,pax:pax(item),ticketStatus:item.ticketStatus||'none',departure:ticketDay(item.departureDate),ambiguous:counts.get(order.orderCode)>1,checkinPending:Boolean(item.checkinOpId)}));
     await audit('checkin-lookup',req,cardId,'success',{tourId:body.tourId,items:items.length});
     res.json({code:'success',customer:{fullName:customer.fullName,phone:customer.phone,bloodType:customer.bloodType,allergies:customer.allergies},items});
   }catch(error){
@@ -106,6 +116,10 @@ module.exports.usePost=async(req,res)=>{
     if(!order||order.paymentStatus!=='paid'||order.status==='cancel')fail(409,MSG.order,'ORDER_STATE');
     const item=order.items[body.itemIndex];
     if(!item)fail(404,MSG.item,'ITEM_NOT_FOUND');
+    if (item.checkinOpId) fail(409, 'Vé đang chờ đối soát kết quả check-in.', 'CHECKIN_PENDING');
+    if (order.items.filter(candidate => String(candidate.tourId) === String(item.tourId)).length > 1) {
+      fail(409, 'Có nhiều mục cùng mã vé trên một đơn. Nhân viên cần đối soát trước khi check-in.', 'AMBIGUOUS_TICKET');
+    }
     if(item.ticketStatus==='used')fail(409,MSG.used,'TICKET_USED');
     if(['none','pending'].includes(item.ticketStatus||'none'))fail(409,MSG.notWritten,'TICKET_NOT_WRITTEN');
     if(item.ticketStatus!=='written')fail(409,MSG.gone,'TICKET_GONE');

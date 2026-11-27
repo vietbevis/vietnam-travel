@@ -11,7 +11,13 @@ block main
       .ca-banner
         i.fa-solid.fa-rotate
         p(data-card-replacement-source style="margin:0") Cấp lại từ #{replaceSource.cardId}. Chủ thẻ và loại thẻ được cố định từ server. Số dư cũ chỉ chuyển khi hoàn tất; thẻ mới cần đổi PIN trước khi đồng bộ tiền / vé.
-    form(data-card-issue data-card-base=`/${pathAdmin}/card` data-replace-of=replaceSource&&replaceSource.cardId)
+    if replaceSource
+      .ca-card(data-issue-renew-panel hidden)
+        p Cắm thẻ nhân viên của tài khoản hiện tại để xác thực, sau đó đổi sang thẻ trắng và tiếp tục yêu cầu đang mở.
+        button.ca-btn(type="button" data-issue-step-up data-card-base=`/${pathAdmin}/card`)
+          i.fa-solid.fa-shield(aria-hidden="true")
+          | Xác thực thẻ nhân viên
+    form(method="post" data-card-issue data-card-base=`/${pathAdmin}/card` data-replace-of=replaceSource&&replaceSource.cardId)
       .ca-card
         .ca-step-head
           span.ca-step-no 1
@@ -67,9 +73,10 @@ block main
           button.ca-btn(type="submit")
             i.fa-solid.fa-id-card
             | Phát hành thẻ
-          button.ca-btn.ca-btn-grey(type="button" data-card-reset hidden)
-            i.fa-solid.fa-rotate-left
-            | Reset thẻ ảo
+          if !replaceSource
+            button.ca-btn.ca-btn-grey(type="button" data-card-reset hidden)
+              i.fa-solid.fa-rotate-left
+              | Reset thẻ ảo
         p.ca-status(data-card-status role="status" aria-live="polite")
     dialog.ca-dialog(data-card-pin-dialog aria-labelledby="initial-pin-title")
       .ca-modal-body

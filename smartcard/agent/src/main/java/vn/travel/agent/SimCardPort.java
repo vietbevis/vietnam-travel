@@ -10,7 +10,7 @@ import javax.smartcardio.ResponseAPDU;
 import vn.travel.card.TravelCardApplet;
 
 /** Các thẻ ảo chạy trên jCardSim; mỗi slot có applet được cài sẵn. */
-public final class SimCardPort implements CardPort {
+public final class SimCardPort implements SimulatorPort {
     static final byte[] APPLET_AID = {
         (byte) 0xF0, 0x54, 0x52, 0x41, 0x56, 0x45, 0x4C, 0x01
     };
@@ -32,7 +32,7 @@ public final class SimCardPort implements CardPort {
     private final CardSimulator[] sims;
     private final AID aid = AIDUtil.create(APPLET_AID);
     private final AID otherAid = AIDUtil.create(OTHER_AID);
-    private int slot;
+    private volatile int slot;
 
     public SimCardPort(int slots) {
         if (slots < 1) {
@@ -57,6 +57,7 @@ public final class SimCardPort implements CardPort {
         s.selectApplet(aid);
     }
 
+    @Override
     public void selectSlot(int newSlot) {
         synchronized (lock) {
             if (newSlot < 0 || newSlot >= sims.length) {
@@ -68,6 +69,7 @@ public final class SimCardPort implements CardPort {
         }
     }
 
+    @Override
     public void resetSlot(int s) {
         synchronized (lock) {
             if (s < 0 || s >= sims.length) {
@@ -107,9 +109,12 @@ public final class SimCardPort implements CardPort {
 
     @Override
     public Integer slot() {
-        synchronized (lock) {
-            return slot;
-        }
+        return slot;
+    }
+
+    @Override
+    public int slotCount() {
+        return sims.length;
     }
 
     @Override

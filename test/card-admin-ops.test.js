@@ -30,7 +30,7 @@ test('cash ambiguous APDU outcome retains existing identity and next recovery ne
 });
 test('cash stale stepup authenticates staff once and asks switch target before resubmitting same intent',async()=>{
   let posts=0,opens=0,authenticated=0;
-  const result=browser.cashTopupFlow({cardId,amount:500000,requestId},{client:{openSession:async options=>{opens++;return options?{state:2,cardId}:{state:2,cardType:2};},askPin:async()=>'827491',verifyPin:async()=>{},authenticate:async()=>{authenticated++;return {code:'success'};}},fetch:async()=>{posts++;return {ok:false,status:403,json:async()=>({code:'step-up-required'})};}});
+  const result=browser.cashTopupFlow({cardId,amount:500000,requestId},{client:{openSession:async options=>{opens++;assert.equal(options.sync,false);return options.expectedCardId?{state:2,cardId}:{state:2,cardType:2};},askPin:async()=>'827491',verifyPin:async()=>{},authenticate:async()=>{authenticated++;return {code:'success'};}},fetch:async()=>{posts++;return {ok:false,status:403,json:async()=>({code:'step-up-required'})};}});
   await assert.rejects(result,error=>error.code==='SWITCH_TARGET_CARD'&&/cắm lại/.test(error.message));assert.equal(posts,1);assert.equal(opens,2);assert.equal(authenticated,1);
 });
 test('cash wrong card guard stops before accepting money and failed pending status remains explicit',async()=>{
@@ -39,7 +39,7 @@ test('cash wrong card guard stops before accepting money and failed pending stat
 });
 test('stepup waits for staff card readiness and cancellation performs no authentication or second POST',async()=>{
   let ready,opens=0,posts=0,auth=0;const barrier=new Promise(resolve=>{ready=resolve;});
-  const options={onStepUp:()=>barrier,client:{openSession:async settings=>{opens++;return settings?{state:2,cardId}:{state:2,cardType:2};},askPin:async()=>'827491',verifyPin:async()=>{},authenticate:async()=>{auth++;return {code:'success'};}},fetch:async()=>{posts++;return {ok:false,status:403,json:async()=>({code:'step-up-required'})};}};
+  const options={onStepUp:()=>barrier,client:{openSession:async settings=>{opens++;assert.equal(settings.sync,false);return settings.expectedCardId?{state:2,cardId}:{state:2,cardType:2};},askPin:async()=>'827491',verifyPin:async()=>{},authenticate:async()=>{auth++;return {code:'success'};}},fetch:async()=>{posts++;return {ok:false,status:403,json:async()=>({code:'step-up-required'})};}};
   const flow=browser.cashTopupFlow({cardId,amount:500000,requestId},options),rejected=assert.rejects(flow,{code:'SWITCH_TARGET_CARD'});await new Promise(resolve=>setImmediate(resolve));assert.equal(opens,1);assert.equal(auth,0);ready();await rejected;assert.equal(auth,1);assert.equal(posts,1);
   opens=0;auth=0;posts=0;options.onStepUp=()=>{throw new Error('Đã hủy đổi thẻ');};await assert.rejects(browser.cashTopupFlow({cardId,amount:500000,requestId},options),/Đã hủy/);assert.equal(opens,1);assert.equal(auth,0);assert.equal(posts,1);
 });

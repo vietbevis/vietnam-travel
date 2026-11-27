@@ -30,7 +30,8 @@ const schema = Joi.object({
     "any.only": "Vui lòng chọn tệp ảnh đại diện!",
     "string.base": "Vui lòng chọn tệp ảnh đại diện!"
   }),
-  description: Joi.string().allow("")
+  description: Joi.string().allow(""),
+  imageChanges: Joi.string().max(16000)
 }).messages({ "object.unknown": "Biểu mẫu danh mục chứa trường không hợp lệ!" });
 
 module.exports.save = (req, res, next) => {

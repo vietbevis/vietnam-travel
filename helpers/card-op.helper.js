@@ -58,7 +58,9 @@ async function auditFailure(action,args,audit,error) {
 }
 const hex=(x,n)=>typeof x==='string'&&new RegExp(`^[a-fA-F0-9]{${n}}$`).test(x);
 const syncTypes=['set-state','credit','delete-ticket','write-ticket'];
+const walletHold=require('./wallet-hold.helper');
 const profileFields=['fullName','dob','gender','phone','idNumber','emergencyName','emergencyPhone','bloodType','allergies'];
+const {chipEditableFields}=require('./customer-profile.helper');
 function profileData(customer,update) {
   const profile={...customer,...update};
   if(profile.dob instanceof Date)profile.dob=profile.dob.toISOString().slice(0,10).replace(/-/g,'');
@@ -183,8 +185,10 @@ async function policy(card,op,session,creating=false) {
         status:{$ne:'cancel'},
         deleted:false
       }).session(session).lean();
-      if(!order||order.cardTxRef!==tx.txRef)
+      if(!order||order.cardTxRef!==tx.txRef||walletHold.holdExpired(order))
         fail('OP_STATE');
+      if(!creating&&await walletHold.availableBalance(card,session,order._id)<tx.amount)
+        fail('INSUFFICIENT_BALANCE');
     }
     else
     if(!await creditSourceAllowed(card,tx,session))
@@ -217,7 +221,7 @@ async function policy(card,op,session,creating=false) {
     const update=p.customerUpdate;
     if(update) {
       const photo=p.target===2&&op.actorType==='admin'&&Object.keys(update).length===1&&typeof update.avatar==='string'&&/^https:\/\/[^\s]+$/.test(update.avatar);
-      if(card.cardType!=='customer'||typeof update!=='object'||Array.isArray(update)||!photo&&(p.target!==1||Object.keys(update).some(k=>!profileFields.includes(k)||op.actorType==='customer'&&!['phone','emergencyName','emergencyPhone'].includes(k))))
+      if(card.cardType!=='customer'||typeof update!=='object'||Array.isArray(update)||!photo&&(p.target!==1||Object.keys(update).some(k=>!profileFields.includes(k)||op.actorType==='customer'&&!chipEditableFields.includes(k))))
         fail('OP_FORBIDDEN');
     }
     if(update||op.actorType==='customer') {
@@ -349,6 +353,12 @@ async function signOpCore({opId,challengeHex,actorType,actorId},audit) {
     // Đánh dấu vé đã được ký lệnh ghi: từ đây thẻ có thể giữ vé dù confirm bị mất; huỷ đơn sẽ phải xoá vé khỏi thẻ.
     if(op.type==='write-ticket')
       await Order.updateOne({_id:context.order._id},{$set:{[`items.${op.params.itemIndex}.writeSignedAt`]:new Date()}},{session});
+    if (op.type === 'use-ticket') {
+      const marker = `items.${op.params.itemIndex}.checkinOpId`;
+      const claimed = await Order.updateOne({ _id: context.order._id, [marker]: { $exists: false } },
+        { $set: { [marker]: String(op._id) } }, { session });
+      if (claimed.modifiedCount !== 1) fail('OP_STATE');
+    }
     const apdu=A.signedApdu({cardIdHex:card.cardId,challengeHex,...command(op,context)});
     // Cùng write-lock thẻ để ký hai giao dịch khác nhau không cùng thắng snapshot.
     await Card.updateOne({_id:card._id},{$inc:{__v:1},$set:{lastSeenAt:new Date()}},{session});
@@ -483,6 +493,11 @@ async function confirmOpCore({opId,responseHex='',sw,actorType,actorId,req},audi
         await policy(card,found,session);
         return{ok:true,message:'Thao tác đã được xác nhận.',result:{type:found.type}};
       }
+      if (found.status === 'done' && found.type === 'use-ticket' && sw.toUpperCase() === '9000' && responseHex === '') {
+        const card = await Card.findOne({ cardId: found.cardId }).session(session).lean();
+        await bindingPolicy(card, found, session);
+        return { ok:true, message:'Vé đã được xác nhận check-in.', result:{ type:found.type } };
+      }
       return{ok:false,message:'Thao tác đã kết thúc.',result:null};
     }
     const op=await loadOp(String(opId),{actorType,actorId},session,'prepared',audit);
@@ -501,6 +516,9 @@ async function confirmOpCore({opId,responseHex='',sw,actorType,actorId,req},audi
     const deleteAlreadyGone=op.type==='delete-ticket'&&sw.toUpperCase()==='6A88';
     if(sw.toUpperCase()!=='9000'&&!deleteAlreadyGone) {
       await Op.updateOne({_id:op._id,status:'prepared'},{$set:{status:'failed'},$unset:{'params.encryptedPin':1,'params.newPin':1}},{session});
+      // A browser response does not prove that the signed USE_TICKET was never applied.
+      if(op.type==='use-ticket')
+        return{ok:false,message:'Chưa xác thực được kết quả check-in. Vé vẫn cần đối soát.',result:null};
       if(context.tx?.signedOpId===String(op._id)) {
         if(op.type==='credit')
           await Tx.updateOne({_id:context.tx._id,status:{$ne:'done'}},{$set:{status:'pending-card'}},{session});
@@ -526,7 +544,8 @@ async function confirmOpCore({opId,responseHex='',sw,actorType,actorId,req},audi
           update[`${field}.checkedInAt`]=new Date();
           update[`${field}.checkedInBy`]=op.actorId;
         }
-        await Order.updateOne({_id:context.order._id},{$set:update},{session});
+        const marker = `${field}.checkinOpId`;
+        await Order.updateOne({_id:context.order._id},{$set:update,...(op.type==='use-ticket'?{$unset:{[marker]:1}}:{})},{session});
       }
       if(op.type==='commit-write'&&op.params.customerUpdate)
         await Customer.updateOne({_id:card.ownerId,deleted:false},{$set:op.params.customerUpdate},{session,runValidators:true});

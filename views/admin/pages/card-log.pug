@@ -1,4 +1,6 @@
 extends ../layouts/default.pug
+include ../mixins/card-audit.pug
+include ../mixins/list-pagination.pug
 
 block main
   .ca-page
@@ -14,7 +16,19 @@ block main
         input#cardId(name="cardId" value=filters.cardId maxlength="32" placeholder="Mã thẻ")
       .ca-field
         label(for="action") Thao tác
-        input#action(name="action" value=filters.action maxlength="80" placeholder="Ví dụ: card.lock")
+        input#action(name="action" value=filters.action maxlength="80" list="card-audit-actions" placeholder="Chọn hoặc nhập mã thao tác")
+        datalist#card-audit-actions
+          each label, action in auditActions
+            option(value=action label=label)
+      .ca-field
+        label(for="actorId") Mã người thực hiện
+        input#actorId(name="actorId" value=filters.actorId maxlength="24")
+      .ca-field
+        label(for="result") Kết quả
+        select#result(name="result")
+          option(value="") Tất cả
+          option(value="success" selected=filters.result==='success') Thành công
+          option(value="fail" selected=filters.result==='fail') Thất bại
       .ca-field
         label(for="from") Từ ngày
         input#from(type="date" name="from" value=filters.from)
@@ -29,45 +43,5 @@ block main
           i.fa-solid.fa-rotate-left
           | Xóa bộ lọc
 
-    p.ca-meta
-      span Tổng <strong>#{pagination.total}</strong> mục
-      span Trang #{pagination.page}/#{pagination.pages}
-
-    .ca-table-wrap
-      table.ca-table
-        thead
-          tr
-            th Thời gian
-            th Mã thẻ
-            th Thao tác
-            th Người thực hiện
-            th Kết quả
-            th Chi tiết
-            th IP
-        tbody
-          each entry in logs
-            tr(data-card-log-row)
-              td= new Date(entry.createdAt).toLocaleString('vi-VN', {timeZone:'Asia/Ho_Chi_Minh'})
-              td= entry.cardId || ''
-              td= entry.action
-              td #{entry.actorType} #{entry.actorId || ''}
-              td
-                - const ok = /^(success|ok)$/i.test(String(entry.result))
-                span.badge(class=ok ? 'badge-green' : 'badge-grey')= entry.result
-              td.ca-detail-json= entry.detail ? JSON.stringify(entry.detail) : ''
-              td= entry.ip || ''
-          if !logs.length
-            tr.ca-empty
-              td(colspan="7")
-                i.fa-regular.fa-clipboard
-                | Không có nhật ký phù hợp.
-
-    nav.ca-pagination(aria-label="Phân trang nhật ký")
-      if pagination.previous
-        a(href=pagination.previous)
-          i.fa-solid.fa-chevron-left
-          | Trang trước
-      if pagination.next
-        a(href=pagination.next)
-          | Trang sau
-          i.fa-solid.fa-chevron-right
+    +cardAudit(logs, true)
+    +listPagination(pagination, logs.length, 'Trang nhật ký')

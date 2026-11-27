@@ -6,9 +6,10 @@ block main
     .ca-head
       div
         h1.box-title Quản lý thẻ
-      a.ca-btn(href=`/${pathAdmin}/card/issue`)
-        i.fa-solid.fa-plus
-        | Phát hành thẻ
+      if permissions.includes("card-issue")
+        a.ca-btn(href=`/${pathAdmin}/card/issue`)
+          i.fa-solid.fa-plus
+          | Phát hành thẻ
 
     form.ca-filter(method="get")
       .ca-filter-title

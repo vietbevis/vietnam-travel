@@ -3,7 +3,10 @@ const slugify = require("slugify");
 const Category = require("../../models/category.model");
 const AccountAdmin = require("../../models/account-admin.model");
 const Tour = require("../../models/tour.model");
-const { uploadCategoryAvatar } = require("../../helpers/cloudinary.helper");
+const { storeFormImage, discardNewFormImages, writeWithFormImages } = require("../../middlewares/admin/image-upload.middleware");
+const { paginate } = require("../../helpers/admin-pagination.helper");
+const { sanitizeTourHtml } = require('../../helpers/tour-rich-text.helper');
+const { parseImageChanges, applyImageChange } = require('../../helpers/image-change.helper');
 const {
   buildCategoryTree, isCategoryId, liveCategory, validateParent, withCategoryWrite
 } = require("../../helpers/category.helper");
@@ -52,16 +55,10 @@ function listFilters({ status, createdBy, startDate, endDate, keyword }) {
 module.exports.list = async (req, res) => {
   const { filter, error } = listFilters(req.query);
   const accountAdminList = await AccountAdmin.find({}).select("fullName");
-  const limit = 5;
   const totalRecord = error ? 0 : await Category.countDocuments(filter);
-  const totalPage = Math.ceil(totalRecord / limit);
-  const requestedPage = typeof req.query.page === "string" && /^\d+$/.test(req.query.page)
-    ? Number(req.query.page)
-    : 1;
-  const page = Math.max(1, Math.min(requestedPage, totalPage));
-  const skip = (page - 1) * limit;
+  const pagination = paginate(req.query, totalRecord);
   const categoryList = totalRecord
-    ? await Category.find(filter).sort({ position: -1, _id: -1 }).skip(skip).limit(limit)
+    ? await Category.find(filter).sort({ position: -1, _id: -1 }).skip(pagination.skip).limit(pagination.limit)
     : [];
 
   const adminNames = new Map(accountAdminList.map(item => [item.id, item.fullName]));
@@ -77,7 +74,7 @@ module.exports.list = async (req, res) => {
     categoryList,
     accountAdminList,
     listError: error,
-    pagination: { page, skip, totalRecord, totalPage }
+    pagination
   });
 };
 
@@ -95,6 +92,7 @@ module.exports.edit = async (req, res) => {
   if (!categoryDetail) {
     return res.status(404).render("admin/pages/error-404", { pageTitle: "Danh mục không tồn tại" });
   }
+  categoryDetail.description = sanitizeTourHtml(categoryDetail.description);
   const candidates = await Category.find({ _id: { $ne: categoryDetail.id }, ...liveCategory });
   res.render("admin/pages/category-edit", {
     pageTitle: "Chỉnh sửa danh mục",
@@ -107,27 +105,41 @@ module.exports.edit = async (req, res) => {
 function saveCategory(editing) {
   return (req, res) => withCategoryWrite(async () => {
     const id = editing ? req.params.id.toLowerCase() : null;
-    if (editing && !await Category.exists({ _id: id, ...liveCategory })) {
+    const filter = { _id: id, ...liveCategory };
+    const current = editing ? await Category.findOne(filter).select('avatar').lean() : null;
+    if (editing && !current) {
       return respondError(res, 404, existingCategoryMessage);
     }
-    const data = { ...req.categoryInput, updatedBy: req.account.id };
+    const { imageChanges, ...fields } = req.categoryInput;
+    const changes = parseImageChanges(imageChanges, editing ? ['avatar'] : []);
+    if (!changes) return respondError(res, 400, 'Yêu cầu cập nhật ảnh không hợp lệ.');
+    const data = { ...fields, updatedBy: req.account.id };
+    if (data.description !== undefined) data.description = sanitizeTourHtml(data.description);
     const parentError = await validateParent(data.parent, id);
     if (parentError) return respondError(res, 400, parentError);
     if (data.position === "") data.position = await Category.countDocuments({}) + 1;
 
+    if (editing && !applyImageChange({ name: 'avatar', changes, file: req.file, current, filter, update: data })) {
+      return respondError(res, 409, 'Ảnh đã thay đổi hoặc có thao tác xóa và thay cùng lúc. Vui lòng tải lại trang.');
+    }
     if (req.file) {
       try {
-        data.avatar = await uploadCategoryAvatar(req.file.buffer);
+        data.avatar = await storeFormImage(req.file);
       } catch (error) {
         return respondError(res, 502, "Không thể tải ảnh đại diện lên. Vui lòng thử lại!");
       }
     }
 
     if (editing) {
-      const result = await Category.updateOne({ _id: id, ...liveCategory }, { $set: data });
-      if (!result.matchedCount) return respondError(res, 404, existingCategoryMessage);
+      const result = await writeWithFormImages(req, () => Category.updateOne(filter, { $set: data }));
+      if (!result.matchedCount) {
+        await discardNewFormImages(req);
+        return Object.hasOwn(filter, 'avatar')
+          ? respondError(res, 409, 'Ảnh đã thay đổi. Vui lòng tải lại trang.')
+          : respondError(res, 404, existingCategoryMessage);
+      }
     } else {
-      await Category.create({ ...data, createdBy: req.account.id, avatar: data.avatar || "" });
+      await writeWithFormImages(req, () => Category.create({ ...data, createdBy: req.account.id, avatar: data.avatar || "" }));
     }
     req.flash("success", editing ? "Cập nhật danh mục thành công!" : "Tạo danh mục thành công!");
     return res.json({ code: "success" });

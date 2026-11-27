@@ -4,28 +4,32 @@ block main
   h1.box-title Thông tin website
 
   .section-8
-    form#setting-website-info-form
+    form#setting-website-info-form(method="post")
       .inner-group
         label(class="inner-label" for="websiteName") Tên website
-        input(type="text" id="websiteName" name="websiteName" value=settingWebsiteInfo.websiteName)
+        input(type="text" id="websiteName" name="websiteName" value=settingWebsiteInfo.websiteName required maxlength="150" readonly=!permissions.includes('website-edit'))
       .inner-group
         label(class="inner-label" for="phone") Số điện thoại
-        input(type="text" id="phone" name="phone" value=settingWebsiteInfo.phone)
+        input(type="tel" id="phone" name="phone" value=settingWebsiteInfo.phone maxlength="30" readonly=!permissions.includes('website-edit'))
       .inner-group
         label(class="inner-label" for="email") Email
-        input(type="text" id="email" name="email" value=settingWebsiteInfo.email)
+        input(type="email" id="email" name="email" value=settingWebsiteInfo.email readonly=!permissions.includes('website-edit'))
       .inner-group
         label(class="inner-label" for="address") Địa chỉ
-        input(type="text" id="address" name="address" value=settingWebsiteInfo.address)
+        input(type="text" id="address" name="address" value=settingWebsiteInfo.address maxlength="300" readonly=!permissions.includes('website-edit'))
       .inner-group
         label(class="inner-label" for="logo") Logo
         div(class="inner-upload-image" image-default=settingWebsiteInfo.logo)
-          input(type="file" id="logo" accept="image/*" filepond-image name="logo")
+          input(type="file" id="logo" accept="image/*" filepond-image name="logo" data-clear-image disabled=!permissions.includes('website-edit'))
       .inner-group
         label(class="inner-label" for="favicon") Favicon
         div(class="inner-upload-image" image-default=settingWebsiteInfo.favicon)
-          input(type="file" id="favicon" accept="image/*" filepond-image name="favicon")
-      .inner-button.inner-two-col
-        button Cập nhật
+          input(type="file" id="favicon" accept="image/*" filepond-image name="favicon" data-clear-image disabled=!permissions.includes('website-edit'))
+      if permissions.includes('website-edit')
+        p.form-status.inner-two-col(data-form-status role="status")
+        .inner-button.inner-two-col
+          button(type="submit") Cập nhật
+      else
+        p.form-status.inner-two-col Quyền hiện tại chỉ cho phép xem cấu hình website.
     .inner-back
       a(href=`/${pathAdmin}/setting/list`) Quay lại danh sách

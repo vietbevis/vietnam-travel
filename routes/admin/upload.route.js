@@ -1,16 +1,15 @@
 const router = require('express').Router();
-const multer  = require('multer');
-
 const uploadController = require("../../controllers/admin/upload.controller");
-
-const cloudinaryHelper = require("../../helpers/cloudinary.helper");
-
-const upload = multer({ storage: cloudinaryHelper.storage });
+const { requirePermission } = require('../../middlewares/admin/permission.middleware');
+const { asyncRoute } = require('../../middlewares/http-route.middleware');
+const { upload, storeImages } = require('../../middlewares/admin/image-upload.middleware');
 
 router.post(
-  '/image', 
+  '/image',
+  requirePermission(['tour-create', 'tour-edit']),
   upload.single('file'), 
-  uploadController.imagePost
+  asyncRoute(storeImages),
+  asyncRoute(uploadController.imagePost)
 )
 
 module.exports = router;

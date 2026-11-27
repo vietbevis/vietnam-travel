@@ -69,3 +69,33 @@ module.exports.permissionList = [
     value: "order-trash"
   },
 ];
+
+const legacyPermissionKeys = module.exports.permissionList.map(permission => permission.value);
+const delegatedAdminPermissions = [
+  { label: "Xem thông tin liên hệ", value: "contact-view" },
+  { label: "Xem cấu hình website", value: "website-view" },
+  { label: "Sửa cấu hình website", value: "website-edit" },
+  { label: "Xem tài khoản quản trị", value: "account-admin-view" },
+  { label: "Tạo tài khoản quản trị", value: "account-admin-create" },
+  { label: "Sửa tài khoản quản trị", value: "account-admin-edit" },
+  { label: "Xem nhóm quyền", value: "role-view" },
+  { label: "Tạo nhóm quyền", value: "role-create" },
+  { label: "Sửa nhóm quyền", value: "role-edit" }
+];
+
+const delegatedPermissionKeys = delegatedAdminPermissions.map(permission => permission.value);
+
+function usesLegacyPermissionFallback(permissions) {
+  const mode = process.env.ADMIN_LEGACY_PERMISSION_FALLBACK;
+  return (mode === undefined || mode === '1') && Array.isArray(permissions) &&
+    !delegatedPermissionKeys.some(key => permissions.includes(key)) &&
+    legacyPermissionKeys.every(key => permissions.includes(key));
+}
+
+module.exports.permissionList.push(...delegatedAdminPermissions);
+module.exports.hasPermission = (permissions, value) => Array.isArray(permissions) && (
+  permissions.includes(value) ||
+  (delegatedPermissionKeys.includes(value) && usesLegacyPermissionFallback(permissions))
+);
+module.exports.effectivePermissions = permissions => module.exports.permissionList
+  .map(permission => permission.value).filter(key => module.exports.hasPermission(permissions, key));

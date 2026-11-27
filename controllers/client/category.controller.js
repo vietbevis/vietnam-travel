@@ -3,6 +3,7 @@ const Tour = require("../../models/tour.model");
 const City = require("../../models/city.model");
 const moment = require("moment");
 const categoryHelper = require("../../helpers/category.helper");
+const { sanitizeTourHtml } = require("../../helpers/tour-rich-text.helper");
 
 module.exports.list = async (req, res) => {
   // Lấy slug từ params
@@ -16,6 +17,7 @@ module.exports.list = async (req, res) => {
   })
 
   if (category) {
+    category.description = sanitizeTourHtml(category.description);
     // Breadcrumb
     const breadcrumb = {
       image: category.avatar,
@@ -176,6 +178,6 @@ module.exports.list = async (req, res) => {
       sortKey: sortKey
     });
   } else {
-    res.redirect("/");
+    res.status(404).render('client/pages/error-404', { pageTitle: 'Không tìm thấy danh mục' });
   }
 }

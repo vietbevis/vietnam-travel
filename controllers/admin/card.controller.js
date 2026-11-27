@@ -24,6 +24,8 @@ const V=require('../../validates/admin/card.validate');
 const api=require('../client/card-api.controller');
 const cardLog=require('../../helpers/card-log.helper');
 const walletRules=require('../../helpers/wallet-rule.helper');
+const { paginate } = require('../../helpers/admin-pagination.helper');
+const { ticketStatusLabel, cardTxType, cardTxStatus, cardTxSource, auditActions, formatCardAudit } = require('../../helpers/card-presentation.helper');
 const objectId=value=>typeof value==='string'&&/^[a-fA-F0-9]{24}$/.test(value);
 function fail(code,status=409,message='Yêu cầu phát hành thẻ không hợp lệ hoặc đã kết thúc.'){const error=new Error(message);Object.assign(error,{code,status});throw error;}
 function problem(res,error){if(error.code==='STEP_UP_REQUIRED')return res.status(403).json({code:'step-up-required',message:'Hãy xác thực lại thẻ nhân viên trước khi cấp lại thẻ.'});return res.status(error.status||500).json({code:'error',errorCode:error.code||'INTERNAL',message:error.status?error.message:'Không thể xử lý yêu cầu thẻ.'});}
@@ -33,7 +35,10 @@ module.exports.authenticate=async(req,res,next)=>{
   try{
     if(req.method!=='GET'&&!req.is('application/json'))fail('INVALID_INPUT',415);
     if(req.headers.origin){let origin;try{origin=new URL(req.headers.origin).origin;}catch{fail('OP_FORBIDDEN',403);}if(origin!==req.protocol+'://'+req.get('host'))fail('OP_FORBIDDEN',403);}
-    if(!req.cookies?.token)fail('AUTH_REQUIRED',401);
+    if(!req.cookies?.token){
+      if(isPageRequest(req) && req.get('accept')?.includes('text/html')) return res.redirect('/'+req.app.locals.pathAdmin+'/account/login');
+      fail('AUTH_REQUIRED',401);
+    }
     let decoded;try{decoded=jwt.verify(req.cookies.token,process.env.JWT_SECRET,{algorithms:['HS256']});}catch{fail('AUTH_REQUIRED',401);}
     if(decoded.stage!==undefined||!objectId(decoded.id)||typeof decoded.email!=='string')fail('AUTH_REQUIRED',401);
     const ctx=await adminToken.resolve(decoded);
@@ -85,7 +90,9 @@ async function obligations(cardId,session,req,actorId){
   await voidUnsigned(cardId,session,req,actorId);
   const liability=await Tx.exists(liabilityFilter(cardId)).session(session);
   const prepared=await Op.exists({cardId,status:'prepared',type:{$ne:'set-state'}}).session(session);
-  if(liability||prepared)fail('RECONCILIATION_REQUIRED',409,'Thẻ còn giao dịch hoặc lệnh đã ký cần đối soát. Không được cấp lại khi chưa xác nhận kết quả.');
+  const card = await Card.findOne({ cardId, cardType:'customer' }).select('ownerId').session(session).lean();
+  const ticketPending = card && await Order.exists({ customerId:card.ownerId, deleted:false, 'items.checkinOpId':{ $exists:true } }).session(session);
+  if(liability||prepared||ticketPending)fail('RECONCILIATION_REQUIRED',409,'Thẻ còn giao dịch hoặc lệnh đã ký cần đối soát. Không được cấp lại khi chưa xác nhận kết quả.');
 }
 async function replacement(body,ownerId,session,actorId){
   const stale=await Card.find({ownerId,cardType:body.ownerType,status:'issuing',isCurrent:true}).select('+issuance').session(session).lean();
@@ -177,17 +184,26 @@ module.exports.issue=async(req,res)=>{
     requirePermission(req,'card-issue');
     let replaceSource,sourceOwner;
     if(req.query.replaceOf!==undefined){
-      replacementPermission(req);
+      requirePermission(req,'card-revoke');
       if(typeof req.query.replaceOf!=='string'||! /^[a-fA-F0-9]{32}$/.test(req.query.replaceOf))fail('INVALID_INPUT',400);
       replaceSource=await Card.findOne({cardId:req.query.replaceOf.toUpperCase(),status:'revoked',revokedReason:'replaced','replacement.actorId':req.cardActor.id,'replacement.completedAt':{$exists:false}}).lean();
       if(!replaceSource)fail('INVALID_REPLACEMENT');
+      if(!adminToken.stepUp.isFresh(req)&&req.accepts(['html','json'])==='html'){
+        return res.status(403).render('admin/pages/card-replacement-resume',{pageTitle:'Tiếp tục cấp lại thẻ',requiresStepUp:true});
+      }
+      replacementPermission(req);
       sourceOwner=await (replaceSource.cardType==='customer'?Customer:Account).findOne({_id:replaceSource.ownerId,deleted:false,status:'active'}).select('_id fullName email phone').lean();
       if(!sourceOwner)fail('OWNER_STATE');
     }
     const [customers,accounts]=await Promise.all([Customer.find({deleted:false,status:'active'}).select('_id fullName email phone').sort({fullName:1}).limit(500).lean(),Account.find({deleted:false,status:'active'}).select('_id fullName email').sort({fullName:1}).limit(500).lean()]);
     if(sourceOwner){const list=replaceSource.cardType==='customer'?customers:accounts;if(!list.some(owner=>String(owner._id)===replaceSource.ownerId))list.push(sourceOwner);}
     res.render('admin/pages/card-issue',{pageTitle:'Phát hành thẻ',customers,accounts,replaceSource});
-  }catch(error){pageProblem(res,error,'Phát hành thẻ');}
+  }catch(error){
+    if(req.query.replaceOf!==undefined&&req.accepts(['html','json'])==='html'&&!error.permissionDenied){
+      return res.status(error.status||500).render('admin/pages/card-replacement-resume',{pageTitle:'Tiếp tục cấp lại thẻ',issueError:error.status?error.message:'Không thể mở yêu cầu cấp lại thẻ.'});
+    }
+    pageProblem(res,error,'Phát hành thẻ');
+  }
 };
 module.exports.issuePrepare=endpoint('prepare',async(req,res,body)=>{
   if(body.replaceOf)replacementPermission(req);
@@ -312,7 +328,7 @@ function requirePermission(req,permission){
 }
 // Trang GET thiếu quyền: vẫn hiển thị trong layout quản trị (như các trang quản trị khác ẩn nội dung), không trả JSON thô.
 function pageProblem(res,error,pageTitle){
-  if(error.permissionDenied)return res.status(403).render('admin/pages/no-permission',{pageTitle,message:NOT_ALLOWED});
+  if(error.permissionDenied && isPageRequest(res.req)) return res.status(403).render('admin/pages/no-permission',{pageTitle,message:NOT_ALLOWED});
   problem(res,error);
 }
 async function requireStepUp(req,res,action){
@@ -489,9 +505,13 @@ function pageNumber(query){
   return value?Number(value):1;
 }
 const escapedRegex=value=>value.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
-async function owners(cards){
+async function owners(cards,includeWebProfile=false){
   const ids=cards.map(card=>card.ownerId).filter(objectId);
-  const [customers,accounts]=await Promise.all([Customer.find({_id:{$in:ids},deleted:false}).select('_id fullName email phone dob gender idNumber emergencyName emergencyPhone bloodType allergies avatar').lean(),Account.find({_id:{$in:ids},deleted:false}).select('_id fullName email phone dob gender idNumber emergencyName emergencyPhone bloodType allergies avatar').lean()]);
+  const fields='_id fullName email phone dob gender idNumber emergencyName emergencyPhone bloodType allergies avatar';
+  const [customers,accounts]=await Promise.all([
+    Customer.find({_id:{$in:ids},deleted:false}).select(includeWebProfile ? fields+' address webAvatar' : fields).lean(),
+    Account.find({_id:{$in:ids},deleted:false}).select(fields).lean()
+  ]);
   const map=new Map([...customers.map(owner=>['customer:'+owner._id,owner]),...accounts.map(owner=>['staff:'+owner._id,owner])]);
   return cards.map(card=>({...card,owner:map.get(card.cardType+':'+card.ownerId)}));
 }
@@ -500,6 +520,17 @@ function pagination(req,page,total){
   for(const [key,value]of Object.entries(req.query))if(key!=='page'&&typeof value==='string')url.set(key,value);
   const link=number=>{url.set('page',number);return '?'+url.toString();};
   return {page,pages,total,previous:page>1?link(page-1):null,next:page<pages?link(page+1):null};
+}
+async function auditRows(logs) {
+  const actorIds = [...new Set(logs.filter(entry => entry.actorType === 'admin').map(entry => entry.actorId).filter(objectId))];
+  const accounts = actorIds.length ? await Account.find({ _id: { $in: actorIds } }).select('_id fullName role').lean() : [];
+  const roleIds = [...new Set(accounts.map(account => account.role).filter(objectId))];
+  const roles = roleIds.length ? await Role.find({ _id: { $in: roleIds } }).select('_id name').lean() : [];
+  const names = new Map(roles.map(role => [String(role._id), role.name]));
+  const actorProfiles = new Map(accounts.map(account => [
+    String(account._id), { name: account.fullName, role: names.get(account.role) }
+  ]));
+  return logs.map(entry => ({ cardId: entry.cardId, createdAt: entry.createdAt, ...formatCardAudit(entry, actorProfiles) }));
 }
 module.exports.list=async(req,res)=>{
   try{
@@ -529,7 +560,8 @@ module.exports.detail=async(req,res)=>{
       // Quyền xem chi tiết bao gồm 50 mục lịch sử của chính thẻ; trang toàn cục cần card-log-view.
       Log.find({cardId:card.cardId}).select('action actorType actorId result detail ip createdAt').sort({createdAt:-1,_id:-1}).limit(50).lean()
     ]);
-    res.render('admin/pages/card-detail',{pageTitle:'Chi tiết thẻ',card:(await owners([card]))[0],statusNames,transactions,pendingCredits,orders,logs});
+    const canSeeWebProfile=card.cardType==='customer' && req.cardActor.permissions.includes('card-edit');
+    res.render('admin/pages/card-detail',{pageTitle:'Chi tiết thẻ',card:(await owners([card],canSeeWebProfile))[0],statusNames,transactions,pendingCredits,orders,logs:await auditRows(logs),ticketStatusLabel,cardTxType,cardTxStatus,cardTxSource});
   }catch(error){pageProblem(res,error,'Chi tiết thẻ');}
 };
 function dateFilter(query,key,end=false){
@@ -544,10 +576,15 @@ function dateFilter(query,key,end=false){
 module.exports.log=async(req,res)=>{
   try{
     requirePermission(req,'card-log-view');
-    const page=pageNumber(req.query),cardId=queryText(req.query,'cardId',32).toUpperCase(),action=queryText(req.query,'action',80),from=dateFilter(req.query,'from'),to=dateFilter(req.query,'to',true);
-    if(cardId&&!/^[A-F0-9]{32}$/.test(cardId)||from&&to&&from>=to)fail('INVALID_INPUT',400,'Bộ lọc không hợp lệ.');
-    const query={...(cardId?{cardId}:{}),...(action?{action}:{}),...(from||to?{createdAt:{...(from?{$gte:from}:{}),...(to?{$lt:to}:{})}}:{})};
-    const [logs,total]=await Promise.all([Log.find(query).sort({createdAt:-1,_id:-1}).skip((page-1)*20).limit(20).lean(),Log.countDocuments(query)]);
-    res.render('admin/pages/card-log',{pageTitle:'Nhật ký thẻ',logs,filters:{cardId,action,from:req.query.from||'',to:req.query.to||''},pagination:pagination(req,page,total)});
+    const cardId=queryText(req.query,'cardId',32).toUpperCase(),action=queryText(req.query,'action',80),from=dateFilter(req.query,'from'),to=dateFilter(req.query,'to',true);
+    const actorId = queryText(req.query, 'actorId', 24);
+    const result = queryText(req.query, 'result', 12);
+    if (cardId&&!/^[A-F0-9]{32}$/.test(cardId) || from&&to&&from>=to ||
+        actorId&&!objectId(actorId) || result&&!['success','fail'].includes(result)) fail('INVALID_INPUT',400,'Bộ lọc không hợp lệ.');
+    const query={...(cardId?{cardId}:{}),...(action?{action}:{}),...(actorId?{actorId}:{}),...(result?{result}:{}),...(from||to?{createdAt:{...(from?{$gte:from}:{}),...(to?{$lt:to}:{})}}:{})};
+    const paging = paginate(req.query, await Log.countDocuments(query));
+    const logs = await Log.find(query).select('cardId action actorType actorId result detail createdAt')
+      .sort({createdAt:-1,_id:-1}).skip(paging.skip).limit(paging.limit).lean();
+    res.render('admin/pages/card-log',{pageTitle:'Nhật ký thẻ',logs:await auditRows(logs),filters:{cardId,action,actorId,result,from:req.query.from||'',to:req.query.to||''},pagination:paging,auditActions});
   }catch(error){pageProblem(res,error,'Nhật ký thẻ');}
 };

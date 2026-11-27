@@ -24,14 +24,14 @@ afterEach(()=> { axios.post=originalPost; for(const key of Object.keys(process.e
 test('Zalo tạo request giữ transport params, pipe ký key1 và identity legacy',async()=> {
   configure(); let request;
   axios.post=async (...args)=> { request=args; return {data:{return_code:1,order_url:'https://zalo.example.invalid/checkout'}}; };
-  const url=await require('../helpers/zalopay.helper').createOrder({appUser:`${phone}-${id}`,amount:100000,description:'Thanh toán đơn hàng OD1',redirectUrl:'https://shop.example.invalid/order/success?orderId=x&phone=y',callbackPath:'/order/payment-zalopay-result'});
+  const url=await require('../helpers/zalopay.helper').createOrder({appUser:`${phone}-${id}`,amount:100000,description:'Thanh toán đơn hàng OD1',redirectUrl:'https://shop.example.invalid/order/success?orderId=x&return=payment',callbackPath:'/order/payment-zalopay-result'});
   assert.equal(url,'https://zalo.example.invalid/checkout');
   assert.equal(request[0],'https://zalo.example.invalid/v2/create'); assert.equal(request[1],null);
   const order=request[2].params;
   assert.match(order.app_trans_id,/^\d{6}_\d{1,6}$/); assert.equal(order.app_user,`${phone}-${id}`); assert.equal(order.amount,100000);
   assert.equal(order.item,'[{}]'); assert.equal(order.bank_code,'');
   assert.equal(order.callback_url,'https://shop.example.invalid/order/payment-zalopay-result');
-  assert.equal(JSON.parse(order.embed_data).redirecturl,'https://shop.example.invalid/order/success?orderId=x&phone=y');
+  assert.equal(JSON.parse(order.embed_data).redirecturl,'https://shop.example.invalid/order/success?orderId=x&return=payment');
   const expected=[1234,order.app_trans_id,`${phone}-${id}`,100000,order.app_time,order.embed_data,'[{}]'].join('|');
   assert.equal(order.mac,hmac(expected,'fixture-request'));
 });
@@ -56,9 +56,15 @@ test('Zalo controller giữ nguyên mô tả tiếng Việt khi tạo payment',a
   configure(); let description; const redirects=[];
   const Order=require('../models/order.model');
   // Unit chỉ thay DB read và HTTP ra ngoài, giữ controller cùng helper ký thật.
-  t.mock.method(Order,'findOne',async()=>({id,phone,total:100000,orderCode:'OD1'}));
+  const customerId='507f1f77bcf86cd799439012';
+  t.mock.method(Order,'findOne',async filter=>{
+    assert.equal(filter.customerId,customerId);
+    return {id,phone,total:100000,orderCode:'OD1'};
+  });
   axios.post=async(url,body,options)=>{description=options.params.description;return {data:{return_code:1,order_url:'https://zalo.example.invalid/checkout'}};};
-  await require('../controllers/client/order.controller').paymentZaloPay({query:{orderId:id}},{redirect:url=>redirects.push(url)});
+  const request={customer:{_id:customerId},query:{orderId:id}};
+  const response={set(key,value){assert.equal(key,'Cache-Control');assert.equal(value,'no-store');},redirect:url=>redirects.push(url)};
+  await require('../controllers/client/order.controller').paymentZaloPay(request,response);
   assert.deepEqual(redirects,['https://zalo.example.invalid/checkout']);
   assert.equal(description,'Thanh toán đơn hàng OD1');
 });

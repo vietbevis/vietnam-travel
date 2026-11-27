@@ -1,11 +1,12 @@
 extends ../layouts/default.pug
+include ../mixins/tinymce.pug
 include ../mixins/options.pug
 
 block main
   h1.box-title Tạo danh mục
 
   .section-8
-    form#category-create-form(novalidate data-api=`/${pathAdmin}/category/create` data-list=`/${pathAdmin}/category/list`)
+    form#category-create-form(method="post" novalidate data-api=`/${pathAdmin}/category/create` data-list=`/${pathAdmin}/category/list`)
       .inner-group
         label(class="inner-label" for="name") Tên danh mục
         input(type="text" id="name" name="name")
@@ -33,3 +34,6 @@ block main
         button(type="submit") Tạo mới
     .inner-back
       a(href=`/${pathAdmin}/category/list`) Quay lại danh sách
+
+block editor
+  +tinyMce

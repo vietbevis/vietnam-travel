@@ -119,6 +119,10 @@ public final class AgentHttpServer {
                 o.addProperty("cardPresent", port.cardPresent());
                 Integer slot = port.slot();
                 o.add("slot", slot == null ? JsonNull.INSTANCE : new com.google.gson.JsonPrimitive(slot));
+                if (port instanceof SimulatorPort sim) {
+                    o.addProperty("slotCount", sim.slotCount());
+                    o.addProperty("busy", cardLock.isLocked() || cardLock.hasQueuedThreads());
+                }
                 send(ex, 200, o.toString());
             }
             case "/v1/transmit" -> {
@@ -126,15 +130,24 @@ public final class AgentHttpServer {
                 transmit(ex);
             }
             case "/v1/sim/slot", "/v1/sim/reset" -> {
-                if (!(port instanceof SimCardPort sim) || !"sim".equals(port.mode())) {
+                if (!(port instanceof SimulatorPort sim) || !"sim".equals(port.mode())) {
                     send(ex, 404, error("not-found"));
                     return;
                 }
                 requireMethod(ex, method, "POST");
                 int slot = readSlot(ex);
-                cardLock.lock();
+                boolean selecting = path.endsWith("/slot");
+                if (selecting) {
+                    // Không xếp hàng yêu cầu rút thẻ phía sau một lô APDU đang chạy.
+                    if (cardLock.hasQueuedThreads() || !cardLock.tryLock()) {
+                        send(ex, 409, error("busy"));
+                        return;
+                    }
+                } else {
+                    cardLock.lock();
+                }
                 try {
-                    if (path.endsWith("/slot")) {
+                    if (selecting) {
                         sim.selectSlot(slot);
                     } else {
                         sim.resetSlot(slot);

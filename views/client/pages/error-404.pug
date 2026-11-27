@@ -1,0 +1,11 @@
+extends ../layouts/default.pug
+
+block main
+  main.card-account.card-narrow
+    .container
+      section.card-panel(aria-labelledby="not-found-title")
+        .card-focus-icon
+          i.fa-solid.fa-map-location-dot(aria-hidden="true")
+        h1#not-found-title.card-page-title Không tìm thấy trang
+        p.card-hint Kiểm tra lại địa chỉ hoặc về trang chủ để tìm tour.
+        a.card-btn(href="/") Về trang chủ

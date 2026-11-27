@@ -75,7 +75,7 @@ test('mounted pay and autofill buttons drive the flows and redirect only after c
   assert.equal(phone.value,'0901111111');
   assert.equal(window.redirect,undefined);
   await pay.handlers.click();
-  assert.equal(window.redirect,`/order/success?orderId=${'b'.repeat(24)}&phone=0901111111`);
+  assert.equal(window.redirect,`/order/success?orderId=${'b'.repeat(24)}`);
   window.redirect=undefined;
   window.cardClient.runSignedOp=async()=>{throw Object.assign(new Error('x'),{sw:'6F10'});};
   await pay.handlers.click();

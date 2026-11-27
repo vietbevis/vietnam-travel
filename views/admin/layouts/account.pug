@@ -6,6 +6,8 @@ html
     link(rel="stylesheet", href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css")
     link(rel="stylesheet", href="/admin/assets/css/style.css")
     link(rel="stylesheet", href="/admin/assets/css/card-admin.css")
+    link(rel="stylesheet", href="/admin/assets/css/form.css")
+    link(rel="stylesheet", href="https://cdn.jsdelivr.net/npm/sweetalert2@11.26.25/dist/sweetalert2.min.css")
     script.
       const pathAdmin = "#{pathAdmin}";
   body
@@ -18,5 +20,7 @@ html
       window.CARD_AGENT_URL = document.querySelector('[card-agent-config]').dataset.cardAgentUrl;
     script(src="/assets/js/card/card-shared.js")
     script(src="/assets/js/card/card-client.js")
-    script(src="https://cdn.jsdelivr.net/npm/just-validate@4.3.0/dist/just-validate.production.min.js")
+    script(src="https://cdn.jsdelivr.net/npm/sweetalert2@11.26.25/dist/sweetalert2.all.min.js")
+    script(src="/assets/js/ui-notice.js")
+    script(src="/admin/assets/js/admin-form.js")
     script(src="/admin/assets/js/account.js")
