@@ -39,6 +39,9 @@ const schema = new mongoose.Schema(
     total: Number,
     paymentMethod: String,
     paymentStatus: String,
+    // Snapshot append-only của lần chuyển unpaid -> paid do server xác minh.
+    paidAt: Date,
+    paidAmount: { type: Number, min: 1, validate: Number.isSafeInteger },
     status: String,
     stockRestoredAt: {
       type: Date,

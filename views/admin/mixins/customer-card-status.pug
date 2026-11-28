@@ -1,0 +1,5 @@
+mixin customerCardStatus(status)
+  - const labels = { issuing: 'Đang phát hành', active: 'Hoạt động', locked: 'Đã khóa', revoked: 'Đã thu hồi', failed: 'Phát hành thất bại' }
+  - const colors = { issuing: 'badge-blue', active: 'badge-green', locked: 'badge-orange' }
+  - const known = Object.hasOwn(labels, status)
+  span.badge(class=(known && colors[status] || 'badge-grey'))= known ? labels[status] : (status ? 'Chưa xác định' : 'Chưa có thẻ hiện hành')

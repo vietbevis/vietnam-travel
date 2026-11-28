@@ -1,0 +1,201 @@
+extends ../layouts/default.pug
+include ../mixins/profile-avatar.pug
+include ../mixins/customer-card-status.pug
+include ../mixins/admin-list.pug
+include ../mixins/list-pagination.pug
+
+mixin historyBadge(text, tone)
+  span.badge(class='badge-' + (tone || 'grey'))= text
+
+mixin historyOrder(row)
+  .customer-history-reference
+    if row.deleted !== true || row.adminVisibleAfterRestore
+      a(href=`/${pathAdmin}/order/edit/${row._id}`)= row.orderCode || 'Chi tiết'
+    else
+      span= row.orderCode || 'Chưa xác định'
+    if row.deleted === true
+      if row.adminVisibleAfterRestore
+        +historyBadge('Đã lưu trữ · Khôi phục để tra cứu', 'blue')
+      else
+        +historyBadge('Đã lưu trữ')
+
+mixin customerField(title)
+  .customer-field
+    dt= title
+    dd
+      block
+
+block main
+  .customer-detail
+    nav.customer-breadcrumb(aria-label="Đường dẫn khách hàng")
+      ol
+        li
+          a(href=`/${pathAdmin}/user/list` data-list-return data-customer-list-return)
+            i.fa-solid.fa-users(aria-hidden="true")
+            | Quản lý khách hàng
+        li(aria-current="page")
+          i.fa-solid.fa-chevron-right(aria-hidden="true")
+          span= customer.fullName || 'Chưa cung cấp'
+    h1.box-title Chi tiết khách hàng
+    nav.customer-tabs(aria-label="Các mục hồ sơ khách hàng")
+      - const tabIcon = { profile: 'fa-user', orders: 'fa-list-check', wallet: 'fa-wallet', tickets: 'fa-ticket', cards: 'fa-address-card' }
+      each entry in tabs
+        a(href=`/${pathAdmin}/user/detail/${owner}?tab=${entry.value}` aria-current=(tab === entry.value ? "page" : undefined))
+          i(class='fa-solid ' + tabIcon[entry.value] aria-hidden="true")
+          span= entry.label
+
+    if tab === 'profile'
+      .ca-layout-detail.customer-profile
+        section.ca-card(aria-labelledby="customer-personal-title")
+          .customer-panel-heading
+            +profileAvatar(customer.avatar, customer.fullName, 'customer-avatar')
+            h2.ca-card-title#customer-personal-title Thông tin cá nhân
+          dl.customer-fields
+            +customerField('Họ tên')
+              = customer.fullName || 'Chưa cung cấp'
+            +customerField('Email')
+              = customer.email || 'Chưa cung cấp'
+            +customerField('Điện thoại')
+              = customer.phone || 'Chưa cung cấp'
+            +customerField('Ngày tham gia')
+              = vietnamDate(customer.createdAt, 'DD/MM/YYYY') || 'Chưa xác định'
+            +customerField('Tài khoản')
+              +listStatus(customer.status)
+        section.ca-card(aria-labelledby="customer-membership-title")
+          .customer-panel-heading
+            span.finance-icon
+              i.fa-solid.fa-address-card(aria-hidden="true")
+            h2.ca-card-title#customer-membership-title Thành viên và thẻ
+          dl.customer-fields
+            +customerField('Hạng và chiết khấu')
+              = tier ? tier.label + ' · ' + tier.percent + '%' : 'Chưa xác định'
+            +customerField('Tổng chi tiêu')
+              +listMoney(customer.totalSpent)
+            +customerField('Thẻ hiện hành trên hệ thống')
+              +customerCardStatus(current && current.status)
+              if current && canReadCard
+                a.customer-card-id(href=`/${pathAdmin}/card/detail/${current.cardId}`)= current.cardId
+        if snapshot
+          section.ca-card.customer-wallet(aria-labelledby="customer-wallet-title")
+            .customer-panel-heading
+              span.finance-icon
+                i.fa-solid.fa-wallet(aria-hidden="true")
+              h2.ca-card-title#customer-wallet-title Ví và công nợ
+            .customer-wallet-columns
+              section
+                h3 Số dư
+                dl.customer-fields
+                  +customerField('Số dư ví trên hệ thống')
+                    +listMoney(current && current.balance)
+                  +customerField('Số dư chip tại biên nhận gần nhất')
+                    if snapshot.lastChip
+                      +listMoney(snapshot.lastChip.balanceAfter)
+                      span.customer-observed= vietnamDate(snapshot.lastChip.completedAt)
+                    else
+                      | Chưa xác định
+              section
+                h3 Khoản đang chờ hoặc đối soát
+                dl.customer-fields
+                  +customerField('Ghi có chờ đồng bộ/đối soát')
+                    +listMoney(snapshot.pending.credit)
+                  +customerField('Ghi có giữ vì hạn mức')
+                    +listMoney(snapshot.pending.cap)
+                  +customerField('Ghi nợ chờ xác nhận/đối soát')
+                    +listMoney(snapshot.pending.debit)
+                  +customerField('Ghi nợ có biên nhận đến muộn')
+                    +listMoney(snapshot.lateDebit.amount)
+    else
+      section.customer-history(data-customer-history aria-labelledby="customer-history-title")
+        h2#customer-history-title= tabs.find(entry => entry.value === tab).label
+        .table-2.customer-history-table(role="region" aria-labelledby="customer-history-title" tabindex="0")
+          table
+            thead
+              if tab === 'orders'
+                tr
+                  th(scope="col") Mã đơn
+                  th.customer-history-money(scope="col") Tổng đơn
+                  th(scope="col") Phương thức
+                  th(scope="col") Thanh toán
+                  th(scope="col") Trạng thái đơn
+                  th.customer-history-date(scope="col") Ngày đặt
+              else if tab === 'wallet'
+                tr
+                  th(scope="col") Mã giao dịch
+                  th(scope="col") Loại
+                  th(scope="col") Nguồn
+                  th.customer-history-money(scope="col") Số tiền
+                  th(scope="col") Trạng thái
+                  th.customer-history-date(scope="col") Ngày tạo
+                  th.customer-history-date(scope="col") Ngày xác nhận
+              else if tab === 'tickets'
+                tr
+                  th(scope="col") Mã đơn
+                  th(scope="col") Tour
+                  th(scope="col") Trạng thái vé
+                  th.customer-history-date(scope="col") Khởi hành
+                  th.customer-history-date(scope="col") Check-in
+              else
+                tr
+                  th(scope="col") Mã thẻ
+                  th(scope="col") Trạng thái trên hệ thống
+                  th.customer-history-date(scope="col") Ngày phát hành
+                  th.customer-history-date(scope="col") Ngày thu hồi
+            tbody
+              each row in history.rows
+                if tab === 'orders'
+                  tr
+                    td
+                      +historyOrder(row)
+                    td.customer-history-money
+                      +listMoney(row.total)
+                    td= label(paymentMethod, row.paymentMethod)
+                    td
+                      +historyBadge(label(paymentStatus, row.paymentStatus), row.paymentStatus === 'paid' ? 'green' : row.paymentStatus === 'unpaid' ? 'orange' : 'grey')
+                    td
+                      +historyBadge(label(orderStatus, row.status), row.status === 'done' ? 'green' : row.status === 'cancel' ? 'red' : row.status === 'initial' ? 'blue' : 'grey')
+                    td.customer-history-date= vietnamDate(row.createdAt) || 'Chưa xác định'
+                else if tab === 'wallet'
+                  tr
+                    td.customer-ledger-code= row.txRef
+                    td= cardTxType(row.type)
+                    td= row.source === 'refund' && row.type === 'debit' ? 'Hoàn tiền mặt khi thu hồi thẻ' : cardTxSource(row.source)
+                    td.customer-history-money
+                      +listMoney(row.amount)
+                    td
+                      .customer-history-reference
+                        if row.failReason === 'moved'
+                          +historyBadge('Đã chuyển nghĩa vụ sang thẻ mới', 'blue')
+                        else if row.failReason === 'refunded'
+                          +historyBadge('Đã đối ứng hoàn tiền mặt', 'blue')
+                        else if (row.status === 'failed' && row.signed) || (row.status === 'done' && !row.serverDebit && !row.receiptMatched)
+                          +historyBadge('Cần đối soát', 'orange')
+                        else
+                          +historyBadge(cardTxStatus(row.status), row.status === 'done' ? 'green' : row.status === 'failed' ? 'red' : 'orange')
+                        if (row.capHeldAt || row.reconciliationReason === 'wallet-cap') && ['pending-card', 'sent', 'reconciliation'].includes(row.status)
+                          +historyBadge('Giữ vì hạn mức', 'orange')
+                    td.customer-history-date= vietnamDate(row.createdAt) || 'Chưa xác định'
+                    td.customer-history-date= vietnamDate(row.receiptMatched ? row.completedAt : row.serverDebit && row.status === 'done' ? row.createdAt : null) || (row.status === 'done' ? 'Chưa xác định' : '—')
+                else if tab === 'tickets'
+                  tr
+                    td
+                      +historyOrder(row)
+                    td= row.tourName || 'Chưa xác định'
+                    td
+                      +historyBadge(ticketStatusLabel(row.ticketStatus), ['used', 'written'].includes(row.ticketStatus) ? 'green' : ['pending', 'pending-delete'].includes(row.ticketStatus) ? 'orange' : 'grey')
+                    td.customer-history-date= vietnamDate(row.departureDate) || 'Chưa xác định'
+                    td.customer-history-date= vietnamDate(row.checkedInAt) || '—'
+                else
+                  tr
+                    td
+                      .customer-history-reference
+                        a.customer-ledger-code(href=`/${pathAdmin}/card/detail/${row.cardId}`)= row.cardId
+                        if row.isCurrent
+                          +historyBadge('Hiện hành', 'blue')
+                    td
+                      +customerCardStatus(row.status)
+                    td.customer-history-date= vietnamDate(row.activatedAt || row.issuedAt) || 'Chưa xác định'
+                    td.customer-history-date= vietnamDate(row.revokedAt) || '—'
+              else
+                tr.customer-history-empty
+                  td(colspan=tab === 'orders' ? 6 : tab === 'wallet' ? 7 : tab === 'tickets' ? 5 : 4) Chưa có dữ liệu.
+      +listPagination(history.pagination, history.rows.length, 'Trang lịch sử khách hàng')

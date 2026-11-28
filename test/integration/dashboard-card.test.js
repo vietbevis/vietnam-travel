@@ -34,23 +34,27 @@ it('byStatus đếm thẻ active/locked/revoked',async()=>{
   assert.deepEqual(s.byStatus,{active:2,locked:1,revoked:1});
 });
 
-it('walletRevenueMonth chỉ tính debit/order/done trong tháng hiện tại giờ VN',async()=>{
-  const now=new Date('2026-11-15T05:00:00Z');
-  await tx({fields:{amount:100},createdAt:new Date('2026-11-30T16:59:00Z')}); // 30/11 23:59 VN: trong tháng
-  await tx({fields:{amount:200},createdAt:new Date('2026-10-31T17:10:00Z')}); // 01/11 00:10 VN: trong tháng
-  await tx({fields:{amount:400},createdAt:new Date('2026-10-31T16:30:00Z')}); // 31/10 23:30 VN: loại
-  await tx({fields:{amount:800},createdAt:new Date('2026-11-30T17:10:00Z')}); // 01/12 00:10 VN: loại
-  await tx({fields:{amount:1600,source:'cash',type:'credit'},createdAt:new Date('2026-11-10T00:00:00Z')});
-  await tx({fields:{amount:3200,status:'failed'},createdAt:new Date('2026-11-10T00:00:00Z')});
-  await tx({fields:{amount:6400,source:'refund'},createdAt:new Date('2026-11-10T00:00:00Z')});
-  await tx({fields:{amount:12800,type:'credit'},createdAt:new Date('2026-11-10T00:00:00Z')});
-  await tx({fields:{amount:25600,source:'transfer',type:'debit'},createdAt:new Date('2026-11-10T00:00:00Z')});
-  await tx({fields:{amount:25600,source:'transfer',type:'credit'},createdAt:new Date('2026-11-10T00:00:00Z')});
-  assert.equal((await stats.cardStats(now)).walletRevenueMonth,300);
-  assert.equal((await stats.cardStats(new Date('2026-12-02T00:00:00Z'))).walletRevenueMonth,800);
+it('Dashboard wallet revenue ignores orphan, pending and non-tour ledger entries',async()=>{
+  const {revenue}=require('../../helpers/dashboard-revenue.helper');
+  await Card.create({cardType:'customer',cardId:'A'.repeat(32),ownerId:'customer',status:'active'});
+  const createdAt=new Date('2026-11-10T00:00:00Z');
+  await tx({fields:{amount:100,status:'done'},createdAt});
+  await tx({fields:{amount:200,source:'cash',type:'credit'},createdAt});
+  await tx({fields:{amount:300,status:'failed'},createdAt});
+  await tx({fields:{amount:400,source:'refund'},createdAt});
+  await tx({fields:{amount:500,source:'transfer'},createdAt});
+  assert.equal((await revenue(2026,11,true)).period.methods.card,0);
+  assert.equal((await revenue(2026,11,true)).wallet.topupReceived,200);
+  assert.deepEqual((await revenue(2026,11,true)).wallet.unlinkedDebit,{count:1,amount:100});
 });
 
-it('walletRevenueMonth bằng 0 khi không có giao dịch',async()=>{assert.equal((await stats.cardStats(new Date())).walletRevenueMonth,0);});
+it('wallet server balance includes current customer wallets only',async()=>{
+  const current=await card('active'), old=await card('revoked');
+  await Card.updateOne({_id:current._id},{$set:{balance:123000}});
+  await Card.updateOne({_id:old._id},{$set:{balance:900000}});
+  await Card.create({cardType:'staff',cardId:'AAAA'.repeat(8),ownerId:'staff',status:'active',balance:500000});
+  assert.equal((await stats.cardStats()).serverBalance,123000);
+});
 
 it('checkinRate nhóm theo tour+ngày, chỉ đơn paid chưa huỷ, trong ±7 ngày',async()=>{
   const now=new Date('2026-11-15T05:00:00Z');

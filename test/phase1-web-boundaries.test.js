@@ -41,7 +41,7 @@ test('an unknown Admin page renders the existing 404 page with status 404', asyn
 });
 
 test('the revenue chart refuses an invalid calendar range before querying orders', async t => {
-  const find = t.mock.method(Order, 'find', async () => []);
+  const find = t.mock.method(Order, 'aggregate', async () => []);
   await withAdmin(t, ['dashboard-view'], async request => {
     const response = await request('/admin/dashboard/revenue-chart', {
       method: 'POST',
@@ -63,7 +63,7 @@ test('the Admin landing uses the allowed category page for a category-only role'
 });
 
 test('the revenue chart and upload require their own capabilities at the route boundary', async t => {
-  const find = t.mock.method(Order, 'find', async () => assert.fail('route should not read orders'));
+  const find = t.mock.method(Order, 'aggregate', async () => assert.fail('route should not read orders'));
   await withAdmin(t, ['category-view'], async request => {
     const chart = await request('/admin/dashboard/revenue-chart', {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}'
@@ -76,7 +76,9 @@ test('the revenue chart and upload require their own capabilities at the route b
 });
 
 test('async chart failures preserve deployment-neutral JSON and do not break a following request', async t => {
-  t.mock.method(Order, 'find', async () => { throw new Error('database fixture detail'); });
+  t.mock.method(Order, 'aggregate', async () => { throw new Error('database fixture detail'); });
+  t.mock.method(Order, 'countDocuments', async () => 0);
+  t.mock.method(require('../models/card-transaction.model'), 'aggregate', async () => []);
   await withAdmin(t, ['dashboard-view'], async request => {
     const response = await request('/admin/dashboard/revenue-chart', {
       method: 'POST', headers: { 'content-type': 'application/json' },

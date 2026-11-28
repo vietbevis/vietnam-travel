@@ -38,13 +38,14 @@ function safeFilter(filter,method) {
 function customerMatch(order) {
   return Object.hasOwn(order,'customerId') ? order.customerId : {$exists:false};
 }
-function paidUpdate(tickets) {
+function paidUpdate(tickets, paidAmount, paidAt = new Date()) {
+  const event = { paymentStatus: 'paid', paidAt, paidAmount };
   if (!tickets)
-    return {$set:{paymentStatus:'paid'}};
+    return {$set:event};
   // Pipeline sửa một document, giữ toàn bộ trường legacy và trạng thái vé đã xử lý.
   return [{
     $set: {
-      paymentStatus: 'paid',
+      ...event,
       items: {
         $map: {
           input: {$ifNull: ['$items', []]},
@@ -79,8 +80,9 @@ async function settleLinked(compare,session) {
     return false;
   if (!current.customerId && compare.paymentMethod !== 'card') {
     return !!await Order.findOneAndUpdate({ ...compare, total: current.total, customerId: customerMatch(current) },
-      paidUpdate(false), { session, new: true });
+      paidUpdate(false, current.total), { session, new: true });
   }
+  let paidAt;
   if (compare.paymentMethod === 'card') {
     const tx=await Tx.findOne({txRef:current.cardTxRef,orderId:String(current._id),source:'order',type:'debit',status:'done',amount:current.total}).session(session).lean();
     if (!tx?.signedOpId || !tx.receiptHex) return false;
@@ -90,13 +92,14 @@ async function settleLinked(compare,session) {
         receipt.cardId!==card.cardId || receipt.txRef!==tx.txRef || receipt.type!=='debit' || receipt.amount!==current.total ||
         receipt.balanceAfter!==tx.balanceAfter || receipt.txCounter!==tx.txCounter ||
         receipt.balanceAfter!==card.balance || receipt.txCounter!==card.txCounter) return false;
+    paidAt = tx.completedAt;
   }
   if (!objectId(current.customerId))
     throw new Error('Khách hàng thanh toán không hợp lệ.');
   const owner=await Customer.findOne({_id:current.customerId,deleted:false}).session(session).lean();
   if (!owner || !Number.isSafeInteger(owner.totalSpent) || owner.totalSpent<0 || !Number.isSafeInteger(owner.totalSpent+current.total))
     throw new Error('Không thể cập nhật chi tiêu khách hàng.');
-  const paid=await Order.findOneAndUpdate({...compare,total:current.total,customerId:current.customerId},paidUpdate(true),{session,new:true});
+  const paid=await Order.findOneAndUpdate({...compare,total:current.total,customerId:current.customerId},paidUpdate(true,current.total,paidAt),{session,new:true});
   if (!paid)
     return false;
   const result=await Customer.updateOne({_id:owner._id,deleted:false,totalSpent:owner.totalSpent},{$inc:{totalSpent:current.total}},{session,runValidators:true});
@@ -116,7 +119,7 @@ module.exports.markOrderPaid = async (filter,method) => {
     return false;
   const compare = {...base,total:order.total,customerId:customerMatch(order)};
   if (!order.customerId) {
-    return !!await Order.findOneAndUpdate(compare,paidUpdate(false),{new:true});
+    return !!await Order.findOneAndUpdate(compare,paidUpdate(false,order.total),{new:true});
   }
   // Không hạ cấp sang hai update rời: standalone phải từ chối trước mọi ghi persisted.
   const hello = await Order.db.db.admin().command({hello:1});

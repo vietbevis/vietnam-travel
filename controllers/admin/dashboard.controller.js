@@ -1,100 +1,61 @@
-const AccountAdmin = require("../../models/account-admin.model");
-const Order = require("../../models/order.model");
-const cardStatsHelper = require("../../helpers/card-stats.helper");
+const Account = require('../../models/account-admin.model');
+const Customer = require('../../models/customer.model');
+const Order = require('../../models/order.model');
+const { cardStats } = require('../../helpers/card-stats.helper');
+const { revenue, monthValue, currentMonth, validMonth } = require('../../helpers/dashboard-revenue.helper');
+const { vietnamDate, objectId } = require('../../helpers/admin-list.helper');
+const { paymentMethod, paymentStatus, orderStatus } = require('../../config/variable');
+
+const label = (choices, value) => choices.find(choice => choice.value === value)?.label || 'Chưa xác định';
+
+async function latestOrders() {
+  const rows = await Order.find({ deleted: { $ne: true } }).select('orderCode customerId fullName total paymentMethod paymentStatus status createdAt')
+    .sort({ createdAt: -1, _id: -1 }).limit(5).lean();
+  return rows.map(row => ({
+    id: String(row._id), code: row.orderCode, customer: objectId(row.customerId) ? row.fullName || 'Khách thành viên' :
+      row.customerId == null ? 'Khách vãng lai' : 'Chưa xác định',
+    amount: row.total, method: label(paymentMethod, row.paymentMethod), payment: label(paymentStatus, row.paymentStatus),
+    status: label(orderStatus, row.status), date: vietnamDate(row.createdAt)
+  }));
+}
 
 module.exports.dashboard = async (req, res) => {
-  // Section 1
-  const overview = {
-    totalAdmin: 0,
-    totalUser: 0,
-    totalOrder: 0,
-    totalPrice: 0
-  };
-
-  overview.totalAdmin = await AccountAdmin.countDocuments({
-    deleted: false
-  });
-
-  const orderList = await Order.find({
-    deleted: false
-  })
-
-  overview.totalOrder = orderList.length;
-
-  overview.totalPrice = orderList.reduce((sum, item) => {
-    return sum + item.total;
-  }, 0);
-  // End Section 1
-
-  const data = {
-    pageTitle: "Tổng quan",
-    overview: overview
-  };
-
-  // Thống kê thẻ (A11) chỉ tính và hiển thị cho tài khoản có quyền xem thẻ.
-  if (req.permissions?.includes("card-view")) {
-    data.cardStats = await cardStatsHelper.cardStats();
+  const selected = req.query?.month;
+  let { year, month } = currentMonth();
+  if (selected !== undefined) {
+    if (typeof selected !== 'string' || !/^\d{4}-\d{2}$/.test(selected)) return res.status(400).send('Tháng không hợp lệ.');
+    [year, month] = selected.split('-').map(Number);
+    if (!validMonth(year, month)) return res.status(400).send('Tháng không hợp lệ.');
   }
-
-  res.render("admin/pages/dashboard", data)
-}
+  const canReadCard = req.permissions?.includes('card-view');
+  const canReadOrders = req.permissions?.includes('order-view');
+  const [finance, totalAdmin, totalUser, totalOrder, cards, orders] = await Promise.all([
+    revenue(year, month, canReadCard),
+    Account.countDocuments({ deleted: false }),
+    Customer.countDocuments({ deleted: { $ne: true } }),
+    Order.countDocuments(),
+    canReadCard ? cardStats() : null,
+    canReadOrders ? latestOrders() : null
+  ]);
+  res.render('admin/pages/dashboard', {
+    pageTitle: 'Tổng quan', overview: { totalAdmin, totalUser, totalOrder }, finance,
+    selectedMonth: monthValue(finance.period), paymentMethods: paymentMethod.filter(item => item.value !== 'momo'),
+    ...(cards ? { cardStats: cards } : {}), orders
+  });
+};
 
 module.exports.revenueChartPost = async (req, res) => {
-  const { currentMonth, currentYear, previousMonth, previousYear, arrayDay } = req.body || {};
-  const inRange = (value, min, max) => Number.isInteger(value) && value >= min && value <= max;
-  if (!inRange(currentMonth, 1, 12) || !inRange(previousMonth, 1, 12) ||
-      !inRange(currentYear, 1900, 9999) || !inRange(previousYear, 1900, 9999) ||
-      !Array.isArray(arrayDay) || arrayDay.length > 31 || !arrayDay.every(day => inRange(day, 1, 31))) {
+  const { currentMonth: month, currentYear: year, previousMonth, previousYear } = req.body || {};
+  const expectedMonth = month === 1 ? 12 : month - 1;
+  const expectedYear = month === 1 ? year - 1 : year;
+  if (!validMonth(year, month) || (previousMonth !== undefined && previousMonth !== expectedMonth) ||
+      (previousYear !== undefined && previousYear !== expectedYear)) {
     return res.status(400).json({ code: 'error', message: 'Khoảng ngày không hợp lệ.' });
   }
-
-  // Truy vấn tất cả đơn hàng trong tháng hiện tại
-  const ordersCurrentMonth = await Order.find({
-    deleted: false,
-    createdAt: {
-      $gte: new Date(currentYear, currentMonth - 1, 1),
-      $lt: new Date(currentYear, currentMonth, 1)
-    }
-  })
-
-  // Truy vấn tất cả đơn hàng trong tháng trước
-  const ordersPreviousMonth = await Order.find({
-    deleted: false,
-    createdAt: {
-      $gte: new Date(previousYear, previousMonth - 1, 1),
-      $lt: new Date(previousYear, previousMonth, 1)
-    }
-  })
-
-  // Tạo mảng doanh thu theo từng ngày
-  const dataMonthCurrent = [];
-  const dataMonthPrevious = [];
-
-  for (const day of arrayDay) {
-    // Tính tổng doanh thu theo từng ngày của tháng này
-    let totalCurrent = 0;
-    for (const order of ordersCurrentMonth) {
-      const orderDate = new Date(order.createdAt).getDate();
-      if(day == orderDate) {
-        totalCurrent += order.total;
-      }
-    }
-    dataMonthCurrent.push(totalCurrent);
-
-    // Tính tổng doanh thu theo từng ngày của tháng trước
-    let totalPrevious = 0;
-    for (const order of ordersPreviousMonth) {
-      const orderDate = new Date(order.createdAt).getDate();
-      if(day == orderDate) {
-        totalPrevious += order.total;
-      }
-    }
-    dataMonthPrevious.push(totalPrevious);
-  }
-
+  const report = await revenue(year, month, req.permissions?.includes('card-view'));
   res.json({
-    code: "success",
-    dataMonthCurrent: dataMonthCurrent,
-    dataMonthPrevious: dataMonthPrevious
+    code: 'success', ...report,
+    dataMonthCurrent: report.period.days.map(day => day.net),
+    dataMonthPrevious: report.previous.days.map(day => day.net)
   });
-}
+};

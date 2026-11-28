@@ -211,6 +211,7 @@ it('the next card sync writes the refund credit to the chip with a verified rece
   assert.equal(confirmed.code,'success',confirmed.text);
   const done=await Tx.findById(refund._id).lean();
   assert.deepEqual([done.status,done.balanceAfter,done.txCounter],['done',2000000,2]);
+  assert.ok(done.completedAt instanceof Date && done.completedAt >= refund.createdAt);
   const card=await Card.findOne({cardId}).lean();
   assert.deepEqual([card.balance,card.txCounter],[2000000,2]);
 });

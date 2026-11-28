@@ -1,20 +1,40 @@
 extends ../layouts/default.pug
 include ../mixins/profile-avatar.pug
+include ../mixins/admin-list.pug
+include ../mixins/list-pagination.pug
+include ../mixins/customer-card-status.pug
 
 block main
   h1.box-title Quản lý khách hàng
-  form.ca-filter(method="GET" action=`/${pathAdmin}/user/list`)
+  form.ca-filter(method="GET" action=`/${pathAdmin}/user/list` data-admin-list data-resource="user")
     .ca-filter-title
       i.fa-solid.fa-magnifying-glass
       | Tìm kiếm
     .ca-field(style="flex:3 1 320px")
       label(for="customer-search") Tìm theo tên, email hoặc số điện thoại
-      input#customer-search(type="search" name="keyword" value=keyword maxlength="120" placeholder="Tên, email hoặc số điện thoại")
+      input#customer-search(type="search" name="keyword" value=filters.keyword maxlength="120" placeholder="Tên, email hoặc số điện thoại")
+    .ca-field
+      label(for="customer-card-status") Trạng thái thẻ
+      select#customer-card-status(name="cardStatus" data-list-filter)
+        option(value="") Tất cả
+        each state in cardStates
+          option(value=state.value selected=(filters.cardStatus === state.value))= state.label
+    if canReadProfile
+      .ca-field
+        label(for="customer-tier") Hạng thành viên
+        select#customer-tier(name="tier" data-list-filter)
+          option(value="") Tất cả
+          each tier in tiers
+            option(value=tier.code selected=(filters.tier === tier.code))= tier.label
+    if pagination.limit !== 10
+      input(type="hidden" name="pageSize" value=pagination.limit)
     .ca-actions
       button.ca-btn(type="submit") Tìm kiếm
       a.ca-reset(href=`/${pathAdmin}/user/list`)
         i.fa-solid.fa-rotate-left
         | Xóa bộ lọc
+  if listError
+    p.form-status.form-status-error(role="alert")= listError
   .section-6
     .table-2
       table
@@ -24,21 +44,32 @@ block main
             th Ảnh đại diện
             th Email
             th Số điện thoại
+            if canReadProfile
+              th Ngày tham gia
             th Trạng thái thẻ hiện hành
+            if canReadProfile
+              th Hạng
+              th Tổng chi tiêu
+              th Chi tiết
         tbody
           each customer in customers
             tr
               td= customer.fullName || 'Chưa cung cấp'
               td
                 +profileAvatar(customer.avatar, customer.fullName, 'inner-avatar')
-              td= customer.email
+              td= customer.email || 'Chưa cung cấp'
               td= customer.phone || 'Chưa cung cấp'
+              if canReadProfile
+                td= customer.joined || 'Chưa xác định'
               td
-                if customer.card
-                  span.badge(class=({issuing:'badge-blue',active:'badge-green',locked:'badge-orange'})[customer.card.status]||'badge-grey')= ({issuing:'Đang phát hành',active:'Hoạt động',locked:'Đã khóa'}[customer.card.status] || customer.card.status)
-                else
-                  span.badge.badge-grey Chưa có thẻ hiện hành
+                +customerCardStatus(customer.card && customer.card.status)
+              if canReadProfile
+                td= customer.tier ? customer.tier.label : 'Chưa xác định'
+                td
+                  +listMoney(customer.totalSpent)
+                td
+                  a.ca-btn(href=`/${pathAdmin}/user/detail/${customer._id}`) Chi tiết
           else
             tr
-              td(colspan="5") Không có khách hàng phù hợp.
-  p.ca-note Hiển thị tối đa 200 khách hàng. Dùng tìm kiếm để thu hẹp kết quả.
+              td(colspan=(canReadProfile ? 9 : 5)) Không có khách hàng phù hợp.
+  +listPagination(pagination, customers.length, 'Trang khách hàng')

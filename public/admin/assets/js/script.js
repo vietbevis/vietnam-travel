@@ -50,113 +50,118 @@ if (scheduleSection) {
 
 // Biểu đồ doanh thu
 const revenueChart = document.querySelector("#revenue-chart");
-if (revenueChart && !window.Chart) {
-  revenueChart.hidden = true;
-  const status = document.querySelector("[data-revenue-status]");
-  status.hidden = false;
-  status.textContent = "Chưa tải được biểu đồ doanh thu. Hãy tải lại trang.";
-}
-if (revenueChart && window.Chart) {
-  let chart = null;
-  const drawChart = (date) => {
-    // Lấy tháng và năm hiện tại
-    const currentMonth = date.getMonth() + 1; // getMonth() trả về giá trị từ 0 đến 11, nên cần +1
-    const currentYear = date.getFullYear();
+if (revenueChart) {
+  const section = revenueChart.closest("[data-dashboard-finance]");
+  const form = section.querySelector("form");
+  const input = form.elements.month;
+  const status = section.querySelector("[data-revenue-status]");
+  const money = value => value.toLocaleString("vi-VN") + " đ";
+  const financeNodes = document.querySelectorAll("[data-finance], [data-finance-count]");
+  let chart;
+  let requestNumber = 0;
+  let inFlight;
 
-    // Tạo một đối tượng Date mới cho tháng trước
-    // Nếu hiện tại là tháng 1 thì new Date(currentYear, 0 - 1, 1) sẽ tự động chuyển thành tháng 12 của năm trước.
-    const previousMonthDate = new Date(currentYear, date.getMonth() - 1, 1);
-
-    // Lấy tháng và năm từ đối tượng previousMonthDate
-    const previousMonth = previousMonthDate.getMonth() + 1;
-    const previousYear = previousMonthDate.getFullYear();
-
-    // Lấy ra tổng số ngày
-    const daysInMonthCurrent = new Date(currentYear, currentMonth, 0).getDate();
-    const daysInMonthPrevious = new Date(previousYear, previousMonth, 0).getDate();
-    const days = daysInMonthCurrent > daysInMonthPrevious ? daysInMonthCurrent : daysInMonthPrevious;
-    const arrayDay = [];
-    for (let i = 1; i <= days; i++) {
-      arrayDay.push(i);
-    }
-
-    const dataFinal = {
-      currentMonth: currentMonth,
-      currentYear: currentYear,
-      previousMonth: previousMonth,
-      previousYear: previousYear,
-      arrayDay: arrayDay
-    };
-
-    travelRequest(`/${pathAdmin}/dashboard/revenue-chart`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(dataFinal),
-    })
-      .then(data => {
-
-        if (data.code == "success") {
-          if (chart) {
-            chart.destroy();
-          }
-          chart = new Chart(revenueChart, {
-            type: 'line',
-            data: {
-              labels: arrayDay,
-              datasets: [
-                {
-                  label: `Tháng ${currentMonth}/${currentYear}`, // Nhãn của dataset
-                  data: data.dataMonthCurrent, // Dữ liệu
-                  borderColor: '#4379EE', // Màu viền
-                  borderWidth: 1.5, // Độ dày của đường
-                },
-                {
-                  label: `Tháng ${previousMonth}/${previousYear}`, // Nhãn của dataset
-                  data: data.dataMonthPrevious, // Dữ liệu
-                  borderColor: '#EF3826', // Màu viền
-                  borderWidth: 1.5, // Độ dày của đường
-                }
-              ]
-            },
-            options: {
-              plugins: {
-                legend: {
-                  position: 'bottom'
-                }
-              },
-              scales: {
-                x: {
-                  title: {
-                    display: true,
-                    text: 'Ngày'
-                  }
-                },
-                y: {
-                  title: {
-                    display: true,
-                    text: 'Doanh thu (VND)'
-                  }
-                }
-              },
-              maintainAspectRatio: false, // Không giữ tỷ lệ khung hình mặc định
-            }
-          });
-        }
-      })
-      .catch(error => showTravelNotice(error.message, "error"));
+  function setStatus(message) {
+    status.hidden = !message;
+    status.textContent = message;
   }
 
-  // Lấy ngày hiện tại
-  const now = new Date();
-  drawChart(now);
+  function resetPeriod() {
+    chart?.destroy();
+    chart = undefined;
+    revenueChart.hidden = true;
+    for (const node of financeNodes) {
+      node.textContent = "—";
+      node.classList.remove("is-zero");
+    }
+  }
 
-  const inputMonth = document.querySelector(".section-2 input[type='month']");
-  inputMonth.addEventListener("change", () => {
-    const value = inputMonth.value;
-    drawChart(new Date(value));
-  })
+  function showPeriod(data) {
+    const { period, previous, wallet, reconciliation } = data;
+    const totals = {
+      ...period.methods, ...period, ...wallet, ...reconciliation,
+      salesMissingTimeCount: reconciliation.salesMissingTime.count,
+      salesUndatedAmount: reconciliation.salesMissingTime.amount,
+      salesSnapshotAmount: reconciliation.salesMissingTime.snapshotAmount,
+      unresolvedDebitCount: wallet?.unresolvedDebit.count,
+      unresolvedDebitAmount: wallet?.unresolvedDebit.amount,
+      unlinkedDebitCount: wallet?.unlinkedDebit.count,
+      unlinkedDebitAmount: wallet?.unlinkedDebit.amount,
+      lateDebitCount: wallet?.lateDebit.count,
+      lateDebitAmount: wallet?.lateDebit.amount
+    };
+    for (const node of financeNodes) {
+      const amountKey = node.dataset.finance;
+      const value = totals[amountKey || node.dataset.financeCount];
+      node.textContent = Number.isFinite(value) ? (amountKey ? money(value) : value.toLocaleString("vi-VN")) : "—";
+      if (node.classList.contains("finance-value")) node.classList.toggle("is-zero", value === 0);
+    }
+    if (!window.Chart) {
+      revenueChart.hidden = true;
+      setStatus("Chưa tải được biểu đồ doanh thu. Các số tổng vẫn hiển thị.");
+      return;
+    }
+    revenueChart.hidden = false;
+    const labels = Array.from({ length: Math.max(period.days.length, previous.days.length) }, (_, index) => index + 1);
+    chart = new Chart(revenueChart, {
+      type: "line",
+      data: {
+        labels,
+        datasets: [period, previous].map((month, index) => ({
+          label: `Tháng ${month.month}/${month.year}`,
+          data: labels.map(day => month.days[day - 1]?.net ?? null),
+          borderColor: ["#4379EE", "#EF3826"][index],
+          borderWidth: 1.5
+        }))
+      },
+      options: {
+        plugins: {
+          legend: { position: "bottom" },
+          tooltip: { callbacks: { label: context => context.dataset.label + " · " + money(context.parsed.y) } }
+        },
+        scales: {
+          x: { title: { display: true, text: "Ngày" } },
+          y: { title: { display: true, text: "Doanh thu ròng (VND)" }, ticks: { callback: value => money(value) } }
+        },
+        maintainAspectRatio: false
+      }
+    });
+    setStatus(period.gross || period.refunded ? "" : "Tháng đã chọn chưa có thu hoặc hoàn đã xác minh.");
+  }
+
+  async function refreshPeriod() {
+    const sequence = ++requestNumber;
+    inFlight?.abort();
+    resetPeriod();
+    if (!input.checkValidity() || !/^\d{4}-\d{2}$/.test(input.value)) {
+      setStatus("Hãy chọn tháng và năm hợp lệ.");
+      return;
+    }
+    const url = new URL(window.location.href);
+    url.searchParams.set("month", input.value);
+    history.replaceState(history.state, "", url.href);
+    setStatus("Đang tải số liệu…");
+    const [currentYear, currentMonth] = input.value.split("-").map(Number);
+    inFlight = new AbortController();
+    try {
+      const data = await travelRequest(`/${pathAdmin}/dashboard/revenue-chart`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: AbortSignal.any([inFlight.signal, AbortSignal.timeout(15000)]),
+        body: JSON.stringify({ currentMonth, currentYear })
+      });
+      if (sequence === requestNumber) showPeriod(data);
+    } catch (error) {
+      if (sequence === requestNumber) setStatus("Chưa tải được số liệu. " + error.message);
+    }
+  }
+
+  form.addEventListener("submit", event => {
+    event.preventDefault();
+    refreshPeriod();
+  });
+  input.addEventListener("change", refreshPeriod);
+  showPeriod(JSON.parse(section.dataset.dashboardFinance));
 }
 // Hết Biểu đồ doanh thu
 
@@ -502,8 +507,10 @@ async function runListAction(button, url, options, confirmation) {
 }
 
 const adminList = document.querySelector("[data-admin-list]");
+const customerListReturn = document.querySelector("[data-customer-list-return]");
+const customerReturnKey = "admin-customer-return:" + window.location.pathname;
 
-function listReturnUrl(destination) {
+function listReturnUrl(destination, customerDetail = false) {
   const url = new URL(destination, window.location.origin);
   try {
     const previous = document.referrer && new URL(document.referrer);
@@ -516,6 +523,13 @@ function listReturnUrl(destination) {
     if (typeof returnTo === "string") {
       const saved = new URL(returnTo);
       if (saved.origin === url.origin && saved.pathname === url.pathname) return saved.href;
+    }
+    if (customerDetail && previous?.origin === url.origin && previous.pathname === window.location.pathname) {
+      const storedQuery = sessionStorage.getItem(customerReturnKey);
+      if (storedQuery !== null) {
+        url.search = storedQuery;
+        window.history.replaceState({ ...window.history.state, adminListReturn: url.href }, "");
+      }
     }
     if (/\/(category|tour)\/(list|trash)$/.test(url.pathname)) {
       url.search = sessionStorage.getItem("admin-list:" + url.pathname) || "";
@@ -562,7 +576,32 @@ if (adminList) {
 }
 
 for (const link of document.querySelectorAll("[data-list-return]")) {
-  link.href = listReturnUrl(link.href);
+  link.href = listReturnUrl(link.href, link === customerListReturn);
+}
+
+if (customerListReturn) {
+  function saveCustomerListQuery() {
+    const url = new URL(customerListReturn.href);
+    if (url.origin === window.location.origin && url.pathname === `/${pathAdmin}/user/list`) {
+      try { sessionStorage.setItem(customerReturnKey, url.search); } catch {}
+    }
+  }
+  saveCustomerListQuery();
+  // Back/Forward can restore this page without rerunning the script.
+  window.addEventListener("pageshow", saveCustomerListQuery);
+}
+
+const customerTabs = document.querySelector(".customer-tabs");
+const currentCustomerTab = customerTabs?.querySelector('[aria-current="page"]');
+if (currentCustomerTab) {
+  function revealCurrentTab() {
+    const viewport = customerTabs.getBoundingClientRect();
+    const current = currentCustomerTab.getBoundingClientRect();
+    if (current.left < viewport.left) customerTabs.scrollLeft += current.left - viewport.left - 4;
+    if (current.right > viewport.right) customerTabs.scrollLeft += current.right - viewport.right + 4;
+  }
+  revealCurrentTab();
+  window.addEventListener("resize", revealCurrentTab);
 }
 
 if (adminList) {
@@ -838,7 +877,7 @@ if (pagination && !adminList) {
 
   // Hiển thị lựa chọn mặc định
   const valueCurrent = url.searchParams.get("page");
-  if (valueCurrent && !adminList) {
+  if (valueCurrent && !document.querySelector("[data-customer-history]")) {
     pagination.value = valueCurrent;
   }
 }

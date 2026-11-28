@@ -1,6 +1,6 @@
 # Kế hoạch hoàn thiện — Vietnam Travel
 
-**G1 đã nghiệm thu · Checkpoint `6902f24` · G2 và G2.1 đã nghiệm thu · 28/11/2026**
+**Checkpoint G3/G3.1 từ mốc G2 `2e1e450` · G3 manual PASS 3/3 · G3.1 manual PASS 2/2 · 28/11/2026**
 
 Chủ dự án đã xác nhận chốt G1, gồm 6/6 nhóm G1.8, 4/4 nhóm G1.9 và phần checkbox. Đã triển khai G2 trên checkpoint local với quyền và policy hiện hành. Chủ dự án xác nhận manual PASS 6/6 nhóm G2 và 2/2 nhóm G2.1. [Tracker](PROJECT_FEATURE_TRACKER.md) · [Báo cáo G2](G2_REPORT.md)
 
@@ -112,10 +112,12 @@ Chủ dự án đã xác nhận 6/6 nhóm G1.8 trong luồng thường. Bằng c
 
 ## G3 · Dashboard và quản lý khách hàng
 
+**Chủ dự án xác nhận PASS 3/3 nhóm chức năng G3 và PASS 2/2 nhóm giao diện G3.1 trên fixture.** Phần dữ liệu lịch sử thiếu chứng cứ theo DATA-01 vẫn mở. [Báo cáo G3.1](G3_1_REPORT.md) · [Hướng dẫn nghiệm thu](MANUAL_TEST_GUIDE.md#g31--nghiệm-thu-giao-diện)
+
 - **G3.1 Chỉ số.** Chốt metric dictionary với chủ dự án. Ghi thời điểm settlement tin cậy cho giao dịch mới trong cùng transaction. Lịch sử có bằng chứng đáng tin cậy mới đưa vào bucket theo tháng. Hiển thị nhóm thiếu mốc cho phần dữ liệu còn lại. Truy vấn aggregate theo ngày VN từ server, dùng Cash/Wallet ledger theo nguồn, giữ riêng nạp ví/chi tiêu/hoàn/đối soát. Dùng helper `monthBoundsVN` và dữ liệu Order, Tx, Card, Customer. Kiểm tháng 28/29/30/31 ngày, tháng rỗng, chuyển năm, unpaid, cancel, refund pending/done, hỏng callback và nhận tiền hai lần.
 - **G3.2 Khách.** Giữ layout/badge của `user-list.pug`, dùng `tier.helper`, chỉ tải người trong trang và thẻ hiện hành liên quan. Bổ sung scope quyền khách, nhãn ngày tham gia, hạng, chi tiêu, tab lịch sử có phân trang ở chi tiết. Test tên/điện thoại, khách không/thẻ cũ/thẻ khóa/thẻ hiện hành và đúng giới hạn dữ liệu hiển thị.
 
-**Gate G3** Biểu đồ và số liệu đối chiếu fixture nghiệp vụ thay vì tổng giả. Số dư ví và chi tiêu chỉ xuất phát từ các luồng được phép. Quyền dashboard và chart được test riêng.
+**Gate G3** Chủ dự án đã nghiệm thu G3 và G3.1, đồng thời xác nhận chốt checkpoint. G4 chờ chỉ đạo triển khai riêng. Ánh xạ `customer-view` trên dữ liệu thật cần quyết định riêng.
 
 ## G4 · Smart Card
 

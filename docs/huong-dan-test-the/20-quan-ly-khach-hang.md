@@ -1,5 +1,7 @@
 # 20. Quản lý khách hàng (liên quan thẻ)
 
+> Danh sách có phân trang, quyền hồ sơ và các tab lịch sử được nghiệm thu theo [hướng dẫn G3](../MANUAL_TEST_GUIDE.md#g3--nghiệm-thu-dashboard-và-khách-hàng). Nội dung bên dưới lưu cách kiểm trước G3.
+
 Trang `/admin/user/list` ("Quản lý khách hàng") cho nhân viên quầy tra cứu khách và xem **thẻ hiện hành** của từng khách. Đây là điểm xuất phát để phát hành thẻ ([03](03-phat-hanh-the-khach-hang.md)).
 
 ## Mục đích

@@ -33,14 +33,18 @@ const vietnameseLetters = {
   a: "aàáảãạăằắẳẵặâầấẩẫậ", d: "dđ", e: "eèéẻẽẹêềếểễệ",
   i: "iìíỉĩị", o: "oòóỏõọôồốổỗộơờớởỡợ", u: "uùúủũụưừứửữự", y: "yỳýỷỹỵ"
 };
-function personSearch(value) {
+function nameSearch(value) {
   const pattern = [...value.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/đ/g, "d")]
     .map(letter => vietnameseLetters[letter] ? `[${vietnameseLetters[letter]}]` : escapeRegex(letter)).join("");
-  const literal = new RegExp(escapeRegex(value), "i");
-  return [{ orderCode: literal }, { phone: literal }, { fullName: new RegExp(pattern || escapeRegex(value), "iu") }];
+  return new RegExp(pattern || escapeRegex(value), "iu");
 }
 
-function listFilters(query, { where, enums = {}, idFields = [], dateField, searchKey = "keyword", search = titleSearch }) {
+function personSearch(value) {
+  const literal = new RegExp(escapeRegex(value), "i");
+  return [{ orderCode: literal }, { phone: literal }, { fullName: nameSearch(value) }];
+}
+
+function listFilters(query, { where, enums = {}, idFields = [], dateField, searchKey = "keyword", searchMax = 100, search = titleSearch }) {
   const filter = { ...where };
   const filters = {};
   const invalid = field => ({ filters, error: "Bộ lọc không hợp lệ: " + field + "." });
@@ -59,7 +63,7 @@ function listFilters(query, { where, enums = {}, idFields = [], dateField, searc
     filter[field] = new RegExp("^" + filters[field] + "$", "i");
   }
   const days = {};
-  for (const field of ["startDate", "endDate"]) {
+  for (const field of dateField ? ["startDate", "endDate"] : []) {
     const value = query[field];
     if (value === undefined || value === "") continue;
     days[field] = dayInVietnam(value);
@@ -76,7 +80,7 @@ function listFilters(query, { where, enums = {}, idFields = [], dateField, searc
   }
   if (query[searchKey] !== undefined) {
     const value = query[searchKey];
-    if (typeof value !== "string" || value.length > 100) return invalid(searchKey);
+    if (typeof value !== "string" || value.length > searchMax) return invalid(searchKey);
     filters[searchKey] = value.trim().normalize("NFC");
     if (filters[searchKey]) filter.$or = search(filters[searchKey]);
   }
@@ -114,4 +118,4 @@ async function listActors(Model, where, rows, fields) {
   return accounts.filter(account => knownActors.has(account.id));
 }
 
-module.exports = { statuses, objectId, selectedIds, dayInVietnam, vietnamDate, personSearch, listPage, listActors };
+module.exports = { statuses, objectId, selectedIds, dayInVietnam, vietnamDate, escapeRegex, nameSearch, personSearch, listFilters, listPage, listActors };

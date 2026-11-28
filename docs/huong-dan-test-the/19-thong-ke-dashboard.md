@@ -1,5 +1,7 @@
 # 19. Thống kê thẻ trên dashboard
 
+> Hướng dẫn hiện hành từ checkpoint G2 sang G3 nằm trong [nghiệm thu Dashboard G3](../MANUAL_TEST_GUIDE.md#g3--nghiệm-thu-dashboard-và-khách-hàng). Nội dung bên dưới mô tả baseline Smart Card trước G3.
+
 Trang tổng quan admin `/admin/dashboard` ("Tổng quan") có thêm mục **"Thẻ thành viên"** với số liệu thẻ, doanh thu ví thẻ tháng này và bảng tỉ lệ check-in. Mục này chỉ tính và hiển thị cho tài khoản có `card-view`.
 
 ## Mục đích

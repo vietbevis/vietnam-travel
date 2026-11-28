@@ -92,7 +92,12 @@ function usesLegacyPermissionFallback(permissions) {
     legacyPermissionKeys.every(key => permissions.includes(key));
 }
 
-module.exports.permissionList.push(...delegatedAdminPermissions);
+// Quyền mới phải được gán tường minh. Giữ nguyên tập quyền kích hoạt fallback G1.
+module.exports.permissionList.push(
+  ...delegatedAdminPermissions,
+  { label: 'Xem hồ sơ khách hàng', value: 'customer-view' }
+);
+module.exports.customerListPermissions = ['customer-view', 'card-view', 'card-issue'];
 module.exports.hasPermission = (permissions, value) => Array.isArray(permissions) && (
   permissions.includes(value) ||
   (delegatedPermissionKeys.includes(value) && usesLegacyPermissionFallback(permissions))

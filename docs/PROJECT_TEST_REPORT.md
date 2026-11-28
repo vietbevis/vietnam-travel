@@ -1,5 +1,9 @@
 # Báo cáo kiểm thử baseline — Vietnam Travel
 
+**Baseline checkpoint G3/G3.1 từ mốc G2 `2e1e450` đạt 938 PASS, 0 FAIL, 0 SKIP.** Pug 73/73, Chromium 324/324. Chủ dự án xác nhận G3 PASS 3/3 nhóm chức năng và G3.1 PASS 2/2 nhóm giao diện. [Báo cáo G3.1](G3_1_REPORT.md) · [Kết quả chi tiết](#g31--hồi-quy-giao-diện)
+
+**G3 trên checkpoint `2e1e450` đạt 935 PASS, 0 FAIL, 0 SKIP.** Pug 72/72, Chromium 324/324. [Báo cáo G3](G3_REPORT.md) · [Kết quả chi tiết](#g3--kiểm-thử-dashboard-và-khách)
+
 **G2.1** có **929 PASS**, **0 FAIL**, **0 SKIP** trên fixture riêng. Ma trận Chromium đạt **294/294**, Pug đạt **70/70**. Chủ dự án xác nhận manual PASS 6/6 nhóm G2 và 2/2 nhóm G2.1. [Hồi quy G2.1](#hồi-quy-g21) · [Báo cáo theo ID](G2_REPORT.md)
 
 Kết quả mới và bằng chứng trước/sau nằm trong [báo cáo kiểm thử G1.7](G1_7_REPORT.md#kết-quả-kiểm-thử). Các số G0, G1.1–G1.5 và G1.6 bên dưới là kết quả theo từng mốc.
@@ -166,3 +170,39 @@ Chủ dự án xác nhận manual PASS **4/4 nhóm G1.9**. Hai yêu cầu phát 
 - **Chromium và Pug.** Pug 70/70. Chromium 294/294, 49 route/trạng thái ở 320/360/390/768/1024/1440 px. Lượt bấm thật ở 360 và 1440 px chạy riêng qua sáu trang, gồm kiểm chọn, ID bulk, không dịch layout, xác nhận/hủy, quyền, xóa danh mục, kết quả F5 và clamp. Các lượt Chromium/Pug đứng ngoài tổng 929. Xem `.superpowers/g21/browser-matrix.log`, `browser-actions-360.log` và `browser-actions-1440.log`.
 - **Hồi quy thao tác G2.** Fixture mặc định khởi động từ `node scripts/acceptance-g1.cjs --g2`. Chạy lại tạo/sửa/xóa mềm/khôi phục danh mục, giá/tồn/lịch trình và trash tour, sửa/hủy/ẩn/khôi phục đơn và đối chiếu snapshot Mongo, kho, ledger. Xem `.superpowers/g21/browser-g2-regression.log`.
 - **Nghiệm thu chủ dự án.** Chủ dự án đã xác nhận 6/6 nhóm G2 và cả UI-G2-001, FUNC-G2-001. Thẻ vật lý, dịch vụ và migration Role thật vẫn NOT_RUN. [Hướng dẫn tập trung](MANUAL_TEST_GUIDE.md#g21--nghiệm-thu-hai-thay-đổi-cuối)
+
+## G3 · Kiểm thử Dashboard và khách
+
+Kết quả ngày 28/11/2026, nhánh `feature/smartcard`, HEAD `2e1e450`. Baseline chạy lại từ nguồn G2 trước khi sửa. Lượt cuối dùng Node 25.9, MongoDB 8.3 replica set test loopback, Agent jCardSim, JDK 17 và Gradle offline.
+
+| Suite | Baseline G2 | G3 PASS | FAIL | SKIP |
+|---|---:|---:|---:|---:|
+| Node và Agent mô phỏng | 247 | 247 | 0 | 0 |
+| Mongo integration tuần tự | 385 | 391 | 0 | 0 |
+| Java Card Applet | 266 | 266 | 0 | 0 |
+| Java Agent | 31 | 31 | 0 | 0 |
+| **Tổng** | **929** | **935** | **0** | **0** |
+
+- **Node/Mongo.** Lượt cuối có log `.superpowers/g3/g3-delivery-run-yV7yh3/node.log` và `integration.log`. Test Mongo G3 có sáu ca mới, thêm assertion mốc settlement/receipt và replay ở suite ví/hoàn đã có. Hồi quy checkout, signed callback, ví, hoàn, check-in, quyền, restore, xóa vĩnh viễn danh mục và rollback trong cùng lượt. Baseline dưới `.superpowers/g3/baseline-run-IxNMpl/`.
+- **Rà soát độc lập và RED/GREEN.** Đóng các phát hiện quan trọng về scope archive, nghĩa vụ thẻ cũ và thẻ thiếu, đối chiếu nội dung receipt, log biên nhận muộn lặp. Lượt full trước bàn giao bắt thêm khác biệt câu 403 ở route khách, sửa và chạy lại toàn suite. Log lượt RED trong `red-run-42uAhM/`, `review-red-run-LPRPjN/` và `reconciliation-red-run-285Jml/`.
+- **Applet/Agent.** Gradle chạy mới với `--offline --rerun-tasks` từ bản phân phối đã cache. Đếm XML từ hai subproject. Java và APDU giữ cùng mã nguồn giữa baseline và G3. Log `.superpowers/g3/gradle.log` và `gradle-counts.log`.
+- **Pug.** 72/72 compile thành công, từ baseline 70/70.
+- **Chromium.** 54 route/trạng thái × 6 viewport = **324/324**, log `site-matrix-delivery.log`. Lượt G3 riêng có click/form và xác minh chart, số tháng, lỗi mạng, response sai thứ tự, reload/Back/Forward, tab, phân quyền và layout ở 320/360/390/768/1024/1440 px. Xem `browser-actions-delivery.log`. Ảnh Dashboard và list trước/sau ở 360/1440 px đặt dưới `.superpowers/g3/`.
+- **G2.1 qua Chromium trên source G3.** Fixture `--g2` riêng, 360 px, 18 thao tác modal, 0 lỗi trang. Kiểm không có bộ đếm bulk, chọn bằng bàn phím/nhãn, ID chính xác, ẩn/khôi phục đơn và xóa vĩnh viễn danh mục đủ điều kiện. Log `browser-g21-delivery.log`.
+- **Manual và NOT_RUN.** Chủ dự án đã xác nhận 3/3 nhóm chức năng G3. DB thật, migration Role, backfill, dịch vụ thật, PC/SC và thẻ vật lý là **NOT_RUN**. [Hướng dẫn nghiệm thu](MANUAL_TEST_GUIDE.md#g31--nghiệm-thu-giao-diện)
+
+## G3.1 · Hồi quy giao diện
+
+Chủ dự án xác nhận manual PASS 2/2 nhóm, gồm G31-01 Dashboard và G31-02 Chi tiết khách hàng. [Kịch bản nghiệm thu](MANUAL_TEST_GUIDE.md#g31--nghiệm-thu-giao-diện)
+
+| Bộ kiểm | Baseline chạy lại | Bàn giao | FAIL / SKIP lần cuối |
+|---|---:|---:|---:|
+| Node và jCardSim | 247 | 250 | 0 / 0 |
+| Mongo replica set serial | 391 | 391 | 0 / 0 |
+| Applet Gradle offline | 266 | 266 | 0 / 0 |
+| Agent Gradle offline | 31 | 31 | 0 / 0 |
+| **Tổng** | **935** | **938** | **0 / 0** |
+| Pug | 72/72 | 73/73 | 0 / 0 |
+| Chromium 54 route/trạng thái × 6 viewport | 324/324 | 324/324 | 0 / 0 |
+
+Ba ca Node mới kiểm 40 binding, HTML restricted và semantics hồ sơ. Browser riêng bấm disclosure/nút mở đơn, đổi tháng, kiểm chart và 40 giá trị, lỗi mạng, race, hướng quay lại đúng query qua nhiều tab, bảng cuộn và quyền. Kết quả, ảnh 360/1440 px và mã thoát trong `.superpowers/g31/`. [Báo cáo G3.1 và phạm vi NOT_RUN](G3_1_REPORT.md#kiểm-thử)

@@ -1,4 +1,9 @@
 extends ../layouts/default.pug
+include ../mixins/admin-list.pug
+include ../mixins/dashboard-statistics.pug
+
+mixin amount(key, value)
+  span(data-finance=key)= value.toLocaleString("vi-VN") + " đ"
 
 block main
   if (permissions.includes("dashboard-view"))
@@ -16,20 +21,21 @@ block main
         .inner-icon
           img(src="/admin/assets/images/section-1-icon-1.svg")
         .inner-content
-          .inner-title Người dùng
+          .inner-title Khách hàng
           .inner-number #{overview.totalUser.toLocaleString("vi-VN")}
       .inner-item
         .inner-icon
           img(src="/admin/assets/images/section-1-icon-2.svg")
         .inner-content
-          .inner-title Đơn hàng
+          .inner-title Tổng đơn mọi thời kỳ
           .inner-number #{overview.totalOrder.toLocaleString("vi-VN")}
       .inner-item
         .inner-icon
           img(src="/admin/assets/images/section-1-icon-3.svg")
         .inner-content
-          .inner-title Doanh thu
-          .inner-number #{overview.totalPrice.toLocaleString("vi-VN")} đ
+          .inner-title Doanh thu ròng theo tháng
+          .inner-number
+            +amount('net', finance.period.net)
     //- End Section 1
 
     //- Thống kê thẻ thành viên (A11)
@@ -47,8 +53,10 @@ block main
           .inner-icon
             img(src="/admin/assets/images/section-1-icon-3.svg")
           .inner-content
-            .inner-title Doanh thu ví thẻ (tháng này)
-            .inner-number #{cardStats.walletRevenueMonth.toLocaleString("vi-VN")} đ
+            .inner-title Thanh toán tour bằng ví trong kỳ
+            .inner-number
+              +amount('card', finance.period.methods.card)
+            .inner-text Số dư ví trên hệ thống: #{cardStats.serverBalance.toLocaleString("vi-VN")} đ
         .inner-item
           .inner-icon
             img(src="/admin/assets/images/section-1-icon-1.svg")
@@ -80,21 +88,54 @@ block main
     //- End thống kê thẻ
 
     //- Section 2
-    .section-2
+    .section-2(data-dashboard-finance=JSON.stringify(finance))
       .inner-head
         h2.inner-title Biểu đồ doanh thu
-        .inner-filter
+        form.inner-filter(method="get")
           input(
             type="month"
-            name=""
+            name="month"
+            value=selectedMonth
+            min="1900-01"
+            max="9999-12"
+            required
             aria-label="Tháng của biểu đồ doanh thu"
           )
+          noscript
+            button.ca-btn(type="submit") Xem
       .inner-chart
         canvas(id="revenue-chart")
-        p(data-revenue-status role="status" hidden)
+      p(data-revenue-status role="status" hidden)
+      +dashboardStatistics(finance, paymentMethods)
     //- End Section 2
 
     if permissions.includes("order-view")
       .section-3
-        h2.inner-title Đơn hàng
-        a.ca-btn(href=`/${pathAdmin}/order/list`) Mở danh sách đơn hàng
+        h2.inner-title Đơn hàng gần đây
+        a.ca-btn.dashboard-orders-link(href=`/${pathAdmin}/order/list`) Mở danh sách đơn hàng
+        .table-1
+          table
+            thead
+              tr
+                th Mã đơn
+                th Khách đặt
+                th Tổng đơn
+                th Phương thức
+                th Thanh toán
+                th Trạng thái đơn
+                th Ngày đặt
+            tbody
+              each order in orders
+                tr
+                  td
+                    a(href=`/${pathAdmin}/order/edit/${order.id}`)= order.code || 'Chi tiết'
+                  td= order.customer
+                  td
+                    +listMoney(order.amount)
+                  td= order.method
+                  td= order.payment
+                  td= order.status
+                  td= order.date || 'Chưa xác định'
+              else
+                tr
+                  td(colspan="7") Chưa có đơn hàng để hiển thị.

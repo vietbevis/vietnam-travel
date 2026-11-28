@@ -437,6 +437,7 @@ async function receiptInSession({card,tx,responseHex},session) {
     fail('OP_STATE');
   const t=await Tx.updateOne({_id:tx._id,status:{$ne:'done'},signedOpId:tx.signedOpId},{$set:{
       status:'done',
+      completedAt:new Date(),
       balanceAfter:r.balanceAfter,
       txCounter:r.txCounter,
       receiptHex:responseHex

@@ -16,7 +16,7 @@ const { hasPermission } = require("../../config/permission");
 const landingPages = [
   ['dashboard-view', '/dashboard'], ['category-view', '/category/list'], ['category-trash', '/category/trash'],
   ['tour-view', '/tour/list'], ['tour-trash', '/tour/trash'], ['order-view', '/order/list'],
-  ['order-trash', '/order/trash'], ['card-view', '/card/list'],
+  ['order-trash', '/order/trash'], ['customer-view', '/user/list'], ['card-view', '/card/list'],
   ['card-issue', '/card/issue'], ['card-checkin', '/card/checkin'], ['card-log-view', '/card/log'],
   ['contact-view', '/contact/list'], ['website-view', '/setting/website-info'],
   ['account-admin-view', '/setting/account-admin/list'], ['role-view', '/setting/role/list']

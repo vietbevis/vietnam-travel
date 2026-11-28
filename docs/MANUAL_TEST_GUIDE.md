@@ -1,5 +1,8 @@
 # Hướng dẫn nghiệm thu tay — Vietnam Travel
 
+**Chủ dự án đã nghiệm thu PASS 3/3 nhóm chức năng G3 và PASS 2/2 nhóm giao diện G3.1.** Có thể dùng lại kịch bản bên dưới khi kiểm hồi quy. [Hai nhóm giao diện G3.1](#g31--nghiệm-thu-giao-diện)
+
+
 **Chủ dự án đã nghiệm thu 6/6 nhóm G2 và 2/2 nhóm G2.1.** Có thể chạy lại [hai nhóm G2.1](#g21--nghiệm-thu-hai-thay-đổi-cuối). Chủ dự án đã xác nhận chốt G1, gồm G1.8 **6/6**, G1.9 **4/4** và phần rà checkbox. [Báo cáo G2](G2_REPORT.md)
 
 **Nghiệm thu G1.6 · cây làm việc trên HEAD `2fcc368` · 26/11/2026**
@@ -7,6 +10,115 @@
 Các ca lịch sử G1 dùng [môi trường nghiệm thu riêng](#g16--môi-trường-nghiệm-thu-riêng) và [bảng kiểm Giai đoạn 1](#kiểm-tra-thay-đổi-giai-đoạn-1). [Sáu nhóm G2](#g2--nghiệm-thu-danh-mục-tour-và-đơn) được lưu để đối chiếu phạm vi đã nghiệm thu.
 
 Chạy trên website và Mongo test riêng với dữ liệu giả, Card Agent jCardSim test riêng và Origin phù hợp. Ví dụ URL demo trong tài liệu tham chiếu cần được thay bằng URL fixture. Chuẩn bị một vai trò quyền phù hợp, một vai trò hạn chế và tài khoản khách thuộc hai chủ thẻ. Dùng fixture cho email, avatar, callback và mã định danh. Ca có ghi dữ liệu, xóa, khóa, thử PIN hoặc reset chỉ thực hiện trên fixture. Ghi HEAD, browser/viewport, lớp test, ID fixture và kết quả **PASS / FAIL / NOT_RUN / BLOCKED**. Ghi kết quả quan sát bằng mô tả hoặc ảnh đã che dữ liệu nhạy cảm.
+
+## G3.1 · Nghiệm thu giao diện
+
+Chạy PowerShell trong repo và giữ terminal mở đến khi hết phiên kiểm. Chờ dòng `READY`.
+
+```powershell
+Set-Location 'D:\vietnam-travel'
+node scripts/acceptance-g1.cjs --g3
+```
+
+Vào **http://127.0.0.1:3302/admin/account/login**. Mật khẩu của mọi tài khoản fixture dưới đây là **`G16Fixture-2026!`**. Dữ liệu seed có sẵn cho cả hai nhóm. Agent jCardSim khởi động cùng fixture. Hai nhóm giao diện chỉ cần thao tác trên trình duyệt.
+
+| Tài khoản | Dùng để kiểm |
+|---|---|
+| `backup@g1.example.com` | Dashboard, hồ sơ, bốn lịch sử và đơn lưu trữ. |
+| `g3-dashboard@g1.example.com` | Dashboard với dữ liệu bán tour. Vùng thẻ, nạp ví, đối soát debit và nút mở đơn vắng mặt. |
+| `g3-customer@g1.example.com` | Danh sách và hồ sơ, chỉ thấy tab Hồ sơ. |
+| `g3-history@g1.example.com` | Hồ sơ và lịch sử theo quyền. Đơn đã khôi phục có thể tra cứu. |
+| `g3-issuer@g1.example.com` | Tra cứu danh sách. Mở trang chi tiết trực tiếp trả 403. |
+
+### G31-01 · Dashboard
+
+1. Với **backup**, mở **http://127.0.0.1:3302/admin/dashboard?month=2026-11**. Ở phần tổng quan có **8 Admin**, **210 khách**, **25 đơn** và ròng **3.900.000 đ**. Vùng thẻ và bảng check-in vẫn ở trên chart. Cuộn xuống **Thống kê chi tiết**, đối chiếu các card với bảng dưới.
+
+   | Vùng | Kết quả tháng 11/2026 |
+   |---|---|
+   | KPI chi tiết | **10** đơn gồm đơn lưu trữ, thu **3.900.000 đ**, nghĩa vụ hoàn **1.100.000 đ**, nạp đã ghi nhận **950.000 đ**, debit chờ **1 khoản / 123.000 đ** toàn thời gian. |
+   | Doanh thu theo phương thức | Tiền mặt **1.200.000**, ngân hàng **850.000**, VNPay **750.000**, ZaloPay **0**, ví **1.100.000 đ**. |
+   | Nạp ví | Ghi chip trong kỳ **0**, chờ ghi/đối soát **0**, giữ hạn mức **250.000**, chờ trả **80.000**, thất bại **20.000 đ**. |
+   | Hoàn tiền | Hoàn tất **0**, qua chip **0**, tiền mặt thu hồi **0**, hoàn đang chờ **400.000 đ**, giữ hạn mức **0 đ**. |
+   | Tóm tắt đối soát | **2 đơn** thiếu mốc thanh toán, trong đó tổng tiền chưa xác minh **500.000 đ**, hoàn cần đối soát **0 khoản**. |
+   | Chi tiết đối soát | Tiền có chứng cứ thiếu mốc **0 đ**. Thiếu số tiền **1 đơn**, có tổng thiếu chứng cứ **1 đơn**, phương thức chưa xác định **0**. Nhóm hoàn, ghi sổ chưa khớp, receipt đến muộn và mốc thu/ghi chip của nạp đều **0**. |
+
+2. Tab đến **Xem chi tiết đối soát**, bấm Enter để mở, Space để thu gọn. Khi thu gọn vẫn thấy tóm tắt. So sánh các nhóm 0, khoản chờ và số đã xác nhận qua cả nhãn lẫn màu.
+3. Chọn **12/2026** để thấy thu **200.000 đ**, hoàn chip **600.000 đ**, ghi chip nạp **700.000 đ** và ròng **−400.000 đ**. Tháng **01/2027** hoàn tiền mặt thu hồi **100.000 đ**, ròng **−100.000 đ**. F5 giữ tháng. Thử tháng rỗng **02/2024**, số tháng **0 đ** và có 29 ngày. Trong DevTools, bật Offline và đổi sang một tháng khác. Số động hiện dấu gạch, chart cũ ẩn và có thông báo lỗi. Tắt Offline, chọn tháng hợp lệ để thấy số đúng.
+4. Ở 360 và 1440 px, xem nhóm chi tiết co cột, số tiền dễ đọc và bảng đơn cuộn trong khung. Nút **Mở danh sách đơn hàng** cách bảng **20/24 px** và mở **/admin/order/list**. Bảng dùng tối đa năm đơn gần đây, gồm `G3-UNPAID` và `G3-ZALO-NEXT`. Đăng nhập **g3-dashboard** để kiểm các vùng theo quyền trong bảng tài khoản trên.
+
+### G31-02 · Chi tiết khách hàng
+
+1. Với **backup**, mở **http://127.0.0.1:3302/admin/user/list?keyword=Dang+Ha&cardStatus=active&tier=gold&pageSize=5**. Bấm **Chi tiết** của **G3 Đặng Hà (Hồ sơ)**. Hồ sơ trực tiếp ở **http://127.0.0.1:3302/admin/user/detail/650000000000000000000003**. Breadcrumb hiển thị danh sách và tên khách ở trên tiêu đề. Link danh sách giữ bộ lọc, kể cả sau khi đổi tab và F5. Thử mở cùng khách từ truy vấn `?keyword=g3-dang-ha`, Back về tab cũ rồi mở một tab lịch sử khác. Link quay lại dùng bộ lọc đầu.
+2. Kiểm ba card hồ sơ. Thông tin cá nhân có cặp nhãn–giá trị. Thành viên hiện **Gold · 5%**, chi tiêu **30.000.000 đ** và thẻ hoạt động đuôi **0310**. Ví có số dư hệ thống và biên nhận chip cùng **2.500.000 đ**, mốc chip **00:00 ngày 01/12/2026**. Ghi có chờ **2.400.000**, giữ hạn mức **250.000**, debit chờ **123.000** và biên nhận muộn **0 đ**. Ở 1440 px, hai card đầu chia hai cột. Ở 360 px, các card xếp dọc và tên/email/mã vẫn đọc được.
+3. Bấm lần lượt **Đơn hàng**, **Giao dịch ví**, **Vé**, **Lịch sử thẻ**. Kiểm mục active, tiêu đề bảng, badge, cột số tiền/ngày. Ở 320 hoặc 360 px, cuộn thanh tab/bảng trong khung và thử Tab, Shift+Tab, Enter. URL và mục active đúng khi F5/Back/Forward.
+4. Đơn `G3-CASH` là khách vãng lai có tên và điện thoại trùng fixture. Dòng này vắng trong hồ sơ. `G3-VNPAY-RESTORED` có link tra cứu và nhãn đã lưu trữ/khôi phục. Ví có **14** dòng, chọn **5** và trang **3** để thấy **11–14 của 14**. Kiểm nhãn chuyển số dư và hoàn tiền mặt khi thu hồi. Vé có `G3-ZALO-NEXT`. Lịch sử có thẻ hiện hành **0310** và thẻ thu hồi **0309**. Xem thêm hồ sơ ID `650000000000000000000005` để kiểm thẻ thu hồi và hồ sơ ID `650000000000000000000006` với `?tab=wallet` để kiểm bảng rỗng.
+5. Với **g3-customer**, chỉ thấy Hồ sơ, vắng mã thẻ và ví công nợ. Mở `?tab=wallet` trực tiếp trả 403. Với **g3-history**, đơn `G3-VNPAY-RESTORED` có trong tab Đơn hàng, còn `G3-BANK-ARCHIVED` vắng mặt. Với **g3-issuer**, mở được danh sách và nhận 403 khi vào chi tiết.
+
+Ghi lại kết quả **G31-01** và **G31-02** nếu chạy hồi quy. Dừng fixture bằng **Ctrl+C** trong cửa sổ launcher hoặc `node scripts/acceptance-g1.cjs --stop <RunID>`. [Báo cáo G3.1](G3_1_REPORT.md)
+
+## G3 · Nghiệm thu Dashboard và khách hàng
+
+Ba nhóm bên dưới lưu hướng dẫn chức năng G3 đã được chủ dự án xác nhận. Các ca UI hiện tại ở mục G3.1.
+
+### Khởi động và tài khoản
+
+Mở PowerShell trong thư mục dự án. Tắt lượt fixture do bạn đang chạy tại cùng cổng nếu có. Chờ terminal in `READY`, sau đó giữ cửa sổ này mở.
+
+```powershell
+Set-Location 'D:\vietnam-travel'
+node scripts/acceptance-g1.cjs --g3
+```
+
+Mở **http://127.0.0.1:3302/admin/account/login**. Tất cả tài khoản dưới đây dùng mật khẩu fixture **`G16Fixture-2026!`**.
+
+| Email | Quyền và điều cần thấy |
+|---|---|
+| `backup@g1.example.com` | Kiểm toàn bộ Dashboard và khách, gồm đơn lưu trữ và các tab. |
+| `g3-dashboard@g1.example.com` | Dashboard và API chart. Khu vực thẻ/nạp/ví chi tiết và bảng đơn gần đây được ẩn. |
+| `g3-customer@g1.example.com` | Danh sách và hồ sơ. Truy cập trực tiếp tab đơn, ví, vé hoặc lịch sử thẻ nhận 403. |
+| `g3-history@g1.example.com` | Hồ sơ, đơn, ví, vé và thẻ. Đơn archived chưa khôi phục bị loại khỏi đơn và vé. |
+| `g3-issuer@g1.example.com` | Tra cứu danh sách như quầy phát hành. Truy cập trực tiếp hồ sơ nhận 403. |
+
+Các ca đọc dùng dữ liệu seed có sẵn. Launcher khởi động Agent jCardSim cùng web/mocks, việc đọc Dashboard và hồ sơ không cần thao tác Agent. Dữ liệu được tạo trên replica set riêng của mỗi lần chạy. Nếu máy không tìm thấy `mongod.exe`, đặt `$env:G16_MONGOD` bằng đường dẫn tuyệt đối cài trên máy rồi chạy lại. Nếu chưa có bản Agent, chạy `.\gradlew.bat :agent:installDist` trong thư mục `smartcard` với cache đã cấu hình. [Môi trường fixture](#g16--môi-trường-nghiệm-thu-riêng)
+
+### A. Dashboard và phép đối chiếu
+
+1. Dùng **backup**, mở **http://127.0.0.1:3302/admin/dashboard?month=2026-11**. Fixture mới có **8 quản trị viên**, **210 khách**, **25 đơn mọi thời kỳ**, **10 đơn đặt trong tháng 11**. Khách chưa có thẻ được tính. Trong bảng **Đơn hàng gần đây**, tìm `G3-UNPAID` và `G3-ZALO-NEXT`. Đơn `G3-VNPAY-RESTORED` ở lịch sử tra cứu và góp thu 750.000 đ.
+2. Đối chiếu breakdown tháng 11. Tiền mặt **1.200.000**, chuyển khoản **850.000**, VNPay **750.000**, ZaloPay **0**, ví **1.100.000 đ**. Tổng gộp và ròng cùng bằng **3.900.000 đ**. Chart ngày 1 có **1.200.000**, ngày 10 có **850.000**, ngày 12 có **600.000**, ngày 15 có **400.000**, ngày 21 có **100.000** và ngày 30 có **750.000 đ**.
+3. Đối soát tháng 11. Nghĩa vụ hoàn phát sinh **1.100.000**, hoàn hoàn tất **0**. Mục *Đối soát toàn thời gian* có **400.000 đ** hoàn đang chờ và hai đơn thiếu thời điểm. Trong hai đơn có một tổng đặt legacy **500.000 đ** chưa xác minh đã thu và một đơn thiếu số tiền. Nạp ví đã thu **950.000**, ghi chip tháng 11 **0**, giữ do hạn mức **250.000**, chờ thanh toán **80.000**, thất bại **20.000 đ**. Ghi nợ chờ xác nhận có **1** khoản **123.000 đ**.
+4. Chọn **12/2026**. Thu ZaloPay **200.000**, hoàn qua chip **600.000**, ròng **−400.000 đ**, chart ngày 1 tương ứng. Nạp đã ghi chip **700.000 đ**. F5 giữ tháng và kết quả. Chọn **01/2027**, thấy hoàn tiền mặt khi thu hồi **100.000**, ròng **−100.000 đ**, ngày 1. Chọn **02/2024** để xem tháng 29 ngày và tổng 0, **02/2025** để xem tháng 28 ngày, **04/2026** để xem tháng 30 ngày. Chart so cùng ngày với kỳ trước, các ngày vượt độ dài của một kỳ để trống riêng trên đường của kỳ đó.
+5. Mở DevTools **Network**, bật Offline sau khi tải trang và đổi tháng. Vùng số kỳ hiện dấu gạch và báo lỗi, chart cũ ẩn. Tắt Offline, chọn lại một tháng khác và đối chiếu tổng. Lượt tự động đã trì hoãn response tháng 11 cho đến khi tháng 12 hiển thị để kiểm response đến sai thứ tự.
+
+| Order / sự kiện | Mốc VN | Số tiền và kết quả |
+|---|---|---|
+| `G3-CASH` | 01/11/2026 00:00 | Thu 1.200.000 đ. Đặt đơn ngay trước biên, khách vãng lai. |
+| `G3-BANK-ARCHIVED` | 10/11/2026 | Thu 850.000 đ, đơn archived. |
+| `G3-VNPAY-RESTORED` | 30/11/2026 23:59:59.999 | Thu 750.000 đ, đơn khôi phục tra cứu. |
+| `G3-ZALO-NEXT` | 01/12/2026 00:00 | Thu 200.000 đ, được đặt trong tháng 11. |
+| `G3-WALLET-REFUND-DONE`, debit 0301 | 12/11/2026 | Thu ví 600.000 đ, paid+cancel. Credit gốc 0401 ghi nghĩa vụ 25/11, chuyển thẻ; 0411 hoàn tất 01/12, chỉ một khoản 600.000 đ. |
+| `G3-WALLET-REFUND-PENDING`, debit 0302 | 15/11/2026 | Thu ví 400.000 đ. Credit 0402 ngày 25/11 còn chờ ghi. |
+| `G3-WALLET-CASH-REFUND`, debit 0303 | 21/11/2026 | Thu ví 100.000 đ. Credit 0403 ngày 25/11 kết thúc bằng bút toán tiền mặt 0413 ngày 01/01/2027. |
+| `G3-UNPAID`, `G3-CALLBACK-FAILED` | 30/11 và 28/11/2026 | 999.999 đ và 960.000 đ là tổng đơn vẫn chưa thu. |
+| `G3-OLD-TIME`, `G3-OLD-AMOUNT` | Thiếu thời điểm settlement | Một tổng đơn 500.000 đ chưa xác minh, một đơn chưa xác định số tiền. |
+| Ví 0501, 0502 | 24 và 25/11/2026 | Tiền mặt 700.000 đ ghi chip 01/12; VNPay 250.000 đ đã thu, đang giữ do hạn mức. |
+| Ví 0503, 0504, 0505, 0506 | 25–29/11/2026 | 80.000 đ chờ thanh toán; 20.000 đ nạp thất bại; 2.000.000 đ chuyển số dư chờ ghi; 123.000 đ debit đang chờ xác nhận. |
+
+Mã ledger trong bảng dùng bốn ký tự cuối của txRef. Ròng tháng 11 = 3.900.000 − 0, tháng 12 = 200.000 − 600.000, tháng 01 = 0 − 100.000. Số tiền fixture dùng để nghiệm thu công thức quản trị. [Định nghĩa đầy đủ](G3_REPORT.md#quy-ước-số-liệu)
+
+### B. Danh sách và hồ sơ
+
+1. Mở **http://127.0.0.1:3302/admin/user/list**. Gõ `G3 Phan Trang`, bấm **Tìm kiếm**, chọn cỡ **5**, trang **2**. Kết quả **6–10 của 205**. Chọn trang **41**, thấy **201–205 của 205**. Thử F5, Back, Forward và URL trang vượt giới hạn. Cỡ trang có 5/10/20/50/100. Bộ lọc gửi về trang đầu.
+2. Tìm `Dang Ha` hoặc `Đặng Hà`, thấy hai khách G3. Lọc **Hoạt động** và **Gold**, còn một **G3 Đặng Hà (Hồ sơ)**. Có thể tìm lại bằng `(Hồ sơ)`, `g3-dang-ha` hoặc `0900000033`. Tìm `.*` cho kết quả rỗng. Xóa lọc và thử **Đã khóa** cùng **Silver**, hoặc **Từng thu hồi và chưa có thẻ hiện hành**. Mỗi tổ hợp trên có một khách fixture.
+3. Bấm **Chi tiết** hoặc mở **http://127.0.0.1:3302/admin/user/detail/650000000000000000000003**. Hạng **Gold · 5%**, tổng chi tiêu **30.000.000 đ**, tình trạng thẻ hệ thống **Hoạt động**. Số dư hệ thống **2.500.000 đ**, biên nhận chip cuối **2.500.000 đ** lúc 00:00 ngày 01/12/2026. Ghi có chờ đồng bộ **2.400.000 đ** gồm credit hoàn và chuyển số dư. Ghi có giữ do hạn mức **250.000 đ**, debit chờ **123.000 đ**. Các nhóm chờ hiện riêng số dư.
+4. Bấm **Đơn hàng**, kiểm các mã G3 gắn customerId và dòng archived. `G3-CASH` có cùng tên/điện thoại fixture nhưng là khách vãng lai. Bấm **Giao dịch ví**, thử cỡ **5** và trang **3**, thấy **11–14 của 14**. Thấy cả **Chuyển số dư khi cấp lại** và bút toán hoàn tiền mặt khi thu hồi. Bấm **Vé**, thấy vé `G3-ZALO-NEXT` đã ghi. Bấm **Lịch sử thẻ**, thấy thẻ hiện hành đuôi **0310** và thẻ thu hồi đuôi **0309**. So sánh với hồ sơ thẻ đã thu hồi ID `650000000000000000000005` và khách chưa phát hành ID `650000000000000000000006`.
+5. Xem lại ở 320/360/390/768/1024/1440 px nếu cần. Khi bảng rộng, cuộn ngang trong khung bảng. Tại hồ sơ, thử tải lại tab ví ở trang đã chọn và Back về tab trước.
+
+### C. Quyền và chốt nghiệm thu
+
+1. Đăng nhập từng tài khoản ở bảng trên trong cửa sổ riêng. Thử trực tiếp `/admin/dashboard`, `/admin/user/list` và hồ sơ khách có `?tab=wallet`, `?tab=orders`. Tài khoản **g3-history** thấy `G3-VNPAY-RESTORED`; `G3-BANK-ARCHIVED` chỉ hiện cho **backup** ở hồ sơ. Tài khoản **g3-customer** không thấy ID thẻ, số dư hoặc lịch sử. ID sai định dạng hoặc ID không tồn tại trả 404 với tài khoản được xem hồ sơ.
+2. Sau khi kiểm, bấm **Ctrl+C** tại cửa sổ đã chạy fixture, hoặc gửi lệnh `node scripts/acceptance-g1.cjs --stop <RunID>` với Run ID in ở terminal.
+3. Xác nhận kết quả A/B/C và quyết định công thức ròng, dữ liệu legacy, ánh xạ Role theo [gate G3](G3_REPORT.md#gate-chủ-dự-án). Kết quả tay của chủ dự án sẽ được ghi riêng khỏi suite.
 
 ## G2.1 · Nghiệm thu hai thay đổi cuối
 

@@ -108,10 +108,11 @@ function runtimeEnvironment() {
   return inherited;
 }
 
-function isolatedEnvironment(runId, g2) {
+function isolatedEnvironment(runId, mode) {
   return {
     ...runtimeEnvironment(), NODE_ENV: 'development', G16_RUN_ID: runId,
-    ...(g2 ? { G2_ACCEPTANCE: '1' } : {}),
+    ...(mode === '--g2' ? { G2_ACCEPTANCE: '1' } : {}),
+    ...(mode === '--g3' ? { G3_ACCEPTANCE: '1' } : {}),
     DATABASE: mongoBase + '/vietnam-travel-g16-acceptance-' + runId + '?directConnection=true&replicaSet=' + replica,
     PORT: String(ports.website), CARD_AGENT_URL: agent, DOMAIN_WEBSITE: web,
     CARD_SERVER_KEY_PATH: path.join(root, 'smartcard', 'test-vectors', 'server-test-key.pem'),
@@ -124,7 +125,7 @@ function isolatedEnvironment(runId, g2) {
   };
 }
 
-async function run(requestStop, g2) {
+async function run(requestStop, mode) {
   const classpath = agentClasspath();
   const mongod = mongoExecutable();
   for (const port of Object.values(ports)) await assertPortFree(port);
@@ -152,7 +153,7 @@ async function run(requestStop, g2) {
     const status = await fetch(agent + '/v1/status', { headers: { Origin: web }, signal: AbortSignal.timeout(1000) });
     return status.ok && (await status.json()).mode === 'sim';
   }, 'Card Agent fixture khong khoi dong hoac Origin khong khop.');
-  startChild(directory, 'website', process.execPath, [path.join(__dirname, 'acceptance-g1-web.cjs')], { env: isolatedEnvironment(runId, g2) });
+  startChild(directory, 'website', process.execPath, [path.join(__dirname, 'acceptance-g1-web.cjs')], { env: isolatedEnvironment(runId, mode) });
   await waitFor(async () => {
     const response = await fetch(web + '/admin/account/login', { signal: AbortSignal.timeout(1000) });
     return response.ok;
@@ -163,10 +164,10 @@ async function run(requestStop, g2) {
 
 async function main() {
   const [command, runId] = process.argv.slice(2);
-  const g2 = command === '--g2' && process.argv.length === 3;
-  if (command && !g2) {
+  const fixtureMode = ['--g2', '--g3'].includes(command) && process.argv.length === 3;
+  if (command && !fixtureMode) {
     if (command !== '--stop' || !/^[a-f0-9]{16}$/.test(runId || '') || process.argv.length !== 4) {
-      throw new Error('Cach dung: node scripts/acceptance-g1.cjs [--g2 | --stop RunID]');
+      throw new Error('Cach dung: node scripts/acceptance-g1.cjs [--g2 | --g3 | --stop RunID]');
     }
     fs.writeFileSync(path.join(runs, runId, 'stop.request'), '', { flag: 'a' });
     console.log('Da gui yeu cau dung fixture', runId);
@@ -182,7 +183,7 @@ async function main() {
   process.once('SIGINT', requestStop);
   process.once('SIGTERM', requestStop);
   try {
-    await run(requestStop, g2);
+    await run(requestStop, command);
     const stopped = await Promise.race([stop, ...children.map(entry => entry.stopped)]);
     if (typeof stopped === 'string' && !['SIGINT', 'SIGTERM'].includes(stopped)) throw new Error(stopped);
   } catch (error) {

@@ -247,6 +247,10 @@ it('debit confirm marks paid and queues tickets',async()=> {
   assert.equal(confirmed.code,'success',confirmed.text);
   const paid=await Order.findById(order.id).lean();
   assert.equal(paid.paymentStatus,'paid');
+  const settled=await Tx.findById(tx.id).lean();
+  assert.equal(paid.paidAmount,1500000);
+  assert.ok(settled.completedAt instanceof Date);
+  assert.deepEqual(paid.paidAt,settled.completedAt);
   assert.deepEqual(paid.items.map(i=>i.ticketStatus),['pending']);
   assert.equal((await Customer.findById(A.id)).totalSpent,31500000);
   const stored=await Card.findOne({cardId});
@@ -282,9 +286,13 @@ it('lost confirm is recovered by receipt exactly once and prepare stays blocked 
   const body={cardId,txRef:tx.txRef,response:receipt({txRef:tx.txRef,balance:500000,amount:1500000}),sw:'9000'};
   const first=await request('/card-api/sync/receipt',body,'');
   assert.equal(first.ok,true,first.text);
+  const timestamp=(await Tx.findById(tx.id)).completedAt;
+  assert.ok(timestamp instanceof Date);
   const second=await request('/card-api/sync/receipt',body,'');
   assert.equal(second.ok,false);
   assert.equal((await Order.findById(order.id)).paymentStatus,'paid');
+  assert.deepEqual((await Order.findById(order.id)).paidAt,timestamp);
+  assert.deepEqual((await Tx.findById(tx.id)).completedAt,timestamp);
   assert.equal((await Customer.findById(A.id)).totalSpent,31500000);
   assert.equal((await Card.findOne({cardId})).balance,500000);
 });

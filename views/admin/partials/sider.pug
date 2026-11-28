@@ -21,7 +21,7 @@ nav#admin-navigation.sider(aria-label="Điều hướng quản trị")
     else if (permissions.includes("order-trash"))
       li
         a(href=`/${pathAdmin}/order/trash`) <i class="fa-solid fa-trash-can"></i> Thùng rác đơn hàng
-    if (permissions.includes("card-view") || permissions.includes("card-issue"))
+    if (permissions.includes("customer-view") || permissions.includes("card-view") || permissions.includes("card-issue"))
       li
         a(href=`/${pathAdmin}/user/list`) <i class="fa-solid fa-user"></i> Quản lý khách hàng
     if (permissions.includes("card-view"))

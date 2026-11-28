@@ -618,7 +618,189 @@ input[type="checkbox"] {
   width: 100% !important;
   height: 100% !important;
 }
+.section-2 .inner-chart:has(canvas[hidden]) { height: auto; }
+.section-2 .inner-chart canvas[hidden] { display: none !important; }
 /* End Section 2 */
+
+/* Dashboard statistics and customer detail */
+.dashboard-stats { margin-top: 28px; }
+.dashboard-stats > h2,
+.customer-history > h2 { margin: 0 0 14px; font-size: 19px; font-weight: 800; }
+.finance-kpis,
+.finance-groups,
+.finance-disclosure-content,
+.customer-wallet-columns { display: grid; gap: 14px; }
+.finance-kpis { grid-template-columns: repeat(auto-fit, minmax(min(165px, 100%), 1fr)); margin: 0 0 14px; }
+.finance-groups { grid-template-columns: repeat(auto-fit, minmax(min(254px, 100%), 1fr)); margin-bottom: 14px; }
+.finance-kpi,
+.ca-card.finance-card { min-width: 0; border: 1px solid var(--ca-border); background: #fff; }
+.finance-kpi { padding: 14px; border-radius: 12px; background: #f8faff; }
+.finance-icon {
+  display: inline-grid;
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: 8px;
+  background: #eef3ff;
+  color: #2559aa;
+  font-size: 14px;
+}
+.finance-kpi dt { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 750; }
+.finance-kpi dd { margin: 9px 0 0; }
+.finance-kpi dd > .finance-value { display: block; font-size: clamp(19px, 2vw, 24px); line-height: 1.2; font-weight: 800; }
+.finance-kpi small { display: block; margin-top: 5px; color: #545f73; font-weight: 650; font-size: 12px; }
+.ca-card.finance-card { padding: clamp(13px, 2vw, 19px); margin: 0; }
+.dashboard-stats .ca-card-title,
+.customer-detail .ca-card-title { margin: 0; font-size: 17px; font-weight: 800; }
+.finance-card .ca-card-title i { color: inherit; }
+.finance-scope { margin: 6px 0 10px; color: #545f73; font-size: 13px; line-height: 1.35; }
+.finance-list,
+.customer-fields { margin: 0; }
+.finance-row,
+.customer-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid #edf0f5;
+  font-size: 13px;
+}
+.finance-row:last-child,
+.customer-field:last-child { border-bottom: 0; }
+.finance-row dt,
+.customer-field dt { color: #4d586b; font-weight: 650; overflow-wrap: anywhere; }
+.finance-row dd,
+.customer-field dd { margin: 0; text-align: right; }
+.finance-row dd { white-space: nowrap; }
+.finance-value,
+.customer-history-money,
+.customer-field dd { font-variant-numeric: tabular-nums; }
+.finance-value { font-weight: 800; color: var(--color-text); }
+.is-confirmed .finance-value { color: #08745e; }
+.is-waiting .finance-value { color: #814613; }
+.is-attention .finance-value { color: #a22d29; }
+.finance-value.is-zero { color: #5d6677; }
+.finance-highlights {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(230px, 100%), 1fr));
+  gap: 8px;
+}
+.finance-highlights .finance-row {
+  padding: 10px;
+  border: 1px solid #e7ebf4;
+  border-radius: 8px;
+  background: #f8faff;
+}
+.finance-disclosure { margin-top: 14px; }
+.finance-disclosure summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  min-height: 36px;
+  padding: 6px 9px;
+  border-radius: 7px;
+  color: #2559aa;
+  font-weight: 800;
+  font-size: 13px;
+  cursor: pointer;
+  list-style: none;
+}
+.finance-disclosure summary::-webkit-details-marker { display: none; }
+.finance-disclosure summary:hover { background: #eef3ff; }
+.finance-disclosure .finance-collapse,
+.finance-disclosure[open] .finance-expand { display: none; }
+.finance-disclosure[open] .finance-collapse { display: inline; }
+.finance-disclosure[open] summary i { transform: rotate(180deg); }
+.finance-disclosure-content { grid-template-columns: repeat(auto-fit, minmax(min(250px, 100%), 1fr)); padding-top: 10px; }
+.finance-disclosure-content > section { padding: 12px; border: 1px solid #e7ebf4; border-radius: 9px; }
+.finance-disclosure-content h4,
+.customer-wallet h3 { margin: 0 0 4px; font-size: 14px; font-weight: 800; }
+.ca-btn.dashboard-orders-link { display: flex; width: fit-content; margin-bottom: 24px; }
+
+.customer-breadcrumb ol,
+.customer-breadcrumb li { display: flex; align-items: baseline; gap: 8px; }
+.customer-breadcrumb ol { list-style: none; margin: 0 0 10px; padding: 0; flex-wrap: wrap; font-size: 13px; }
+.customer-breadcrumb li { min-width: 0; }
+.customer-breadcrumb a,
+.customer-card-id,
+.customer-history-table a { color: #2559aa; font-weight: 750; }
+.customer-breadcrumb a:hover,
+.customer-card-id:hover,
+.customer-history-table a:hover { text-decoration: underline; }
+.customer-breadcrumb a i { margin-right: 6px; }
+.customer-breadcrumb [aria-current] { font-weight: 750; overflow-wrap: anywhere; }
+.customer-breadcrumb [aria-current] i { color: #697386; font-size: 10px; }
+.customer-detail .box-title { margin-bottom: 18px; }
+.customer-tabs {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  padding: 4px;
+  margin: 0 0 16px;
+  border: 1px solid var(--ca-border);
+  border-radius: 12px;
+  background: #fff;
+}
+.customer-tabs a {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 7px;
+  min-height: 42px;
+  padding: 0 13px;
+  border-radius: 8px;
+  color: #4d586b;
+  font-size: 14px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+.customer-tabs a:hover { background: #f5f6fa; color: #254f93; }
+.customer-tabs a[aria-current="page"] { background: #edf3ff; color: #234f9e; box-shadow: inset 0 -2px #356ac1; font-weight: 800; }
+.customer-tabs a:focus-visible { outline-offset: -3px; }
+.ca-layout-detail.customer-profile { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.customer-profile > .ca-card { min-width: 0; padding: clamp(14px, 2vw, 21px); border-color: var(--ca-border); }
+.customer-panel-heading { display: flex; align-items: center; gap: 10px; margin-bottom: 9px; }
+.profile-avatar.customer-avatar { width: 42px; height: 42px; }
+.customer-field { grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); }
+.customer-field dd { font-weight: 750; overflow-wrap: anywhere; }
+.customer-field .badge { max-width: 100%; }
+.customer-detail .badge-green { color: #076b58; }
+.customer-detail .badge-orange { color: #79420e; }
+.customer-detail .badge-red { color: #a32725; }
+.customer-detail .badge-blue { color: #26559c; }
+.customer-card-id,
+.customer-observed { display: block; margin-top: 4px; }
+.customer-observed { color: #545f73; font-weight: 650; }
+.customer-wallet { grid-column: 1 / -1; }
+.customer-wallet-columns { grid-template-columns: repeat(auto-fit, minmax(min(305px, 100%), 1fr)); gap: 12px 24px; }
+.customer-wallet .customer-field > dd > span:first-child { font-size: 15px; }
+.customer-history-table { border: 1px solid var(--ca-border); border-radius: 12px; background: #fff; }
+.table-2.customer-history-table table { min-width: 660px; }
+.customer-history-table:has(.customer-ledger-code) table { min-width: 720px; }
+.table-2.customer-history-table table thead tr th { background: #f3f6fc; }
+.table-2.customer-history-table table tbody tr td { padding-block: 12px; }
+.customer-history-table .customer-history-money { text-align: right; font-weight: 800; white-space: nowrap; }
+.customer-history-date,
+.customer-ledger-code { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.customer-history-reference { display: flex; align-items: flex-start; flex-direction: column; gap: 4px; }
+.customer-history-table .customer-history-empty td { padding: 28px 12px; color: #545f73; }
+.customer-history-table:has(.customer-history-empty) table { min-width: 0; }
+.customer-history-table:has(.customer-history-empty) th { white-space: normal; }
+.customer-detail .section-7 { margin-top: 12px; }
+
+@media (max-width: 719.98px) {
+  .ca-layout-detail.customer-profile { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 575.98px) {
+  .finance-kpis { grid-template-columns: 1fr; gap: 10px; }
+  .finance-highlights { grid-template-columns: 1fr; }
+  .ca-btn.dashboard-orders-link { margin-bottom: 20px; }
+  .customer-tabs a { padding-inline: 10px; }
+}
 
 /* Section 3 */
 .section-3 {

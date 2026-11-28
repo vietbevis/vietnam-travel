@@ -1,0 +1,112 @@
+mixin financeValue(key, value, unit)
+  span.finance-value(class=(value === 0 ? 'is-zero' : undefined) data-finance=(unit ? undefined : key) data-finance-count=(unit ? key : undefined))= value.toLocaleString('vi-VN') + (unit ? '' : ' đ')
+
+mixin financeKpi(title, icon, tone)
+  .finance-kpi(class=tone)
+    dt
+      span.finance-icon
+        i(class='fa-solid ' + icon aria-hidden="true")
+      span= title
+    dd
+      block
+
+mixin financeRow(title, key, value, unit, tone)
+  .finance-row(class=tone)
+    dt= title
+    dd
+      +financeValue(key, value, unit)
+      if unit
+        |  #{unit}
+
+mixin financeGroup(id, title, icon, scope)
+  section.ca-card.finance-card(aria-labelledby=id)
+    h3.ca-card-title(id=id)
+      span.finance-icon
+        i(class='fa-solid ' + icon aria-hidden="true")
+      span= title
+    p.finance-scope= scope
+    block
+
+mixin dashboardStatistics(finance, paymentMethods)
+  - const { period, wallet, reconciliation: rec } = finance
+  section.dashboard-stats(aria-labelledby="dashboard-statistics-title")
+    h2#dashboard-statistics-title Thống kê chi tiết
+    dl.finance-kpis
+      +financeKpi('Đơn đặt trong kỳ', 'fa-clipboard-list')
+        +financeValue('orderCount', period.orderCount, 'đơn')
+        small Gồm đơn đã lưu trữ
+      +financeKpi('Tiền bán tour đã xác minh', 'fa-coins', 'is-confirmed')
+        +financeValue('gross', period.gross)
+        small Trong kỳ
+      +financeKpi('Nghĩa vụ hoàn phát sinh', 'fa-rotate-left', 'is-waiting')
+        +financeValue('refundObligations', period.refundObligations)
+        small Trong kỳ
+      if wallet
+        +financeKpi('Nạp ví đã ghi nhận', 'fa-wallet', 'is-confirmed')
+          +financeValue('topupReceived', wallet.topupReceived)
+          small Trong kỳ
+        +financeKpi('Ghi nợ chờ xác nhận/đối soát', 'fa-clock', 'is-waiting')
+          +financeValue('unresolvedDebitAmount', wallet.unresolvedDebit.amount)
+          small
+            +financeValue('unresolvedDebitCount', wallet.unresolvedDebit.count, 'khoản')
+            |  khoản · Toàn thời gian
+
+    .finance-groups
+      +financeGroup('finance-methods-title', 'Doanh thu theo phương thức', 'fa-money-bill-wave', 'Tiền thu đã xác minh trong kỳ')
+        dl.finance-list.is-confirmed
+          each method in paymentMethods
+            +financeRow(method.label, method.value, period.methods[method.value])
+      if wallet
+        +financeGroup('finance-wallet-title', 'Nạp ví', 'fa-wallet', 'Ghi chip trong kỳ và trạng thái toàn thời gian')
+          dl.finance-list
+            +financeRow('Đã ghi chip trong kỳ', 'topupChip', wallet.topupChip, null, 'is-confirmed')
+            +financeRow('Chờ ghi/đối soát', 'topupPending', wallet.topupPending, null, 'is-waiting')
+            +financeRow('Giữ vì hạn mức', 'topupCapHeld', wallet.topupCapHeld, null, 'is-waiting')
+            +financeRow('Chờ thanh toán', 'topupAwaitingPayment', wallet.topupAwaitingPayment, null, 'is-waiting')
+            +financeRow('Nạp thất bại', 'topupFailed', wallet.topupFailed, null, 'is-attention')
+      +financeGroup('finance-refunds-title', 'Hoàn tiền', 'fa-rotate-left', 'Hoàn đã thực hiện trong kỳ và khoản còn chờ')
+        dl.finance-list
+          +financeRow('Hoàn đã hoàn tất trong kỳ', 'refunded', period.refunded, null, 'is-confirmed')
+          +financeRow('Qua chip trong kỳ', 'refundChip', period.refundChip, null, 'is-confirmed')
+          +financeRow('Tiền mặt khi thu hồi trong kỳ', 'refundCash', period.refundCash, null, 'is-confirmed')
+          +financeRow('Đang chờ · toàn thời gian', 'refundsPending', rec.refundsPending, null, 'is-waiting')
+          +financeRow('Giữ vì hạn mức · toàn thời gian', 'refundsCapHeld', rec.refundsCapHeld, null, 'is-waiting')
+    +financeGroup('finance-reconciliation-title', 'Đối soát dữ liệu', 'fa-circle-exclamation', 'Toàn thời gian')
+      dl.finance-list.finance-highlights
+        +financeRow('Thiếu thời điểm thanh toán', 'salesMissingTimeCount', rec.salesMissingTime.count, 'đơn', 'is-attention')
+        +financeRow('Tổng tiền đơn chưa xác minh, thiếu mốc thanh toán', 'salesSnapshotAmount', rec.salesMissingTime.snapshotAmount, null, 'is-attention')
+        +financeRow('Hoàn cần đối soát', 'refundUnverified', rec.refundUnverified, 'khoản', 'is-attention')
+      details#finance-reconciliation-details.finance-disclosure
+        summary
+          i.fa-solid.fa-chevron-down(aria-hidden="true")
+          span.finance-expand Xem chi tiết đối soát
+          span.finance-collapse Thu gọn chi tiết đối soát
+        .finance-disclosure-content
+          section
+            h4 Thanh toán đơn
+            dl.finance-list
+              +financeRow('Tiền có chứng cứ, thiếu thời điểm', 'salesUndatedAmount', rec.salesMissingTime.amount, null, 'is-attention')
+              +financeRow('Đơn thiếu số tiền', 'salesMissingAmount', rec.salesMissingAmount, 'đơn', 'is-attention')
+              +financeRow('Có tổng nhưng thiếu chứng cứ số tiền', 'salesUnverifiedAmount', rec.salesUnverifiedAmount, 'đơn', 'is-attention')
+              +financeRow('Phương thức chưa xác định', 'unsupportedMethod', rec.unsupportedMethod, 'đơn', 'is-attention')
+          section
+            h4 Hoàn tiền
+            dl.finance-list
+              +financeRow('Thiếu thời điểm ghi nhận', 'refundsMissingRecordedTime', rec.refundsMissingRecordedTime, 'khoản', 'is-attention')
+              +financeRow('Thiếu thời điểm xác nhận', 'refundsMissingTime', rec.refundsMissingTime, 'khoản', 'is-attention')
+              +financeRow('Tiền hoàn thiếu thời điểm xác nhận', 'refundsUndatedAmount', rec.refundsUndatedAmount, null, 'is-attention')
+          if wallet
+            section
+              h4 Ghi nợ ví
+              dl.finance-list
+                +financeRow('Đã ghi sổ, chưa khớp chứng cứ', 'unlinkedDebitCount', wallet.unlinkedDebit.count, 'khoản', 'is-attention')
+                +financeRow('Số tiền chưa khớp chứng cứ', 'unlinkedDebitAmount', wallet.unlinkedDebit.amount, null, 'is-attention')
+                +financeRow('Có biên nhận đến muộn', 'lateDebitCount', wallet.lateDebit.count, 'khoản', 'is-attention')
+                +financeRow('Số tiền có biên nhận đến muộn', 'lateDebitAmount', wallet.lateDebit.amount, null, 'is-attention')
+            section
+              h4 Nạp ví
+              dl.finance-list
+                +financeRow('Thiếu thời điểm thu', 'topupMissingRecordedTime', wallet.topupMissingRecordedTime, 'khoản', 'is-attention')
+                +financeRow('Thiếu thời điểm ghi chip', 'topupMissingTime', wallet.topupMissingTime, 'khoản', 'is-attention')
+                +financeRow('Số tiền thiếu thời điểm ghi chip', 'topupUndatedAmount', wallet.topupUndatedAmount, null, 'is-attention')
+                +financeRow('Nạp cần đối soát', 'topupUnverified', wallet.topupUnverified, 'khoản', 'is-attention')

@@ -9,6 +9,8 @@ const schema = new mongoose.Schema({
   status: { type: String, required: true, enum: ['awaiting-payment', 'pending-card', 'sent', 'done', 'failed', 'reconciliation'], default: 'pending-card' },
   // Tiền cổng đã thu nhưng chưa được phép ghi ví: giữ nghĩa vụ trên giao dịch gốc, không tự hoàn/chuyển tiền.
   paymentReceivedAt: Date,
+  // Thời điểm server nhận và áp dụng biên nhận chip trong transaction.
+  completedAt: Date,
   reconciliationReason: { type: String, enum: ['wallet-cap', 'card-unavailable', 'gateway-conflict'] },
   // Lý do giao dịch bị đóng: nạp online hết hạn/cổng báo thất bại; giao dịch chưa ký bị huỷ (voided),
   // chuyển sang thẻ mới khi cấp lại (moved), đã hoàn tiền mặt khi thu hồi (refunded) hoặc debit đã ký nhưng

@@ -88,7 +88,8 @@ async function seedFixtures() {
   await model('setting-website-info').create({ websiteName: 'KMA Travel - G1 Fixture', logo: '/assets/images/logo.png' });
   const booking = {
     fullName: 'Khách G1 Fixture', phone: '0900000022', status: 'initial', paymentStatus: 'unpaid',
-    paymentMethod: 'money', subTotal: 300000, discount: 0, total: 300000
+    paymentMethod: 'money', subTotal: 300000, discount: 0, total: 300000,
+    ...(process.env.G3_ACCEPTANCE === '1' ? { createdAt: new Date('2026-10-01T00:00:00Z') } : {})
   };
   function item(entry) {
     return { tourId: entry.id, name: entry.name, avatar: entry.avatar, locationFrom: city.id, departureDate,
@@ -104,6 +105,12 @@ async function seedFixtures() {
     fixture.g2 = await require('./acceptance-g2-seed.cjs')({
       Role, Account, Category, Tour, Order, Tx: model('card-transaction'),
       actor, backup, city, customer, hash, domain, common, booking, item
+    });
+  }
+  if (process.env.G3_ACCEPTANCE === '1') {
+    fixture.g3 = await require('./acceptance-g3-seed.cjs')({
+      Role, Account, Order, Customer, Card: model('card'), Tx: model('card-transaction'),
+      hash, domain, item: item(tour)
     });
   }
   return fixture;
