@@ -161,19 +161,12 @@ if (revenueChart && window.Chart) {
 // Hết Biểu đồ doanh thu
 
 // Category management
-const categorySection = document.querySelector("[data-category-list]");
 const categoryForm = document.querySelector("#category-create-form, #category-edit-form");
 
-async function submitCategoryRequest(button, url, options, onSuccess, confirmDelete) {
+async function submitCategoryRequest(button, url, options, onSuccess) {
   if (button.disabled) return;
   button.disabled = true;
   try {
-    if (confirmDelete) {
-      const message = "Bạn có chắc muốn xóa danh mục đã chọn?";
-      const confirmed = await window.confirmTravelAction({ title: 'Xác nhận xóa danh mục', message, confirmText: 'Xóa' });
-      if (!confirmed) return;
-    }
-
     const request = typeof options === 'function' ? await options() : options;
     const response = await fetch(url, request);
     if (response.redirected) {
@@ -229,51 +222,12 @@ if (categoryForm) {
       appendAdminImages(categoryForm, data, ['avatar']);
       return { method: listUrl ? "POST" : "PATCH", body: data };
     }, () => {
-      if (listUrl) window.location.assign(listUrl);
+      if (listUrl) window.location.assign(listReturnUrl(listUrl));
       else window.location.reload();
     });
   });
 }
 
-if (categorySection) {
-  const reload = () => window.location.reload();
-  for (const button of document.querySelectorAll("[category-delete]")) {
-    button.addEventListener("click", () => {
-      submitCategoryRequest(button, button.dataset.api, { method: "PATCH" }, reload, true);
-    });
-  }
-
-  const bulk = document.querySelector("[category-change-multi]");
-  if (bulk) {
-    const select = bulk.querySelector("select");
-    const button = bulk.querySelector("button");
-    const checkAllCategories = document.querySelector("[check-all]");
-    const checkboxes = [...document.querySelectorAll("[check-item]")];
-
-    for (const checkbox of checkboxes) {
-      checkbox.addEventListener("change", () => {
-        const selected = checkboxes.filter(item => item.checked).length;
-        checkAllCategories.checked = selected === checkboxes.length;
-        checkAllCategories.indeterminate = selected > 0 && selected < checkboxes.length;
-      });
-    }
-
-    button.addEventListener("click", () => {
-      const option = select.value;
-      const ids = checkboxes.filter(item => item.checked).map(item => item.getAttribute("check-item"));
-      if (!option || !ids.length) {
-        showTravelNotice("Vui lòng chọn hành động và ít nhất một danh mục!");
-        return;
-      }
-
-      submitCategoryRequest(button, bulk.dataset.api, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ option, ids })
-      }, reload, option === "delete");
-    });
-  }
-}
 // End Category management
 
 const tourForm = document.querySelector('#tour-create-form, #tour-edit-form');
@@ -281,11 +235,17 @@ if (tourForm) {
   const editing = tourForm.matches('#tour-edit-form');
   const fields = ['name', 'category', 'position', 'status', 'time', 'vehicle', 'departureDate'];
   const stockFields = ['stockAdult', 'stockChildren', 'stockBaby'];
+  const priceGroups = [['priceAdult', 'priceNewAdult'], ['priceChildren', 'priceNewChildren'], ['priceBaby', 'priceNewBaby']];
   const originalStock = Object.fromEntries(stockFields.map(name => [name, tourForm.elements[name].value]));
+  const originalFields = Object.fromEntries(fields.map(name => [name, tourForm.elements[name].value]));
+  const originalPrices = Object.fromEntries(priceGroups.flat().map(name => [name, TravelMoney.value(tourForm.elements[name])]));
 
   submitAdminForm(tourForm, async () => {
     const data = new FormData();
-    for (const name of fields) data.append(name, tourForm.elements[name].value);
+    for (const name of fields) {
+      const value = tourForm.elements[name].value;
+      if (!editing || name === 'name' || value !== originalFields[name]) data.append(name, value);
+    }
     const stockBaseline = {};
     for (const name of stockFields) {
       const current = tourForm.elements[name].value;
@@ -295,10 +255,11 @@ if (tourForm) {
       }
     }
     if (editing && Object.keys(stockBaseline).length) data.append('stockBaseline', JSON.stringify(stockBaseline));
-    for (const input of tourForm.querySelectorAll('[data-vnd]')) {
-      const value = TravelMoney.value(input);
-      if (Number.isNaN(value)) throw new Error('Vui lòng kiểm tra số tiền trong biểu mẫu.');
-      data.append(input.name, value ?? '');
+    for (const names of priceGroups) {
+      const values = names.map(name => TravelMoney.value(tourForm.elements[name]));
+      if (editing && names.every((name, index) => Object.is(originalPrices[name], values[index]))) continue;
+      if (values.some(Number.isNaN)) throw new Error('Vui lòng kiểm tra số tiền trong biểu mẫu.');
+      for (const [index, name] of names.entries()) data.append(name, values[index] ?? '');
     }
     const locations = Array.from(tourForm.querySelectorAll('input[name="locations"]:checked'), input => input.value);
     data.append('locations', JSON.stringify(locations));
@@ -329,7 +290,7 @@ if (tourForm) {
     return { url, method: editing ? 'PATCH' : 'POST', body: data };
   }, () => {
     if (editing) window.location.reload();
-    else window.location.assign('/' + pathAdmin + '/tour/list');
+    else window.location.assign(listReturnUrl('/' + pathAdmin + '/tour/list'));
   });
 }
 
@@ -338,12 +299,21 @@ const orderEditForm = document.querySelector("#order-edit-form");
 const orderEditButton = orderEditForm?.querySelector('button[type="submit"]');
 if (orderEditButton) {
   const feedback = orderEditForm.querySelector('[data-form-status]');
+  const fields = orderEditForm.elements;
+  const editableNames = ["fullName", "phone", "note", "status", "paymentMethod", "paymentStatus"];
+  const initial = Object.fromEntries(editableNames.map(name => [name, fields[name].value]));
   orderEditForm.addEventListener("submit", async event => {
     event.preventDefault();
     if (orderEditButton.disabled || !orderEditForm.reportValidity()) return;
     orderEditButton.disabled = true;
-    const fields = orderEditForm.elements;
     const status = fields.status.value;
+    const dataFinal = Object.fromEntries(editableNames.filter(name => !fields[name].disabled && fields[name].value !== initial[name])
+      .map(name => [name, fields[name].value]));
+    if (!Object.keys(dataFinal).length) {
+      feedback.textContent = "Chưa có thay đổi.";
+      orderEditButton.disabled = false;
+      return;
+    }
     const refundAmount = Number(orderEditForm.dataset.cardRefund);
     feedback.textContent = '';
     feedback.classList.remove('form-status-error');
@@ -359,9 +329,15 @@ if (orderEditButton) {
           confirmText: hasRefund ? "Hủy đơn và hoàn tiền" : "Hủy đơn"
         });
         if (!confirmed) return;
+      } else if (dataFinal.status || dataFinal.paymentMethod || dataFinal.paymentStatus) {
+        const paid = dataFinal.paymentStatus === "paid";
+        const confirmed = await confirmTravelAction({
+          title: paid ? "Xác nhận đã nhận thanh toán?" : "Xác nhận cập nhật đơn hàng?",
+          message: paid ? "Chỉ xác nhận sau khi đã kiểm tra số tiền thực nhận." : "Phương thức hoặc trạng thái đã chọn sẽ được lưu vào đơn.",
+          confirmText: "Xác nhận"
+        });
+        if (!confirmed) return;
       }
-      const dataFinal = { status };
-      for (const key of ["fullName", "phone", "note", "paymentMethod", "paymentStatus"]) dataFinal[key] = fields[key].value;
       feedback.textContent = 'Đang cập nhật đơn hàng…';
       const data = await travelRequest(orderEditForm.dataset.api, {
         method: "PATCH",
@@ -525,6 +501,131 @@ async function runListAction(button, url, options, confirmation) {
   }
 }
 
+const adminList = document.querySelector("[data-admin-list]");
+
+function listReturnUrl(destination) {
+  const url = new URL(destination, window.location.origin);
+  try {
+    const previous = document.referrer && new URL(document.referrer);
+    if (previous && previous.origin === url.origin && previous.pathname === url.pathname) {
+      window.history.replaceState({ ...window.history.state, adminListReturn: previous.href }, "");
+      return previous.href;
+    }
+    // Reload do form vừa lưu có thể dùng trang hiện tại làm referrer. Giữ URL cũ trong history của tab.
+    const returnTo = window.history.state?.adminListReturn;
+    if (typeof returnTo === "string") {
+      const saved = new URL(returnTo);
+      if (saved.origin === url.origin && saved.pathname === url.pathname) return saved.href;
+    }
+    if (/\/(category|tour)\/(list|trash)$/.test(url.pathname)) {
+      url.search = sessionStorage.getItem("admin-list:" + url.pathname) || "";
+    }
+  } catch {}
+  return url.href;
+}
+
+if (adminList) {
+  const size = document.querySelector("[page-size]");
+  const page = document.querySelector("[pagination]");
+  const current = new URL(window.location.href);
+  function listUrl(pageSize) {
+    const url = new URL(adminList.action);
+    for (const [key, value] of new FormData(adminList)) {
+      if (value.trim()) url.searchParams.set(key, value.trim());
+    }
+    if (pageSize && pageSize !== "10") url.searchParams.set("pageSize", pageSize);
+    else url.searchParams.delete("pageSize");
+    return url;
+  }
+  if (["category", "tour"].includes(adminList.dataset.resource)) {
+    const saved = listUrl(size?.value);
+    if (page?.value && page.value !== "1") saved.searchParams.set("page", page.value);
+    try { sessionStorage.setItem("admin-list:" + saved.pathname, saved.search); } catch {}
+  }
+  adminList.addEventListener("submit", event => {
+    event.preventDefault();
+    window.location.assign(listUrl(size?.value).href);
+  });
+  adminList.querySelectorAll("[data-list-filter]").forEach(control => {
+    control.addEventListener("change", () => adminList.requestSubmit());
+  });
+  size?.addEventListener("change", () => window.location.assign(listUrl(size.value).href));
+  page?.addEventListener("change", () => {
+    const url = listUrl(size?.value);
+    // Từ khóa đang gõ chỉ áp dụng khi người dùng gửi form tìm kiếm.
+    const search = adminList.querySelector('input[type="search"]');
+    url.searchParams.delete(search.name);
+    if (current.searchParams.get(search.name)) url.searchParams.set(search.name, current.searchParams.get(search.name));
+    url.searchParams.set("page", page.value);
+    window.location.assign(url.href);
+  });
+}
+
+for (const link of document.querySelectorAll("[data-list-return]")) {
+  link.href = listReturnUrl(link.href);
+}
+
+if (adminList) {
+  const bulk = adminList.querySelector("[data-list-bulk]");
+  const selectAll = document.querySelector("[data-list-check-all]");
+  const checkboxes = Array.from(document.querySelectorAll("[data-list-check]:not(:disabled)"));
+  const listActions = Array.from(document.querySelectorAll("[data-list-action]"));
+  let busy = false;
+
+  function updateSelection() {
+    if (!selectAll) return;
+    const selected = checkboxes.filter(item => item.checked).length;
+    selectAll.checked = selected > 0 && selected === checkboxes.length;
+    selectAll.indeterminate = selected > 0 && selected < checkboxes.length;
+  }
+
+  function clearSelection() {
+    for (const checkbox of checkboxes) checkbox.checked = false;
+    updateSelection();
+  }
+  window.addEventListener("pageshow", clearSelection);
+  selectAll?.addEventListener("change", () => {
+    for (const checkbox of checkboxes) checkbox.checked = selectAll.checked;
+    updateSelection();
+  });
+  for (const checkbox of checkboxes) checkbox.addEventListener("change", updateSelection);
+
+  const resource = { category: "danh mục", tour: "tour", order: "đơn hàng" }[adminList.dataset.resource];
+  const confirmations = {
+    delete: { title: "Chuyển " + resource + " vào thùng rác?", message: "Các mục đã chọn sẽ được ẩn khỏi danh sách đang quản lý.", confirmText: "Chuyển vào thùng rác" },
+    undo: { title: "Khôi phục " + resource + "?", message: "Các mục đủ điều kiện sẽ xuất hiện lại trong danh sách.", confirmText: "Khôi phục" },
+    "delete-destroy": {
+      title: "Xóa vĩnh viễn " + resource + "?",
+      message: adminList.dataset.resource === "category"
+        ? "Thao tác này không thể khôi phục. Chỉ có thể xóa danh mục trong thùng rác khi không còn danh mục con và tour tham chiếu."
+        : "Thao tác này không thể khôi phục. Hệ thống sẽ kiểm tra lịch sử đặt tour.",
+      confirmText: "Xóa vĩnh viễn"
+    },
+    active: { title: "Cho phép hoạt động?", message: "Các mục đã chọn sẽ được chuyển sang hoạt động.", confirmText: "Cho phép hoạt động" },
+    inactive: { title: "Tạm dừng hoạt động?", message: "Các mục đã chọn sẽ được chuyển sang tạm dừng.", confirmText: "Tạm dừng" }
+  };
+  async function act(button, endpoint, action, ids) {
+    if (busy || !confirmations[action]) return;
+    busy = true;
+    try {
+      const options = ids ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify({ option: action, ids }) } : {};
+      await runListAction(button, endpoint, options, confirmations[action]);
+    } finally {
+      busy = false;
+    }
+  }
+  for (const button of listActions) {
+    button.addEventListener("click", () => act(button, button.dataset.api, button.dataset.listAction));
+  }
+  const bulkButton = bulk?.querySelector("button");
+  bulkButton?.addEventListener("click", () => {
+    const action = bulk.querySelector("select").value;
+    const ids = checkboxes.filter(item => item.checked).map(item => item.getAttribute("check-item"));
+    if (!action || !ids.length) return showTravelNotice("Vui lòng chọn hành động và ít nhất một mục.", "error");
+    act(bulkButton, bulk.dataset.api, action, ids);
+  });
+}
+
 document.querySelectorAll("[button-delete]").forEach(button => {
   button.addEventListener("click", () => {
     const action = button.dataset.confirm;
@@ -542,7 +643,7 @@ document.querySelectorAll("[button-delete]").forEach(button => {
 });
 
 // Filter Status
-const filterStatus = document.querySelector("[filter-status]");
+const filterStatus = document.querySelector("[filter-status]:not([data-list-filter])");
 if (filterStatus) {
   const url = new URL(window.location.href);
 
@@ -555,7 +656,6 @@ if (filterStatus) {
       url.searchParams.delete("status");
     }
 
-    if (categorySection) url.searchParams.delete("page");
     window.location.href = url.href;
   })
 
@@ -568,7 +668,7 @@ if (filterStatus) {
 // End Filter Status
 
 // Filter Created By
-const filterCreatedBy = document.querySelector("[filter-created-by]");
+const filterCreatedBy = document.querySelector("[filter-created-by]:not([data-list-filter])");
 if (filterCreatedBy) {
   const url = new URL(window.location.href);
 
@@ -581,7 +681,6 @@ if (filterCreatedBy) {
       url.searchParams.delete("createdBy");
     }
 
-    if (categorySection) url.searchParams.delete("page");
     window.location.href = url.href;
   })
 
@@ -594,7 +693,7 @@ if (filterCreatedBy) {
 // End Filter Created By
 
 // Filter Start Date
-const filterStartDate = document.querySelector("[filter-start-date]");
+const filterStartDate = document.querySelector("[filter-start-date]:not([data-list-filter])");
 if (filterStartDate) {
   const url = new URL(window.location.href);
 
@@ -607,7 +706,6 @@ if (filterStartDate) {
       url.searchParams.delete("startDate");
     }
 
-    if (categorySection) url.searchParams.delete("page");
     window.location.href = url.href;
   })
 
@@ -620,7 +718,7 @@ if (filterStartDate) {
 // End Filter Start Date
 
 // Filter End Date
-const filterEndDate = document.querySelector("[filter-end-date]");
+const filterEndDate = document.querySelector("[filter-end-date]:not([data-list-filter])");
 if (filterEndDate) {
   const url = new URL(window.location.href);
 
@@ -633,7 +731,6 @@ if (filterEndDate) {
       url.searchParams.delete("endDate");
     }
 
-    if (categorySection) url.searchParams.delete("page");
     window.location.href = url.href;
   })
 
@@ -658,7 +755,7 @@ if (filterReset) {
 // End Filter Reset
 
 // Check All
-const checkAll = document.querySelector("[check-all]");
+const checkAll = document.querySelector("[check-all]:not([data-list-check-all])");
 if (checkAll) {
   checkAll.addEventListener("click", () => {
     const listCheckItem = document.querySelectorAll("[check-item]");
@@ -696,7 +793,7 @@ if (changeMulti) {
 // End Change Multi
 
 // Search
-const search = document.querySelector("[search]");
+const search = document.querySelector("[search]:not([data-admin-list] [search])");
 if (search) {
   const url = new URL(window.location.href);
 
@@ -710,8 +807,7 @@ if (search) {
         url.searchParams.delete("keyword");
       }
 
-      if (categorySection) url.searchParams.delete("page");
-      window.location.href = url.href;
+        window.location.href = url.href;
     }
   })
 
@@ -725,7 +821,7 @@ if (search) {
 
 // Pagination
 const pagination = document.querySelector("[pagination]");
-if (pagination) {
+if (pagination && !adminList) {
   const url = new URL(window.location.href);
 
   // Lắng nghe thay đổi lựa chọn
@@ -742,12 +838,12 @@ if (pagination) {
 
   // Hiển thị lựa chọn mặc định
   const valueCurrent = url.searchParams.get("page");
-  if (valueCurrent && !categorySection) {
+  if (valueCurrent && !adminList) {
     pagination.value = valueCurrent;
   }
 }
 const pageSize = document.querySelector("[page-size]");
-if (pageSize) {
+if (pageSize && !adminList) {
   pageSize.addEventListener("change", () => {
     const url = new URL(window.location.href);
     url.searchParams.set("pageSize", pageSize.value);
@@ -755,25 +851,6 @@ if (pageSize) {
     window.location.href = url.href;
   });
 }
-
-// Phân trang danh sách đơn hàng
-const orderPageSelect = document.querySelector(
-  "[data-order-page]"
-);
-
-if (orderPageSelect) {
-  orderPageSelect.addEventListener("change", () => {
-    const url = new URL(window.location.href);
-
-    url.searchParams.set(
-      "page",
-      orderPageSelect.value
-    );
-
-    window.location.href = url.toString();
-  });
-}
-
 
 document.querySelectorAll("[data-order-soft-delete]").forEach(button => {
   button.addEventListener("click", () => {

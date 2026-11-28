@@ -3,6 +3,7 @@ const Tour = require("../../models/tour.model");
 const City = require("../../models/city.model");
 const moment = require("moment");
 const { sanitizeTourHtml } = require("../../helpers/tour-rich-text.helper");
+const { publicTourCategoryFilter } = require("../../helpers/category.helper");
 
 module.exports.detail = async (req, res) => {
   const slug = req.params.slug;
@@ -12,7 +13,8 @@ module.exports.detail = async (req, res) => {
     {
       slug: slug,
       status: "active",
-      deleted: false
+      deleted: false,
+      ...publicTourCategoryFilter(res.locals.categoryList)
     },
     {
       $inc: { viewCount: 1 }

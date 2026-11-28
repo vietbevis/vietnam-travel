@@ -1,106 +1,65 @@
-extends ../layouts/default.pug
+﻿extends ../layouts/default.pug
+include ../mixins/list-pagination.pug
+include ../mixins/admin-list.pug
 
 block main
-  h1.box-title Quản lý đơn hàng
-
-  form#order-filter-form(
-    method="GET"
-    action=`/${pathAdmin}/order/list`
-  )
-    //- Section 4
+  - const canRestore = trash && permissions.includes("order-edit")
+  - const canDelete = !trash && permissions.includes("order-delete")
+  - const canEdit = permissions.includes("order-edit")
+  - const base = `/${pathAdmin}/order`
+  - const listUrl = base + (trash ? "/trash" : "/list")
+  h1.box-title= trash ? "Thùng rác đơn hàng" : "Quản lý đơn hàng"
+  form#order-filter-form(method="get" action=listUrl data-admin-list data-resource="order")
     .section-4
       .inner-wrap
         .inner-item.inner-label
-          i.fa-solid.fa-filter
-          | Bộ lọc
-
-        .inner-item
-          select(name="status")
-            option(value="") Tất cả trạng thái
-            each item in orderStatuses
-              option(
-                value=item.value
-                selected=(filters.status === item.value)
-              )= item.label
-
-        .inner-item.inner-date
-          input(
-            type="date"
-            name="startDate"
-            value=filters.startDate
-          )
-          span -
-          input(
-            type="date"
-            name="endDate"
-            value=filters.endDate
-          )
-
-        .inner-item
-          select(name="paymentMethod")
-            option(value="") Tất cả phương thức
-            each item in paymentMethods
-              option(
-                value=item.value
-                selected=(filters.paymentMethod === item.value)
-              )= item.label
-
-        .inner-item
-          select(name="paymentStatus")
-            option(value="") Tất cả thanh toán
-            each item in paymentStatuses
-              option(
-                value=item.value
-                selected=(filters.paymentStatus === item.value)
-              )= item.label
-
-        .inner-item
-          button.inner-button-apply(type="submit")
-            i.fa-solid.fa-check
-            |  Áp dụng
-
-        .inner-item.inner-reset
-          a(href=`/${pathAdmin}/order/list`)
-            i.fa-solid.fa-rotate-left
-            | Xóa bộ lọc
-
-    //- Section 5
+          i.fa-solid.fa-filter(aria-hidden="true")
+          |  Bộ lọc
+        +listFilter("status", "Trạng thái đơn", orderStatuses, filters.status)
+        +listDates(trash ? "xóa" : "đặt", filters)
+        +listFilter("paymentMethod", "Phương thức thanh toán", paymentMethods, filters.paymentMethod)
+        +listFilter("paymentStatus", "Trạng thái thanh toán", paymentStatuses, filters.paymentStatus)
+        if trash
+          +listActor("deletedBy", "Người xóa", accountAdminList, filters.deletedBy)
+        +listReset(listUrl)
     .section-5
       .inner-wrap
-        .inner-search
-          i.fa-solid.fa-magnifying-glass
-          input(
-            type="search"
-            name="q"
-            value=filters.q
-            placeholder="Mã đơn, tên khách, SĐT"
-            maxlength="80"
-          )
-        .inner-button-create
-          button(type="submit") Tìm kiếm
+        if canRestore
+          +listBulk(listUrl + "/change-multi", [{value:"undo",label:"Khôi phục"}], orderList.length)
+        +listSearch("q", "Mã đơn, tên khách, SĐT", filters.q, pagination.limit)
+        if !trash && permissions.includes("order-trash")
+          .inner-button-trash
+            a(href=base + "/trash" data-list-return) Thùng rác
+        if trash && permissions.includes("order-view")
+          .inner-button-create
+            a(href=base + "/list" data-list-return) Về danh sách
 
-  //- Section 6
   .section-6
     .table-2
       table
         thead
           tr
+            if canRestore
+              th.inner-center
+                +listCheckAll("Chọn tất cả đơn đang hiển thị", orderList.length)
             th Mã
             th Thông tin khách
             th Danh sách tour
             th Thanh toán
             th Trạng thái
-            th(class="inner-center") Ngày đặt
-            th Hành động
+            th.inner-center Ngày đặt
+            if trash
+              th Xóa bởi
+            if !trash || canRestore
+              th Hành động
         tbody
-          if orderList.length === 0
+          each orderDetail in orderList
             tr
-              td(colspan="7") Không tìm thấy đơn hàng phù hợp.
-
-          each orderDetail in orderList                
-            tr
+              if canRestore
+                td.inner-center
+                  +listCheck(orderDetail.id, orderDetail.orderCode || "đơn đã xóa")
               td
-                .inner-code #{orderDetail.orderCode}
+                .inner-code= orderDetail.orderCode || "Không có dữ liệu"
               td
                 div Họ tên: #{orderDetail.fullName}
                 div SĐT: #{orderDetail.phone}
@@ -108,59 +67,49 @@ block main
               td
                 each item in orderDetail.items
                   .inner-item
-                    .inner-image
-                      img(src=item.avatar, alt=item.name)
+                    if item.avatar
+                      .inner-image
+                        img(src=item.avatar alt="")
                     .inner-content
-                      .inner-name #{item.name}
-                      .inner-quantity Người lớn: #{item.quantityAdult} x #{item.priceNewAdult.toLocaleString("vi-VN")} đ
-                      .inner-quantity Trẻ em: #{item.quantityChildren} x #{item.priceNewChildren.toLocaleString("vi-VN")} đ
-                      .inner-quantity Em bé: #{item.quantityBaby} x #{item.priceNewBaby.toLocaleString("vi-VN")} đ
+                      .inner-name= item.name
+                      .inner-quantity Người lớn: #{item.quantityAdult} x #[+listMoney(item.priceNewAdult)]
+                      .inner-quantity Trẻ em: #{item.quantityChildren} x #[+listMoney(item.priceNewChildren)]
+                      .inner-quantity Em bé: #{item.quantityBaby} x #[+listMoney(item.priceNewBaby)]
               td
-                div Tạm tính: #{orderDetail.subTotal.toLocaleString("vi-VN")} đ
-                div Giảm: #{orderDetail.discount.toLocaleString("vi-VN")} đ
-                //- div Mã giảm: TOURMUAHE2024
-                div Thanh toán: #{orderDetail.total.toLocaleString("vi-VN")} đ
+                div Tạm tính: #[+listMoney(orderDetail.subTotal)]
+                div Giảm: #[+listMoney(orderDetail.discount)]
+                div Thanh toán: #[+listMoney(orderDetail.total)]
                 div PTTT: #{orderDetail.paymentMethodName}
                 div TTTT: #{orderDetail.paymentStatusName}
               td
-                if (orderDetail.status == "initial")
-                  .badge.badge-orange #{orderDetail.statusName}
-                else if (orderDetail.status == "done")
-                  .badge.badge-green #{orderDetail.statusName}
-                else if (orderDetail.status == "cancel")
-                  .badge.badge-red #{orderDetail.statusName}
-              td(class="inner-center")
-                div #{orderDetail.createdAtTime}
-                div #{orderDetail.createdAtDate}
-              td
-                .inner-buttons
-                  a(
-                    href=`/${pathAdmin}/order/edit/${orderDetail.id}`
-                    class="inner-edit"
-                  ) <i class="fa-regular fa-pen-to-square"></i>
-                  if permissions.includes("order-delete") && orderDetail.status === "cancel" && orderDetail.paymentStatus === "unpaid" && !orderDetail.customerId && !orderDetail.cardTxRef
-                    button.inner-delete(
-                      type="button"
-                      data-order-soft-delete=orderDetail.id
-                      title="Ẩn đơn đã hủy"
-                    )
-                      i.fa-regular.fa-trash-can
-  //- End Section 6
+                if orderDetail.status === "initial"
+                  .badge.badge-orange= orderDetail.statusName
+                else if orderDetail.status === "done"
+                  .badge.badge-green= orderDetail.statusName
+                else if orderDetail.status === "cancel"
+                  .badge.badge-red= orderDetail.statusName
+                else
+                  span= orderDetail.statusName
+              td.inner-center
+                div= orderDetail.createdAtTime
+                div= orderDetail.createdAtDate || "Không có dữ liệu"
+              if trash
+                td
+                  div= orderDetail.deletedByFullName || "Không có dữ liệu"
+                  .inner-time= orderDetail.deletedAtFormat || "Không có dữ liệu"
+              if !trash || canRestore
+                td
+                  .inner-buttons
+                    if canRestore
+                      +listAction(base + "/undo/" + orderDetail.id, "undo", `Khôi phục đơn ${orderDetail.orderCode || ""}`, "fa-solid fa-rotate-left", "inner-undo")
+                    else
+                      - const editable = canEdit && !orderDetail.adminVisibleAfterRestore
+                      a.inner-edit(href=base + "/edit/" + orderDetail.id aria-label=(editable ? "Sửa đơn " : "Xem đơn ") + orderDetail.orderCode)
+                        i(aria-hidden="true" class=editable ? "fa-regular fa-pen-to-square" : "fa-regular fa-eye")
+                      if canDelete && canHide.has(orderDetail.id)
+                        +listAction(base + "/delete/" + orderDetail.id, "delete", "Ẩn đơn " + orderDetail.orderCode, "fa-regular fa-trash-can", "inner-delete")
+          else
+            tr
+              td.inner-center(colspan=trash ? (canRestore ? 9 : 7) : 7 role="status")= listError || (trash ? "Không tìm thấy đơn hàng trong thùng rác." : "Không tìm thấy đơn hàng phù hợp.")
 
-  //- Section 7
-  .section-7
-    span.inner-label
-      | Hiển thị #{startRecord} - #{endRecord} của #{totalOrders}
-
-    if totalPages > 1
-      select.inner-pagination(
-        data-order-page
-        aria-label="Chọn trang"
-      )
-        each number in pages
-          option(
-            value=number
-            selected=(page === number)
-          ) Trang #{number}
-
-  //- End Section 7
+  +listPagination(pagination, orderList.length, trash ? "Trang thùng rác đơn hàng" : "Trang đơn hàng")

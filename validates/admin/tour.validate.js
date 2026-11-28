@@ -1,5 +1,6 @@
 const Joi = require('joi');
 const { parse, tourMaximum } = require('../../public/assets/js/vnd-money');
+const { isCategoryId } = require('../../helpers/category.helper');
 
 const price = label => Joi.any().custom((raw, helper) => {
   const value = parse(raw, { max: tourMaximum });
@@ -19,9 +20,12 @@ module.exports.createPost = (req, res, next) => {
       .messages({
         "string.empty": "Vui lòng nhập tên tour!"
       }),
-    category: Joi.string().allow(''),
-    position: Joi.string().allow(''),
-    status: Joi.string().allow(''),
+    category: Joi.string().allow('').custom((value, helper) => isCategoryId(value) ? value : helper.error('any.invalid'))
+      .messages({ 'any.invalid': 'Danh mục tour không hợp lệ.' }),
+    position: Joi.string().allow('').custom((value, helper) =>
+      /^\d+$/.test(value) && Number.isSafeInteger(Number(value)) && Number(value) > 0 ? value : helper.error('any.invalid'))
+      .messages({ 'any.invalid': 'Vị trí phải là số nguyên dương.' }),
+    status: Joi.string().valid('active', 'inactive').messages({ 'any.only': 'Trạng thái tour không hợp lệ.' }),
     avatar: Joi.string().allow(''),
     priceAdult: price('Giá cũ người lớn'),
     priceChildren: price('Giá cũ trẻ em'),
@@ -34,8 +38,8 @@ module.exports.createPost = (req, res, next) => {
     stockBaby: stock,
     stockBaseline: Joi.string().max(240),
     locations: Joi.string().allow(''),
-    time: Joi.string().allow(''),
-    vehicle: Joi.string().allow(''),
+    time: Joi.string().trim().max(100).allow('').messages({ 'string.max': 'Thời lượng tối đa 100 ký tự.' }),
+    vehicle: Joi.string().trim().max(100).allow(''),
     departureDate: Joi.string().allow(''),
     information: Joi.string().allow(''),
     schedules: Joi.string().allow(''),

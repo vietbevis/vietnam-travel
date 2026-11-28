@@ -57,6 +57,7 @@ it('concurrent booking and soft deletion cannot leave a booking referencing a pe
     controller.deletePatch(admin(tour.id, 'tour-delete'), archived)
   ]);
   assert.equal(archived.body.code, 'success');
+  if (placed.body.code !== 'success') assert.equal(placed.body.errorCode, 'OUT_OF_STOCK');
   const orderCount = await Order.countDocuments({ 'items.tourId': tour.id });
   assert.equal(orderCount, placed.body.code === 'success' ? 1 : 0);
   const result = await remove([tour.id]);

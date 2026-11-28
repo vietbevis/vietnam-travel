@@ -1,23 +1,37 @@
 const Category = require("../models/category.model");
+const inTransaction = require("./mongo-transaction.helper");
 
 const isCategoryId = id => typeof id === "string" && /^[a-f0-9]{24}$/i.test(id);
 const liveCategory = { deleted: { $ne: true } };
 module.exports.isCategoryId = isCategoryId;
 module.exports.liveCategory = liveCategory;
 
-// Giữ kiểm tra liên kết và thao tác ghi cùng thứ tự trong tiến trình Node.
-let pendingWrite = Promise.resolve();
-module.exports.withCategoryWrite = work => {
-  const result = pendingWrite.then(work);
-  pendingWrite = result.catch(() => {});
-  return result;
+const categoryLock = () => Category.db.collection("category_write_locks");
+const lockKey = { _id: "category-tree" };
+
+// Khởi tạo trước transaction để hai tiến trình khởi động đồng thời dùng cùng một tài liệu.
+module.exports.ensureCategoryLock = async () => {
+  try {
+    await categoryLock().updateOne(lockKey, { $setOnInsert: { revision: 0 } }, { upsert: true });
+  } catch (error) {
+    if (error.code !== 11000) throw error;
+  }
 };
 
-module.exports.isAvailableCategory = async id => {
-  return isCategoryId(id) && !!(await Category.exists({ _id: id, ...liveCategory }));
+module.exports.lockCategories = async session => {
+  const result = await categoryLock().updateOne(lockKey, { $inc: { revision: 1 } }, { session });
+  if (result.matchedCount !== 1) throw new Error("Không thể khóa thao tác danh mục.");
 };
 
-module.exports.validateParent = async (parent, categoryId) => {
+module.exports.withCategoryWrite = async work => {
+  await module.exports.ensureCategoryLock();
+  return inTransaction(async session => {
+    await module.exports.lockCategories(session);
+    return work(session);
+  });
+};
+
+module.exports.validateParent = async (parent, categoryId, session = null, restoring = new Map()) => {
   const visited = new Set(categoryId ? [categoryId] : []);
   while (parent) {
     if (!isCategoryId(parent)) return "Danh mục cha không hợp lệ!";
@@ -26,11 +40,15 @@ module.exports.validateParent = async (parent, categoryId) => {
       return "Danh mục cha không được là chính danh mục này hoặc tạo quan hệ vòng tròn!";
     }
     visited.add(parent);
-    const ancestor = await Category.findOne({ _id: parent, ...liveCategory }).select("parent").lean();
+    const ancestor = restoring.get(parent) ||
+      await Category.findOne({ _id: parent, ...liveCategory }).select("parent").session(session).lean();
     if (!ancestor) return "Danh mục cha hoặc danh mục cấp trên đã bị xóa hoặc không tồn tại!";
     parent = ancestor.parent;
   }
 };
+
+module.exports.isAvailableCategory = async (id, session = null) =>
+  isCategoryId(id) && !(await module.exports.validateParent(id, null, session));
 
 module.exports.buildCategoryTree = (categories, parentId = "") => {
   const byParent = new Map();
@@ -53,6 +71,52 @@ module.exports.buildCategoryTree = (categories, parentId = "") => {
     }
   }
   return tree;
+};
+
+module.exports.publicCategoryTree = async (session = null) => {
+  const categories = await Category.find({ deleted: false, status: "active" })
+    .select("name slug parent").session(session);
+  return module.exports.buildCategoryTree(categories);
+};
+
+module.exports.treeIds = tree => {
+  const ids = [];
+  const nodes = [...tree];
+  for (let index = 0; index < nodes.length; index++) {
+    ids.push(nodes[index].id);
+    nodes.push(...nodes[index].children);
+  }
+  return ids;
+};
+
+module.exports.findCategoryNode = (tree, predicate) => {
+  const nodes = [...tree];
+  for (let index = 0; index < nodes.length; index++) {
+    if (predicate(nodes[index])) return nodes[index];
+    nodes.push(...nodes[index].children);
+  }
+};
+
+module.exports.categoryReferences = ids => ids.map(id => new RegExp("^" + id + "$", "i"));
+
+module.exports.publicTourCategoryFilter = tree => ({
+  // Các tour cũ chưa phân nhóm vẫn bán được theo chính sách hiện tại.
+  category: { $in: [null, "", ...module.exports.categoryReferences(module.exports.treeIds(tree))] }
+});
+
+module.exports.isPublicCategory = async (id, session) => {
+  if (id == null || id === "") return true;
+  const seen = new Set();
+  for (let parent = id; parent;) {
+    if (!isCategoryId(parent) || seen.has(parent.toLowerCase())) return false;
+    seen.add(parent.toLowerCase());
+    // Ghi cùng transaction tồn kho để thay đổi tổ tiên phải tranh trên chính tài liệu đó.
+    const active = await Category.findOneAndUpdate({ _id: parent, deleted: false, status: "active" },
+      { $inc: { __v: 1 } }, { session, timestamps: false }).select("parent").lean();
+    if (!active) return false;
+    parent = active.parent;
+  }
+  return true;
 };
 
 // Lấy tất cả id của danh mục cha + con

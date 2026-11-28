@@ -8,9 +8,10 @@ const { sanitizeTourHtml } = require("../../helpers/tour-rich-text.helper");
 module.exports.list = async (req, res) => {
   // Lấy slug từ params
   const slug = req.params.slug;
+  const node = categoryHelper.findCategoryNode(res.locals.categoryList, item => item.slug === slug);
 
   // Tìm danh mục theo slug
-  const category = await Category.findOne({
+  const category = node && await Category.findOne({
     slug: slug,
     deleted: false,
     status: "active"
@@ -54,11 +55,10 @@ module.exports.list = async (req, res) => {
     // End Breadcrumb
 
     // Danh sách tour
-    const listCategoryId =
-      await categoryHelper.getAllSubcategoryIds(category.id);
+    const listCategoryId = categoryHelper.treeIds([node]);
 
     const find = {
-      category: { $in: listCategoryId },
+      category: { $in: categoryHelper.categoryReferences(listCategoryId) },
       deleted: false,
       status: "active"
     };
@@ -127,19 +127,15 @@ module.exports.list = async (req, res) => {
         $addFields: {
           discountRate: {
             $cond: [
-              { $gt: ["$priceAdult", 0] },
+              { $and: [
+                { $isNumber: "$priceAdult" },
+                { $isNumber: "$priceNewAdult" },
+                { $gt: ["$priceAdult", 0] }
+              ] },
               {
                 $divide: [
                   {
-                    $subtract: [
-                      "$priceAdult",
-                      {
-                        $ifNull: [
-                          "$priceNewAdult",
-                          "$priceAdult"
-                        ]
-                      }
-                    ]
+                    $subtract: ["$priceAdult", "$priceNewAdult"]
                   },
                   "$priceAdult"
                 ]

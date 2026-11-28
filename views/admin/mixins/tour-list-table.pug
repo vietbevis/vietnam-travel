@@ -1,0 +1,62 @@
+mixin tourListTable(tours, trash, canSelect, canEdit, canDelete, listError)
+  - const rowActions = trash || canEdit || canDelete
+  .section-6
+    .table-2
+      table
+        thead
+          tr
+            if canSelect
+              th.inner-center
+                +listCheckAll("Chọn tất cả tour đang hiển thị", tours.length)
+            th Tên tour
+            th Ảnh đại diện
+            th(style="width: 130px") Giá
+            th Còn lại
+            th.inner-center Vị trí
+            th.inner-center= trash ? "Trạng thái trước xóa" : "Trạng thái"
+            th Tạo bởi
+            th= trash ? "Xóa bởi" : "Cập nhật bởi"
+            if rowActions
+              th Hành động
+        tbody
+          each item in tours
+            tr
+              if canSelect
+                td.inner-center
+                  +listCheck(item.id, item.name)
+              td= item.name
+              td
+                if item.avatar
+                  img.inner-avatar(src=item.avatar alt="")
+              td
+                div NL: #[+listMoney(item.priceNewAdult)]
+                div TE: #[+listMoney(item.priceNewChildren)]
+                div EB: #[+listMoney(item.priceNewBaby)]
+              td
+                div NL: #{item.stockAdult == null ? "Không có dữ liệu" : item.stockAdult}
+                div TE: #{item.stockChildren == null ? "Không có dữ liệu" : item.stockChildren}
+                div EB: #{item.stockBaby == null ? "Không có dữ liệu" : item.stockBaby}
+              td.inner-center= item.position
+              td.inner-center
+                +listStatus(trash ? item.statusBeforeDelete : item.status)
+              td
+                div= item.createdByFullName || "Không có dữ liệu"
+                .inner-time= item.createdAtFormat || "Không có dữ liệu"
+              td
+                div= (trash ? item.deletedByFullName : item.updatedByFullName) || "Không có dữ liệu"
+                .inner-time= (trash ? item.deletedAtFormat : item.updatedAtFormat) || "Không có dữ liệu"
+              if rowActions
+                td
+                  .inner-buttons
+                    if trash
+                      +listAction(`/${pathAdmin}/tour/undo/${item.id}`, "undo", `Khôi phục ${item.name}`, "fa-solid fa-rotate-left", "inner-undo")
+                      +listAction(`/${pathAdmin}/tour/delete-destroy/${item.id}`, "delete-destroy", `Xóa vĩnh viễn ${item.name}`, "fa-regular fa-trash-can", "inner-delete", {"data-confirm":"destroy"})
+                    else
+                      if canEdit
+                        a.inner-edit(href=`/${pathAdmin}/tour/edit/${item.id}` aria-label=`Sửa ${item.name}`)
+                          i.fa-regular.fa-pen-to-square(aria-hidden="true")
+                      if canDelete
+                        +listAction(`/${pathAdmin}/tour/delete/${item.id}`, "delete", `Chuyển ${item.name} vào thùng rác`, "fa-regular fa-trash-can", "inner-delete", {"data-confirm":"trash"})
+          else
+            tr
+              td.inner-center(colspan=8 + Number(canSelect) + Number(rowActions) role="status")= listError || (trash ? "Thùng rác tour đang trống." : "Không tìm thấy tour phù hợp.")

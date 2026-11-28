@@ -18,13 +18,17 @@ block main
           label(class="inner-label" for="category") Danh mục
           select(id="category" name="category")
             option(value="") -- Chọn danh mục --
-            +options(categoryList, 0, tourDetail.category)
+            if tourDetail.category && !linkedCategory
+              option(value=tourDetail.category selected disabled) Danh mục cũ không còn hợp lệ
+            +options(categoryList, 0, linkedCategory ? linkedCategory.id : tourDetail.category)
         .inner-group
           label(class="inner-label" for="position") Vị trí
           input(type="number" id="position" name="position" value=tourDetail.position)
         .inner-group
           label(class="inner-label" for="status") Trạng thái
           select(id="status" name="status")
+            if !["active","inactive"].includes(tourDetail.status)
+              option(value="" selected disabled) Không có dữ liệu
             option(
               value="active"
               selected=(tourDetail.status == "active" ? true : false)
@@ -145,6 +149,6 @@ block main
         .inner-button.inner-two-col
           button(type="submit") Cập nhật
       .inner-back
-        a(href=`/${pathAdmin}/tour/list`) Quay lại danh sách
+        a(href=`/${pathAdmin}/tour/list` data-list-return) Quay lại danh sách
 block editor
   +tinyMce

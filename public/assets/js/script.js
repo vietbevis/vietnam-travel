@@ -666,7 +666,8 @@ const readPassengerQuantity = (value, maximum) => {
 
 // Box Tour Detail
 const boxTourDetail = document.querySelector(".box-tour-detail");
-if (boxTourDetail) {
+const buttonAddToCart = boxTourDetail?.querySelector(".inner-button-add-cart:not(:disabled)");
+if (buttonAddToCart) {
   // Bước 1
   const inputStockAdult = document.querySelector("[input-stock-adult]");
   const inputStockChildren = document.querySelector("[input-stock-children]");
@@ -739,7 +740,6 @@ if (boxTourDetail) {
 
 
   // Bước 4
-  const buttonAddToCart = boxTourDetail.querySelector(".inner-button-add-cart");
   buttonAddToCart.addEventListener("click", () => {
     const tourId = buttonAddToCart.getAttribute("tour-id");
 

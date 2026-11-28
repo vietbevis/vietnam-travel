@@ -1,0 +1,72 @@
+extends ../layouts/default.pug
+include ../mixins/list-pagination.pug
+include ../mixins/admin-list.pug
+
+block main
+  - const canRestore = permissions.includes("category-edit")
+  - const canDestroy = permissions.includes("category-delete")
+  - const actions = []
+  - if (canRestore) actions.push({ value: "undo", label: "Khôi phục" })
+  - if (canDestroy) actions.push({ value: "delete-destroy", label: "Xóa vĩnh viễn" })
+  - const canMutate = actions.length > 0
+  - const trashUrl = `/${pathAdmin}/category/trash`
+  h1.box-title Thùng rác danh mục
+  form(method="get" action=trashUrl data-admin-list data-resource="category")
+    .section-4
+      .inner-wrap
+        .inner-item.inner-label
+          i.fa-solid.fa-filter(aria-hidden="true")
+          |  Bộ lọc
+        +listActor("deletedBy", "Người xóa", accountAdminList, filters.deletedBy)
+        +listDates("xóa", filters)
+        +listReset(trashUrl)
+    .section-5
+      .inner-wrap
+        if canMutate
+          +listBulk(trashUrl + "/change-multi", actions, categoryList.length)
+        +listSearch("keyword", "Tìm kiếm danh mục", filters.keyword, pagination.limit)
+        if permissions.includes("category-view")
+          .inner-button-create
+            a(href=`/${pathAdmin}/category/list` data-list-return) Về danh sách
+  .section-6
+    .table-2
+      table
+        thead
+          tr
+            if canMutate
+              th.inner-center
+                +listCheckAll("Chọn tất cả danh mục trong thùng rác", categoryList.length)
+            th Tên danh mục
+            th Ảnh đại diện
+            th Danh mục cha
+            th Trạng thái trước xóa
+            th Xóa bởi
+            if canMutate
+              th Hành động
+        tbody
+          each item in categoryList
+            tr
+              if canMutate
+                td.inner-center
+                  +listCheck(item.id, item.name)
+              td= item.name
+              td
+                if item.avatar
+                  img.inner-avatar(src=item.avatar alt="")
+              td= item.parentName || (item.parent ? "Không có dữ liệu" : "Danh mục gốc")
+              td
+                +listStatus(item.statusBeforeDelete)
+              td
+                div= item.deletedByFullName || "Không có dữ liệu"
+                .inner-time= item.deletedAtFormat || "Không có dữ liệu"
+              if canMutate
+                td
+                  .inner-buttons
+                    if canRestore
+                      +listAction(`/${pathAdmin}/category/undo/${item.id}`, "undo", `Khôi phục ${item.name}`, "fa-solid fa-rotate-left", "inner-undo")
+                    if canDestroy
+                      +listAction(`/${pathAdmin}/category/delete-destroy/${item.id}`, "delete-destroy", `Xóa vĩnh viễn ${item.name}`, "fa-regular fa-trash-can", "inner-delete")
+          else
+            tr
+              td.inner-center(colspan=canMutate ? 7 : 5 role="status")= listError || "Không tìm thấy danh mục trong thùng rác."
+  +listPagination(pagination, categoryList.length, "Trang thùng rác danh mục")

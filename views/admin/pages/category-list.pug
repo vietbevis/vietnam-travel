@@ -1,59 +1,37 @@
 extends ../layouts/default.pug
 include ../mixins/list-pagination.pug
+include ../mixins/admin-list.pug
 
 block main
   - const canEdit = permissions.includes("category-edit");
   - const canDelete = permissions.includes("category-delete");
   h1.box-title Quản lý danh mục
 
-  //- Section 4
-  .section-4(data-category-list)
-    .inner-wrap
-      .inner-item.inner-label
-        <i class="fa-solid fa-filter"></i> Bộ lọc
-      .inner-item
-        select(filter-status aria-label="Lọc theo trạng thái")
-          option(value="") Trạng thái
-          option(value="active") Hoạt động
-          option(value="inactive") Tạm dừng
-      .inner-item
-        select(filter-created-by aria-label="Lọc theo người tạo")
-          option(value="") Người tạo
-          each item in accountAdminList
-            option(value=item.id) #{item.fullName}
-      .inner-item.inner-date
-        input(type="date" filter-start-date aria-label="Từ ngày tạo")
-        span -
-        input(type="date" filter-end-date aria-label="Đến ngày tạo")
-      a.inner-item.inner-reset(href=`/${pathAdmin}/category/list`)
-        <i class="fa-solid fa-rotate-left"></i> Xóa bộ lọc
-  //- End Section 4
-
-  //- Section 5
-  .section-5
-    .inner-wrap
-      if canEdit || canDelete
-        .inner-change-status(
-          category-change-multi
-          data-api=`/${pathAdmin}/category/change-multi`
-        )
-          .inner-item
-            select(aria-label="Hành động hàng loạt" disabled=!categoryList.length)
-              option(value="") -- Hành động --
-              if canEdit
-                option(value="active") Hoạt động
-                option(value="inactive") Dừng hoạt động
-              if canDelete
-                option(value="delete") Xóa
-          .inner-item
-            button(type="button" disabled=!categoryList.length) Áp dụng
-      .inner-search
-        <i class="fa-solid fa-magnifying-glass"></i>
-        input(type="text" placeholder="Tìm kiếm" aria-label="Tìm kiếm danh mục" search)
-      if permissions.includes("category-create")
-        .inner-button-create
-          a(href=`/${pathAdmin}/category/create`) + Tạo mới
-  //- End Section 5
+  - const listUrl = `/${pathAdmin}/category/list`
+  form(method="get" action=listUrl data-admin-list data-category-list data-resource="category")
+    .section-4
+      .inner-wrap
+        .inner-item.inner-label
+          i.fa-solid.fa-filter(aria-hidden="true")
+          |  Bộ lọc
+        +listFilter("status", "Trạng thái", [{value:"active",label:"Hoạt động"},{value:"inactive",label:"Tạm dừng"}], filters.status, {"filter-status": true})
+        +listActor("createdBy", "Người tạo", accountAdminList, filters.createdBy, {"filter-created-by": true})
+        +listDates("tạo", filters, true)
+        +listReset(listUrl)
+    .section-5
+      .inner-wrap
+        if canEdit || canDelete
+          - const options = []
+          - if (canEdit) options.push({value:"active",label:"Hoạt động"},{value:"inactive",label:"Dừng hoạt động"})
+          - if (canDelete) options.push({value:"delete",label:"Xóa"})
+          +listBulk(`/${pathAdmin}/category/change-multi`, options, categoryList.length, {"category-change-multi": true})
+        +listSearch("keyword", "Tìm kiếm danh mục", filters.keyword, pagination.limit, true)
+        if permissions.includes("category-create")
+          .inner-button-create
+            a(href=`/${pathAdmin}/category/create`) + Tạo mới
+        if permissions.includes("category-trash")
+          .inner-button-trash
+            a(href=`/${pathAdmin}/category/trash` data-list-return) Thùng rác
 
   //- Section 6
   .section-6
@@ -63,7 +41,7 @@ block main
           tr
             th(class="inner-center")
               if canEdit || canDelete
-                input(type="checkbox" class="inner-check" aria-label="Chọn tất cả danh mục đang hiển thị" check-all disabled=!categoryList.length)
+                +listCheckAll("Chọn tất cả danh mục đang hiển thị", categoryList.length)
             th Tên danh mục
             th Ảnh đại diện
             th(class="inner-center") Vị trí
@@ -79,7 +57,7 @@ block main
             tr
               td(class="inner-center")
                 if canEdit || canDelete
-                  input(type="checkbox" class="inner-check" aria-label=`Chọn ${item.name}` check-item=item.id)
+                  +listCheck(item.id, item.name)
               td #{item.name}
               td
                 if item.avatar
@@ -105,13 +83,7 @@ block main
                       aria-label=`Sửa ${item.name}`
                     ) <i class="fa-regular fa-pen-to-square"></i>
                   if canDelete
-                    button(
-                      type="button"
-                      class="inner-delete"
-                      aria-label=`Xóa ${item.name}`
-                      category-delete
-                      data-api=`/${pathAdmin}/category/delete/${item.id}`
-                    ) <i class="fa-regular fa-trash-can"></i>
+                    +listAction(`/${pathAdmin}/category/delete/${item.id}`, "delete", `Xóa ${item.name}`, "fa-regular fa-trash-can", "inner-delete", {"category-delete": true})
   //- End Section 6
 
   +listPagination(pagination, categoryList.length, "Trang danh mục")

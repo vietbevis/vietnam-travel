@@ -882,6 +882,23 @@ input[type="checkbox"] {
   font-size: 20px;
 }
 
+[data-admin-list] .inner-search button {
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  min-inline-size: 24px;
+  min-block-size: 32px;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+
+[data-admin-list] .inner-search input {
+  min-width: 0;
+}
+
 .section-5 .inner-search input {
   border: 0;
   font-weight: 700;

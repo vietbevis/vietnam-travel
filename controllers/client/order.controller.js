@@ -14,6 +14,7 @@ const orderPaymentHelper = require("../../helpers/order-payment.helper");
 const tierHelper = require("../../helpers/tier.helper");
 const moment = require("moment");
 const mongoose = require("mongoose");
+const { isPublicCategory } = require("../../helpers/category.helper");
 const access = require("../../helpers/checkout-access.helper");
 const walletHold = require("../../helpers/wallet-hold.helper");
 const { unresolvedFilter } = require("../../helpers/card-op.helper");
@@ -177,6 +178,9 @@ module.exports.createPost = async (req, res) => {
           $inc: { stockAdult: -quantityAdult, stockChildren: -quantityChildren, stockBaby: -quantityBaby }
         }, { session, new: true });
         if (!tour) throw Object.assign(new Error("Tour không còn đủ chỗ."), { bookingCode: "OUT_OF_STOCK" });
+        if (!await isPublicCategory(tour.category, session)) {
+          throw refuseBooking("INVALID_TOUR", "Danh mục của tour hiện không mở bán.");
+        }
 
         const { name, avatar, departureDate, priceNewAdult, priceNewChildren, priceNewBaby } = tour;
         if (!Number.isFinite(departureDate?.getTime()) ||

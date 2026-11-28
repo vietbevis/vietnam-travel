@@ -77,6 +77,10 @@ async function settleLinked(compare,session) {
   const current=await Order.findOne(compare).session(session).lean();
   if (!current || !validAmount(current.total))
     return false;
+  if (!current.customerId && compare.paymentMethod !== 'card') {
+    return !!await Order.findOneAndUpdate({ ...compare, total: current.total, customerId: customerMatch(current) },
+      paidUpdate(false), { session, new: true });
+  }
   if (compare.paymentMethod === 'card') {
     const tx=await Tx.findOne({txRef:current.cardTxRef,orderId:String(current._id),source:'order',type:'debit',status:'done',amount:current.total}).session(session).lean();
     if (!tx?.signedOpId || !tx.receiptHex) return false;

@@ -6,12 +6,21 @@ nav#admin-navigation.sider(aria-label="Điều hướng quản trị")
     if (permissions.includes("category-view"))
       li
         a(href=`/${pathAdmin}/category/list`) <i class="fa-solid fa-table-cells-large"></i> Quản lý danh mục
+    else if (permissions.includes("category-trash"))
+      li
+        a(href=`/${pathAdmin}/category/trash`) <i class="fa-solid fa-trash-can"></i> Thùng rác danh mục
     if (permissions.includes("tour-view"))
       li
         a(href=`/${pathAdmin}/tour/list`) <i class="fa-solid fa-table-list"></i> Quản lý tour
+    else if (permissions.includes("tour-trash"))
+      li
+        a(href=`/${pathAdmin}/tour/trash`) <i class="fa-solid fa-trash-can"></i> Thùng rác tour
     if (permissions.includes("order-view"))
       li
         a(href=`/${pathAdmin}/order/list`) <i class="fa-solid fa-list-check"></i> Quản lý đơn hàng
+    else if (permissions.includes("order-trash"))
+      li
+        a(href=`/${pathAdmin}/order/trash`) <i class="fa-solid fa-trash-can"></i> Thùng rác đơn hàng
     if (permissions.includes("card-view") || permissions.includes("card-issue"))
       li
         a(href=`/${pathAdmin}/user/list`) <i class="fa-solid fa-user"></i> Quản lý khách hàng

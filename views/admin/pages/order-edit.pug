@@ -1,11 +1,15 @@
 extends ../layouts/default.pug
+include ../mixins/admin-list.pug
 
 block main
-  - const canEdit = permissions.includes("order-edit")
+  - const canEdit = permissions.includes("order-edit") && (typeof viewOnly === "undefined" || !viewOnly)
+  - const canEditPayment = canEdit && typeof paymentEditable !== "undefined" && paymentEditable
   h1.box-title Đơn hàng: #{orderDetail.orderCode}
+  if typeof viewOnly !== "undefined" && viewOnly
+    p(role="status") Đơn lịch sử đã khôi phục để tra cứu.
 
   .section-8
-    form#order-edit-form(method="post" data-api=`/${pathAdmin}/order/edit/${orderDetail.id}` data-card-refund=(cardRefund ? cardRefund.amount : undefined) data-order-status=orderDetail.status)
+    form#order-edit-form(method="post" data-api=`/${pathAdmin}/order/edit/${orderDetail.id}` action=`/${pathAdmin}/order/edit/${orderDetail.id}` data-card-refund=(cardRefund ? cardRefund.amount : undefined) data-order-status=orderDetail.status)
       .inner-group(style="display: none;")
         label(class="inner-label" for="id") Id
         input(type="text" id="id" name="id" value=orderDetail.id)
@@ -17,10 +21,12 @@ block main
         input(type="tel" id="phone" name="phone" value=orderDetail.phone readonly=!canEdit required maxlength="25")
       .inner-group.inner-two-col
         label(class="inner-label" for="note") Ghi chú
-        textarea(id="note" name="note" readonly=!canEdit) #{orderDetail.note}
+        textarea(id="note" name="note" maxlength="1000" readonly=!canEdit) #{orderDetail.note}
       .inner-group
         label(class="inner-label" for="paymentMethod") Phương thức thanh toán
-        select(id="paymentMethod" name="paymentMethod" disabled=!canEdit)
+        select(id="paymentMethod" name="paymentMethod" disabled=!canEditPayment)
+          if !paymentMethod.some(item => item.value === orderDetail.paymentMethod)
+            option(value="" selected disabled) Không có dữ liệu
           each item in paymentMethod
             option(
               value=item.value
@@ -28,7 +34,9 @@ block main
             ) #{item.label}
       .inner-group
         label(class="inner-label" for="paymentStatus") Trạng thái thanh toán
-        select(id="paymentStatus" name="paymentStatus" disabled=!canEdit)
+        select(id="paymentStatus" name="paymentStatus" disabled=!canEditPayment)
+          if !paymentStatus.some(item => item.value === orderDetail.paymentStatus)
+            option(value="" selected disabled) Không có dữ liệu
           each item in paymentStatus
             option(
               value=item.value
@@ -39,7 +47,9 @@ block main
         input(type="datetime-local" id="createdAt" name="createdAt" value=orderDetail.createdAtFormat readonly)
       .inner-group
         label(class="inner-label" for="status") Trạng thái
-        select(id="status" name="status" disabled=!canEdit)
+        select(id="status" name="status" disabled=(!canEdit || orderDetail.status === "cancel"))
+          if !orderStatus.some(item => item.value === orderDetail.status)
+            option(value="" selected disabled) Không có dữ liệu
           each item in orderStatus
             option(
               value=item.value
@@ -52,21 +62,21 @@ block main
           each item in orderDetail.items
             .inner-order-item
               .inner-order-image
-                img(src=item.avatar, alt=item.name)
+                if item.avatar
+                  img(src=item.avatar alt="")
               .inner-order-content
                 .inner-order-name #{item.name}
-                .inner-order-text Người lớn: #{item.quantityAdult} x #{item.priceNewAdult.toLocaleString("vi-VN")} đ
-                .inner-order-text Trẻ em: #{item.quantityChildren} x #{item.priceNewChildren.toLocaleString("vi-VN")} đ
-                .inner-order-text Em bé: #{item.quantityBaby} x #{item.priceNewBaby.toLocaleString("vi-VN")} đ
+                .inner-order-text Người lớn: #{item.quantityAdult} x #[+listMoney(item.priceNewAdult)]
+                .inner-order-text Trẻ em: #{item.quantityChildren} x #[+listMoney(item.priceNewChildren)]
+                .inner-order-text Em bé: #{item.quantityBaby} x #[+listMoney(item.priceNewBaby)]
                 .inner-order-text Ngày khởi hành: #{item.departureDateFormat}
                 .inner-order-text Khởi hành tại: #{item.locationFromName}
       .inner-group
         label(class="inner-label") Thanh toán
         .inner-order-total
-          div Tạm tính: #{orderDetail.subTotal.toLocaleString("vi-VN")} đ
-          div Giảm: #{orderDetail.discount.toLocaleString("vi-VN")} đ
-          //- div Mã giảm: TOURMUAHE2024
-          div Thanh toán: <span class="inner-order-price">#{orderDetail.total.toLocaleString("vi-VN")} đ</span>
+          div Tạm tính: #[+listMoney(orderDetail.subTotal)]
+          div Giảm: #[+listMoney(orderDetail.discount)]
+          div Thanh toán: #[span.inner-order-price #[+listMoney(orderDetail.total)]]
       if usedTicket
         .inner-group.inner-two-col
           .inner-order-refund-note
@@ -88,8 +98,10 @@ block main
               |  #[strong #{refundInfo.amount.toLocaleString("vi-VN")} đ]
             |  vào ví thẻ (mã giao dịch #{refundInfo.txRef}): #{refundInfo.statusLabel}.
       if canEdit
-        p.form-status.inner-two-col(data-form-status role="status")
+        noscript
+          p.form-status.inner-two-col Bật JavaScript để xác nhận thay đổi trạng thái hoặc thanh toán. Có thể lưu thông tin liên hệ trực tiếp.
+        p.form-status.inner-two-col(class=(typeof formError !== "undefined" && formError ? "form-status-error" : "") data-form-status role="status")= typeof formError !== "undefined" ? formError : ""
         .inner-button.inner-two-col
           button(type="submit") Cập nhật
     .inner-back
-      a(href=`/${pathAdmin}/order/list`) Quay lại danh sách
+      a(href=`/${pathAdmin}/order/list` data-list-return) Quay lại danh sách

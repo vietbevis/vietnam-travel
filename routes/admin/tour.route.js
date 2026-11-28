@@ -42,6 +42,7 @@ router.patch(
 )
 
 router.patch('/delete/:id', requirePermission('tour-delete'), requireObjectId, asyncRoute(tourController.deletePatch));
+router.patch('/change-multi', asyncRoute(tourController.changeMultiPatch));
 
 router.patch('/undo/:id', requirePermission('tour-trash'), requireObjectId, asyncRoute(tourController.undoPatch));
 

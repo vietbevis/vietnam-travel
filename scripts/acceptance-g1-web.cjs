@@ -56,7 +56,7 @@ async function seedFixtures() {
     { name: 'G1 Fixture - Card view', permissions: ['card-view'] }
   ]);
   const hash = await bcrypt.hash(password, 10);
-  const [actor] = await Account.create([
+  const [actor, backup] = await Account.create([
     { fullName: 'G1 Fixture Admin', email: 'admin' + domain, role: admin.id, password: hash, status: 'active' },
     { fullName: 'G1 Fixture Backup', email: 'backup' + domain, role: admin.id, password: hash, status: 'active' },
     { fullName: 'G1 Category Reader', email: 'viewer' + domain, role: categoryReader.id, password: hash, status: 'active' },
@@ -99,7 +99,14 @@ async function seedFixtures() {
     { ...booking, orderCode: 'G1-TRASH-ORDER', deleted: true, items: [item(linkedTrash)] },
     { ...booking, orderCode: 'G1-WALLET', customerId: customer.id, paymentMethod: 'card', items: [item(tour)] }
   ]);
-  return { tourId: tour.id, cityId: city.id };
+  const fixture = { tourId: tour.id, cityId: city.id };
+  if (process.env.G2_ACCEPTANCE === '1') {
+    fixture.g2 = await require('./acceptance-g2-seed.cjs')({
+      Role, Account, Category, Tour, Order, Tx: model('card-transaction'),
+      actor, backup, city, customer, hash, domain, common, booking, item
+    });
+  }
+  return fixture;
 }
 
 function mockServices(fixture) {

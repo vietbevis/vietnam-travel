@@ -1,0 +1,59 @@
+mixin listFilter(field, label, options, current, legacy)
+  .inner-item
+    select(name=field aria-label=label data-list-filter)&attributes(legacy || {})
+      option(value="")= label
+      each option in options
+        option(value=option.value selected=(current === option.value))= option.label
+
+mixin listActor(field, label, accounts, current, legacy)
+  +listFilter(field, label, accounts.map(account => ({ value: account.id, label: account.fullName })), current, legacy)
+
+mixin listDates(label, filters, legacy)
+  .inner-item.inner-date
+    input(type="date" name="startDate" value=filters.startDate aria-label=`Từ ngày ${label}` data-list-filter filter-start-date=legacy)
+    span(aria-hidden="true") -
+    input(type="date" name="endDate" value=filters.endDate aria-label=`Đến ngày ${label}` data-list-filter filter-end-date=legacy)
+
+mixin listSearch(field, label, value, pageSize, legacy)
+  .inner-search
+    button(type="submit" aria-label=label)
+      i.fa-solid.fa-magnifying-glass(aria-hidden="true")
+    input(type="search" name=field value=value maxlength="100" placeholder=label aria-label=label search=legacy)
+    if pageSize !== 10
+      input(type="hidden" name="pageSize" value=pageSize)
+
+mixin listBulk(url, options, count, legacy)
+  .inner-change-status(data-list-bulk data-api=url)&attributes(legacy || {})
+    .inner-item
+      select(aria-label="Hành động hàng loạt" disabled=!count)
+        option(value="") -- Hành động --
+        each option in options
+          option(value=option.value)= option.label
+    .inner-item
+      button(type="button" disabled=!count) Áp dụng
+
+mixin listCheckAll(label, count)
+  input.inner-check(type="checkbox" aria-label=label check-all data-list-check-all disabled=!count)
+
+mixin listCheck(id, label)
+  input.inner-check(type="checkbox" aria-label=`Chọn ${label}` check-item=id data-list-check)
+
+mixin listAction(url, action, label, icon, buttonClass, legacy)
+  button(type="button" class=buttonClass data-list-action=action data-api=url aria-label=label)&attributes(legacy || {})
+    i(class=icon aria-hidden="true")
+
+mixin listReset(url)
+  a.inner-item.inner-reset(href=url)
+    i.fa-solid.fa-rotate-left(aria-hidden="true")
+    |  Xóa bộ lọc
+
+mixin listStatus(status)
+  if status === "active"
+    .badge.badge-green Hoạt động
+  else if status === "inactive"
+    .badge.badge-red Tạm dừng
+  else
+    span Không có dữ liệu
+
+mixin listMoney(amount)
+  span= Number.isSafeInteger(amount) && amount >= 0 ? amount.toLocaleString("vi-VN") + " đ" : "Không có dữ liệu"

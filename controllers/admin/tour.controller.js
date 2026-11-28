@@ -1,14 +1,13 @@
-const moment = require("moment");
 const mongoose = require("mongoose");
 const { createHash } = require("node:crypto");
 const Order = require("../../models/order.model");
 const Category = require("../../models/category.model");
 const City = require("../../models/city.model");
 const Tour = require("../../models/tour.model");
-const AccountAdmin = require("../../models/account-admin.model");
 
 const categoryHelper = require("../../helpers/category.helper");
-const { paginate } = require("../../helpers/admin-pagination.helper");
+const inTransaction = require("../../helpers/mongo-transaction.helper");
+const { statuses, selectedIds, dayInVietnam, vietnamDate, listPage, listActors } = require("../../helpers/admin-list.helper");
 const { sanitizeTourHtml } = require("../../helpers/tour-rich-text.helper");
 const { discardNewTourImages } = require('../../middlewares/admin/image-upload.middleware');
 
@@ -25,27 +24,32 @@ const prices = [
   ["priceChildren", "priceNewChildren"],
   ["priceBaby", "priceNewBaby"]
 ];
+class TourInputError extends Error {}
 
 function applyPrices(data, creating) {
   for (const [base, current] of prices) {
     if (creating || data[base] !== undefined) data[base] = data[base] === undefined || data[base] === "" ? 0 : data[base];
-    if (data[current] === "" && data[base] === undefined) throw new Error('Cần có giá cũ để mặc định giá mới.');
+    if (data[current] === "" && data[base] === undefined) throw new TourInputError("Cần có giá cũ để mặc định giá mới.");
     if (data[base] !== undefined && (data[current] === undefined || data[current] === "")) data[current] = data[base];
+    if (data[base] > 0 && data[current] > data[base]) throw new TourInputError("Giá mới không được vượt giá gốc.");
   }
 }
 
 const stockFields = ['stockAdult', 'stockChildren', 'stockBaby'];
 
 function addStockConditions(filter, body) {
-  if (body.stockBaseline === undefined) return;
+  if (body.stockBaseline === undefined) {
+    if (stockFields.some(field => body[field] !== undefined)) throw new TourInputError("Mở lại tour để lấy số chỗ hiện tại trước khi chỉnh sửa.");
+    return;
+  }
   const baseline = JSON.parse(body.stockBaseline);
   delete body.stockBaseline;
   if (!baseline || Array.isArray(baseline) || typeof baseline !== 'object' ||
-      Object.keys(baseline).some(field => !stockFields.includes(field))) throw new Error('Số chỗ không hợp lệ.');
+      Object.keys(baseline).some(field => !stockFields.includes(field))) throw new TourInputError("Số chỗ không hợp lệ.");
   for (const field of stockFields) {
     if (body[field] === undefined) continue;
     const previous = baseline[field];
-    if (previous !== null && (!Number.isSafeInteger(previous) || previous < 0)) throw new Error('Số chỗ không hợp lệ.');
+    if (previous !== null && (!Number.isSafeInteger(previous) || previous < 0)) throw new TourInputError("Số chỗ không hợp lệ.");
     filter[field] = previous;
   }
 }
@@ -54,62 +58,75 @@ const imageRevision = tour => createHash('sha256')
   .update(JSON.stringify([tour.avatar || '', tour.images || []])).digest('hex');
 
 function cleanSchedule(schedules) {
-  if (!Array.isArray(schedules)) throw new Error("Lịch trình không hợp lệ.");
+  if (!Array.isArray(schedules)) throw new TourInputError("Lịch trình không hợp lệ.");
   return schedules.map(item => ({
     title: typeof item?.title === "string" ? item.title.slice(0, 250) : "",
     description: sanitizeTourHtml(item?.description)
   }));
 }
 
-const canLinkCategory = id => !id || categoryHelper.isAvailableCategory(id);
-const saveTourLink = (data, save) => categoryHelper.withCategoryWrite(async () => {
-  if (!await canLinkCategory(data.category)) return false;
-  if (data.category) data.category = data.category.toLowerCase();
-  await save();
-  return true;
-});
+function saveTourLink(data, save) {
+  if (!data.category) return Promise.resolve(save(null)).then(() => true);
+  return categoryHelper.withCategoryWrite(async session => {
+    if (!await categoryHelper.isAvailableCategory(data.category, session)) return false;
+    data.category = data.category.toLowerCase();
+    await save(session);
+    return true;
+  });
+}
+
+async function tourLocations(raw) {
+  const list = raw ? JSON.parse(raw) : [];
+  const ids = Array.isArray(list) && !list.length ? [] : selectedIds(list);
+  if (!ids || (ids.length && await City.countDocuments({ _id: { $in: ids } }) !== ids.length)) {
+    throw new TourInputError("Vui lòng chọn điểm xuất phát hợp lệ.");
+  }
+  return ids;
+}
+
+function tourDepartureDate(value) {
+  if (!value) return null;
+  if (!dayInVietnam(value)) throw new TourInputError("Ngày khởi hành không hợp lệ.");
+  // Giữ cách lưu ngày date-only của tour đang có.
+  return new Date(value);
+}
 const invalidTourCategory = res => res.json({
   code: "error",
   message: "Danh mục của tour đã bị xóa hoặc không tồn tại. Vui lòng chọn danh mục hợp lệ!"
 });
 
-module.exports.list = async (req, res) => {
-  const find = {
-    deleted: false
+const priceBands = {
+  "under-2m": { $gte: 0, $lt: 2_000_000 },
+  "2m-4m": { $gte: 2_000_000, $lt: 4_000_000 },
+  "4m-8m": { $gte: 4_000_000, $lt: 8_000_000 },
+  "from-8m": { $gte: 8_000_000 }
+};
+
+function listTours(trash) {
+  return async (req, res) => {
+    const actor = trash ? "deletedBy" : "createdBy";
+    const where = trash ? { deleted: true } : categoryHelper.liveCategory;
+    const page = await listPage(Tour, req.query, {
+      where, priceBands, enums: trash ? {} : { status: statuses, price: Object.keys(priceBands) },
+      idFields: trash ? [actor] : [actor, "category"], dateField: trash ? "deletedAt" : "createdAt",
+      sort: trash ? { deletedAt: -1, _id: 1 } : { position: -1, _id: 1 }
+    });
+    const tourList = page.rows;
+    const accountAdminList = await listActors(Tour, where, tourList, trash ? [actor, "createdBy"] : [actor, "updatedBy"]);
+    const categoryList = trash ? [] : await Category.find(categoryHelper.liveCategory).select("name").sort({ position: -1, _id: 1 });
+    for (const item of tourList) {
+      item.createdAtFormat = vietnamDate(item.createdAt);
+      item.updatedAtFormat = vietnamDate(item.updatedAt);
+      item.deletedAtFormat = vietnamDate(item.deletedAt);
+    }
+    return res.status(page.listError ? 400 : 200).render(trash ? "admin/pages/tour-trash" : "admin/pages/tour-list", {
+      ...page, pageTitle: trash ? "Thùng rác tour" : "Quản lý tour", tourList, accountAdminList, categoryList
+    });
   };
-  const pagination = paginate(req.query, await Tour.countDocuments(find));
-
-  const tourList = await Tour
-    .find(find)
-    .sort({
-      position: "desc",
-      _id: "asc"
-    }).skip(pagination.skip).limit(pagination.limit);
-
-  for (const item of tourList) {
-    if(item.createdBy) {
-      const infoAccountCreated = await AccountAdmin.findOne({
-        _id: item.createdBy
-      })
-      item.createdByFullName = infoAccountCreated?.fullName;
-    }
-
-    if(item.updatedBy) {
-      const infoAccountUpdated = await AccountAdmin.findOne({
-        _id: item.updatedBy
-      })
-      item.updatedByFullName = infoAccountUpdated?.fullName;
-    }
-
-    item.createdAtFormat = item.createdAt && moment(item.createdAt).utcOffset(420).format("HH:mm - DD/MM/YYYY");
-    item.updatedAtFormat = item.updatedAt && moment(item.updatedAt).utcOffset(420).format("HH:mm - DD/MM/YYYY");
-  }
-
-  res.render("admin/pages/tour-list", {
-    pageTitle: "Quản lý tour",
-    tourList, pagination
-  })
 }
+
+module.exports.list = listTours(false);
+module.exports.trash = listTours(true);
 
 module.exports.create = async (req, res) => {
   const categoryList = await Category.find({
@@ -156,8 +173,8 @@ module.exports.createPost = async (req, res) => {
     applyPrices(req.body, true);
     for (const field of stockFields) req.body[field] ??= 0;
     delete req.body.stockBaseline;
-    req.body.locations = req.body.locations ? JSON.parse(req.body.locations) : [];
-    req.body.departureDate = req.body.departureDate ? new Date(req.body.departureDate) : null;
+    req.body.locations = await tourLocations(req.body.locations);
+    req.body.departureDate = tourDepartureDate(req.body.departureDate);
     req.body.schedules = cleanSchedule(req.body.schedules ? JSON.parse(req.body.schedules) : []);
     if (req.body.information !== undefined) req.body.information = sanitizeTourHtml(req.body.information);
     delete req.body.imageRevision;
@@ -170,9 +187,9 @@ module.exports.createPost = async (req, res) => {
       delete req.body.images;
     }
 
-    const saved = await saveTourLink(req.body, () => {
+    const saved = await saveTourLink(req.body, session => {
       writeStarted = true;
-      return Tour.create(req.body);
+      return session ? Tour.create([req.body], { session }) : Tour.create(req.body);
     });
     if (!saved) {
       await discardNewTourImages(req);
@@ -182,6 +199,8 @@ module.exports.createPost = async (req, res) => {
     if (writeStarted && !rejectedTourWrite(error)) return unconfirmedTourWrite(req, res,
       'Chưa xác nhận được kết quả tạo tour. Vui lòng kiểm tra danh sách trước khi gửi lại.');
     await discardNewTourImages(req);
+    if (error instanceof TourInputError || error instanceof SyntaxError) return textError(res, 400,
+      error instanceof TourInputError ? error.message : "Điểm xuất phát hoặc lịch trình không hợp lệ.");
     if (writeStarted) return textError(res, 400, 'Không thể tạo tour. Vui lòng kiểm tra dữ liệu và thử lại.');
     return res.json({ code: "error", message: "Không thể tạo tour. Vui lòng thử lại!" });
   }
@@ -190,44 +209,6 @@ module.exports.createPost = async (req, res) => {
 
   res.json({
     code: "success"
-  })
-}
-
-module.exports.trash = async (req, res) => {
-  const find = {
-    deleted: true
-  };
-  const pagination = paginate(req.query, await Tour.countDocuments(find));
-
-  const tourList = await Tour
-    .find(find)
-    .sort({
-      deletedAt: "desc",
-      _id: "asc"
-    }).skip(pagination.skip).limit(pagination.limit);
-
-  for (const item of tourList) {
-    if(item.createdBy) {
-      const infoAccountCreated = await AccountAdmin.findOne({
-        _id: item.createdBy
-      })
-      item.createdByFullName = infoAccountCreated?.fullName;
-    }
-
-    if(item.deletedBy) {
-      const infoAccountDeleted = await AccountAdmin.findOne({
-        _id: item.deletedBy
-      })
-      item.deletedByFullName = infoAccountDeleted?.fullName;
-    }
-
-    item.createdAtFormat = item.createdAt && moment(item.createdAt).utcOffset(420).format("HH:mm - DD/MM/YYYY");
-    item.deletedAtFormat = item.deletedAt && moment(item.deletedAt).utcOffset(420).format("HH:mm - DD/MM/YYYY");
-  }
-
-  res.render("admin/pages/tour-trash", {
-    pageTitle: "Thùng rác tour",
-    tourList, pagination
   })
 }
 
@@ -241,7 +222,7 @@ module.exports.edit = async (req, res) => {
     })
 
     if(tourDetail) {
-      tourDetail.departureDateFormat = tourDetail.departureDate ? moment(tourDetail.departureDate).format("YYYY-MM-DD") : "";
+      tourDetail.departureDateFormat = vietnamDate(tourDetail.departureDate, "YYYY-MM-DD");
       tourDetail.information = sanitizeTourHtml(tourDetail.information);
       tourDetail.schedules = cleanSchedule(tourDetail.schedules || []);
 
@@ -250,6 +231,7 @@ module.exports.edit = async (req, res) => {
       })
   
       const categoryTree = categoryHelper.buildCategoryTree(categoryList);
+      const linkedCategory = categoryHelper.findCategoryNode(categoryTree, item => item.id === tourDetail.category?.toLowerCase());
   
       const cityList = await City.find({});
   
@@ -258,6 +240,7 @@ module.exports.edit = async (req, res) => {
         categoryList: categoryTree,
         cityList: cityList,
         tourDetail: tourDetail,
+        linkedCategory,
         imageRevision: imageRevision(tourDetail)
       })
     } else {
@@ -324,8 +307,8 @@ module.exports.editPatch = async (req, res) => {
     }
 
     applyPrices(req.body, false);
-    if (req.body.locations !== undefined) req.body.locations = req.body.locations ? JSON.parse(req.body.locations) : [];
-    if (req.body.departureDate !== undefined) req.body.departureDate = req.body.departureDate ? new Date(req.body.departureDate) : null;
+    if (req.body.locations !== undefined) req.body.locations = await tourLocations(req.body.locations);
+    if (req.body.departureDate !== undefined) req.body.departureDate = tourDepartureDate(req.body.departureDate);
     if (req.body.schedules !== undefined) req.body.schedules = cleanSchedule(req.body.schedules ? JSON.parse(req.body.schedules) : []);
     if (req.body.information !== undefined) req.body.information = sanitizeTourHtml(req.body.information);
 
@@ -346,9 +329,22 @@ module.exports.editPatch = async (req, res) => {
     }
 
     let result;
-    const saved = await saveTourLink(req.body, async () => {
+    const categoryToCheck = req.body.category === undefined && req.body.status === "active"
+      ? (await Tour.findOne(filter).select("category").lean())?.category : req.body.category;
+    const links = { category: categoryToCheck };
+    if (req.body.category === undefined && req.body.status === "active") filter.category = categoryToCheck ?? null;
+    for (const [base, current] of prices) {
+      if (req.body[base] === undefined && req.body[current] !== undefined) {
+        filter.$and ||= [];
+        filter.$and.push({ $or: [
+          { [base]: { $gte: req.body[current] } }, { [base]: { $lte: 0 } }, { [base]: null }
+        ] });
+      }
+    }
+    const saved = await saveTourLink(links, async session => {
+      if (req.body.category) req.body.category = links.category;
       writeStarted = true;
-      result = await Tour.updateOne(filter, req.body);
+      result = await Tour.updateOne(filter, req.body, session ? { session } : undefined);
     });
     if (!saved) {
       await discardNewTourImages(req);
@@ -356,14 +352,15 @@ module.exports.editPatch = async (req, res) => {
     }
     if (!result.matchedCount) {
       await discardNewTourImages(req);
-      return textError(res, req.tourImages || req.tourAvatarBefore || hadStockBaseline ? 409 : 404,
-        'Tour đã thay đổi hoặc không còn tồn tại. Vui lòng kiểm tra lại trước khi lưu.');
+      return textError(res, req.tourImages || req.tourAvatarBefore || hadStockBaseline || filter.$and ? 409 : 404,
+        'Tour đã thay đổi, giá mới vượt giá gốc hoặc tour không còn tồn tại. Vui lòng kiểm tra lại trước khi lưu.');
     }
 
   } catch (error) {
     if (writeStarted && !rejectedTourWrite(error)) return unconfirmedTourWrite(req, res,
       'Chưa xác nhận được kết quả cập nhật tour. Vui lòng kiểm tra tour trước khi gửi lại.');
     await discardNewTourImages(req);
+    if (error instanceof TourInputError) return textError(res, 400, error.message);
     return textError(res, 400, 'Không thể cập nhật tour. Vui lòng kiểm tra dữ liệu và thử lại.');
   }
   req.flash("success", "Cập nhật tour thành công!");
@@ -371,59 +368,68 @@ module.exports.editPatch = async (req, res) => {
 }
 
 const trashError = (res, status, message) => res.status(status).json({ code: "error", message });
-const tourIds = values => Array.isArray(values) && values.length >= 1 && values.length <= 100 &&
-  values.every(categoryHelper.isCategoryId) ? [...new Set(values.map(id => id.toLowerCase()))] : null;
+const trashedTour = actor => [{
+  $set: { statusBeforeDelete: "$status", status: "inactive", deleted: true, deletedBy: actor, deletedAt: new Date() }
+}];
 
 module.exports.deletePatch = async (req, res) => {
   if (!req.permissions?.includes("tour-delete")) return trashError(res, 403, "Không có quyền sử dụng tính năng này!");
-  const ids = tourIds([req.params.id]);
+  const ids = selectedIds([req.params.id]);
   if (!ids) return trashError(res, 400, "Mã tour không hợp lệ!");
-  const result = await Tour.updateOne({ _id: ids[0], deleted: { $ne: true } }, [{
-    $set: { statusBeforeDelete: "$status", status: "inactive", deleted: true, deletedBy: req.account.id, deletedAt: new Date() }
-  }]);
+  const result = await Tour.updateOne({ _id: ids[0], ...categoryHelper.liveCategory }, trashedTour(req.account.id));
   if (!result.matchedCount) return trashError(res, 404, "Không tìm thấy tour đang quản lý!");
   req.flash("success", "Xóa tour thành công!");
   return res.json({ code: "success" });
 };
 
-async function inTourTransaction(work) {
-  const session = await mongoose.startSession();
-  try {
-    return await session.withTransaction(() => work(session));
-  } finally {
-    await session.endSession();
+module.exports.changeMultiPatch = async (req, res) => {
+  const { option, ids: values } = req.body || {};
+  const ids = selectedIds(values);
+  if (!ids || ![...statuses, "delete"].includes(option)) return trashError(res, 400, "Thao tác hoặc danh sách tour không hợp lệ.");
+  if (!req.permissions?.includes(option === "delete" ? "tour-delete" : "tour-edit")) {
+    return trashError(res, 403, "Không có quyền sử dụng tính năng này!");
   }
-}
+  const filter = { _id: { $in: ids }, ...categoryHelper.liveCategory };
+  const change = async session => {
+    const rows = await Tour.find(filter).select("category").session(session).lean();
+    if (rows.length !== ids.length) return false;
+    if (option === "active") {
+      for (const id of new Set(rows.map(row => row.category).filter(Boolean))) {
+        if (!await categoryHelper.isAvailableCategory(id, session)) return false;
+      }
+    }
+    const update = option === "delete" ? trashedTour(req.account.id) : { $set: { status: option, updatedBy: req.account.id } };
+    const result = await Tour.updateMany(filter, update, { session });
+    if (result.matchedCount !== ids.length) throw new Error("Tour đã thay đổi trong lúc cập nhật.");
+    return true;
+  };
+  const changed = await (option === "active" ? categoryHelper.withCategoryWrite(change) : inTransaction(change));
+  if (!changed) return trashError(res, 409, "Tất cả tour phải còn trong danh sách và có danh mục hợp lệ khi cho hoạt động.");
+  req.flash("success", option === "delete" ? "Đã chuyển tour vào thùng rác." : "Đã cập nhật trạng thái tour.");
+  return res.json({ code: "success", count: ids.length });
+};
 
 const restoreUpdate = [
-  { $set: { deleted: false, status: { $ifNull: ["$statusBeforeDelete", "$status"] } } },
+  { $set: { deleted: false, status: { $cond: [{ $in: ["$statusBeforeDelete", statuses] }, "$statusBeforeDelete", "inactive"] } } },
   { $unset: ["statusBeforeDelete", "deletedAt", "deletedBy"] }
 ];
 
 async function restoreTours(ids) {
-  return categoryHelper.withCategoryWrite(async () => {
+  return categoryHelper.withCategoryWrite(async session => {
     const filter = { _id: { $in: ids }, deleted: true };
-    const check = async session => {
-      const rows = await Tour.find(filter).select("category").session(session).lean();
-      if (rows.length !== ids.length) return false;
-      if (rows.some(row => !categoryHelper.isCategoryId(row.category))) return false;
-      const categories = [...new Set(rows.map(row => row.category.toLowerCase()))];
-      const count = await Category.countDocuments({ _id: { $in: categories }, ...categoryHelper.liveCategory }).session(session);
-      if (count !== categories.length) return false;
-
-      const result = await Tour.updateMany(filter, restoreUpdate, { session });
-      if (result.matchedCount !== ids.length) {
-        if (session) throw new Error("Tour đã thay đổi trong lúc khôi phục.");
-        return false;
-      }
-      return true;
-    };
-    return ids.length > 1 ? inTourTransaction(check) : check(null);
+    const rows = await Tour.find(filter).select("category").session(session).lean();
+    if (rows.length !== ids.length) return false;
+    for (const id of new Set(rows.map(row => row.category))) {
+      if (!await categoryHelper.isAvailableCategory(id, session)) return false;
+    }
+    const result = await Tour.updateMany(filter, restoreUpdate, { session });
+    if (result.matchedCount !== ids.length) throw new Error("Tour đã thay đổi trong lúc khôi phục.");
+    return true;
   });
 }
 
 async function deleteToursPermanently(ids) {
-  return inTourTransaction(async session => {
+  return inTransaction(async session => {
     const filter = { _id: { $in: ids }, deleted: true, status: "inactive" };
     if (await Tour.countDocuments(filter).session(session) !== ids.length) return false;
 
@@ -440,7 +446,7 @@ async function deleteToursPermanently(ids) {
 
 async function updateTrash(req, res, values, option) {
   if (!req.permissions?.includes("tour-trash")) return trashError(res, 403, "Không có quyền sử dụng tính năng này!");
-  const ids = tourIds(values);
+  const ids = selectedIds(values);
   if (!ids || !["undo", "delete-destroy"].includes(option)) {
     return trashError(res, 400, "Thao tác hoặc danh sách tour không hợp lệ.");
   }

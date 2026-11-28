@@ -1,12 +1,134 @@
 # Hướng dẫn nghiệm thu tay — Vietnam Travel
 
-Chủ dự án đã nghiệm thu G1.9 đạt **4/4 nhóm**. Phần sửa sau nghiệm thu nằm tại [Rà checkbox trước khi chốt G1](#rà-checkbox-trước-khi-chốt-g1). Kết quả 6/6 nhóm G1.8 đã được chủ dự án xác nhận cho luồng thường.
+**Chủ dự án đã nghiệm thu 6/6 nhóm G2 và 2/2 nhóm G2.1.** Có thể chạy lại [hai nhóm G2.1](#g21--nghiệm-thu-hai-thay-đổi-cuối). Chủ dự án đã xác nhận chốt G1, gồm G1.8 **6/6**, G1.9 **4/4** và phần rà checkbox. [Báo cáo G2](G2_REPORT.md)
 
 **Nghiệm thu G1.6 · cây làm việc trên HEAD `2fcc368` · 26/11/2026**
 
-Bắt đầu tại [Môi trường nghiệm thu riêng](#g16--môi-trường-nghiệm-thu-riêng), sau đó chạy [các ca Giai đoạn 1](#kiểm-tra-thay-đổi-giai-đoạn-1). Bảng Admin, Client và Smart Card giữ các ca baseline và ca cho các giai đoạn sau.
+Các ca lịch sử G1 dùng [môi trường nghiệm thu riêng](#g16--môi-trường-nghiệm-thu-riêng) và [bảng kiểm Giai đoạn 1](#kiểm-tra-thay-đổi-giai-đoạn-1). [Sáu nhóm G2](#g2--nghiệm-thu-danh-mục-tour-và-đơn) được lưu để đối chiếu phạm vi đã nghiệm thu.
 
 Chạy trên website và Mongo test riêng với dữ liệu giả, Card Agent jCardSim test riêng và Origin phù hợp. Ví dụ URL demo trong tài liệu tham chiếu cần được thay bằng URL fixture. Chuẩn bị một vai trò quyền phù hợp, một vai trò hạn chế và tài khoản khách thuộc hai chủ thẻ. Dùng fixture cho email, avatar, callback và mã định danh. Ca có ghi dữ liệu, xóa, khóa, thử PIN hoặc reset chỉ thực hiện trên fixture. Ghi HEAD, browser/viewport, lớp test, ID fixture và kết quả **PASS / FAIL / NOT_RUN / BLOCKED**. Ghi kết quả quan sát bằng mô tả hoặc ảnh đã che dữ liệu nhạy cảm.
+
+## G2.1 · Nghiệm thu hai thay đổi cuối
+
+Mở PowerShell. Nếu terminal nghiệm thu G2 cũ vẫn chạy, bấm Ctrl+C tại terminal đó trước khi mở lượt mới. Mỗi lượt fixture mới có lại toàn bộ dữ liệu seed.
+
+~~~powershell
+Set-Location D:\vietnam-travel
+node scripts/acceptance-g1.cjs --g2
+~~~
+
+Đợi **READY**, ghi **Run ID** rồi mở **http://127.0.0.1:3302/admin/account/login**. Dùng **admin@g1.example.com** để thao tác và **g2-trash@g1.example.com** trong cửa sổ riêng để kiểm quyền xem. Cả hai dùng mật khẩu fixture **G16Fixture-2026!**. Nếu thiếu Agent build, xem [lệnh build Agent](#khởi-động-fixture).
+
+### 1 · Bỏ bộ đếm lựa chọn
+
+Mở các URL dưới đây trên website fixture. Thử ở 360 px và 1440 px. Mở fixture mới khi cần lặp lại các bước đã ghi dữ liệu.
+
+| URL | Dữ liệu và thao tác mẫu |
+|---|---|
+| `/admin/category/list?keyword=G2+Da+Nang&pageSize=5` | Chọn hai hàng, thử **Dừng hoạt động**. |
+| `/admin/category/trash?keyword=G2+Phan+Trang+Rac+Danh+Muc&pageSize=5` | Chọn hai hàng, thử **Khôi phục**. |
+| `/admin/tour/list?keyword=G2+Chuyen+Da+Lat&pageSize=5` | Chọn hai hàng, thử **Dừng hoạt động**. |
+| `/admin/tour/trash?keyword=G2+Phan+Trang+Rac+Tour&pageSize=5` | Chọn hai hàng, thử **Khôi phục**. |
+| `/admin/order/list?q=G2-LIST-&pageSize=5` | Đổi trang, sau đó lọc **Hủy**. Danh sách dùng thao tác đơn lẻ. **G2-LIST-11** có nút **Ẩn đơn**. |
+| `/admin/order/trash?q=G2-ARCH-PAGING-&pageSize=5` | Chọn hai hàng, thử **Khôi phục**. |
+
+1. Ở các trang có bulk, thử 0/1/hai/tất cả lựa chọn rồi bỏ chọn. Dùng phím Space và kiểm ô đầu bảng có trạng thái chọn một phần. Ô vẫn 18 × 18 px. Thanh tìm và nút **Áp dụng** giữ vị trí, không hiện **Đã chọn N**. Đổi trang hoặc lọc phải xóa lựa chọn cũ. Tổng bản ghi và phân trang vẫn hiển thị.
+2. Chọn hành động rồi bấm **Áp dụng** với 0 mục, thấy nhắc chọn mục. Chọn hai hàng và mở modal. Chọn **Quay lại** thì Network có 0 PATCH. Xác nhận lần sau, có một PATCH và trường `ids` gồm đúng hai hàng đã tích. Tải lại và kiểm kết quả. Trang danh sách đơn thử hủy modal **Ẩn đơn** trước khi xác nhận. Đơn biến khỏi danh sách đang quản lý và xuất hiện trong trash với trạng thái **Hủy**.
+3. Trên `/admin/tour/create`, bấm nhãn một điểm xuất phát để chọn và bỏ chọn. Trên `/admin/setting/role/create`, bấm nhãn một quyền. Hai trang vẫn thao tác được bằng nhãn và Space. Thùng rác đơn có lựa chọn **Khôi phục**.
+
+### 2 · Xóa vĩnh viễn danh mục và kiểm điều kiện
+
+1. **Xóa một và clamp.** Mở `/admin/category/trash?keyword=G21+Xoa+Trang&pageSize=5&page=2`. Có một hàng ở trang 2. Bấm icon **Xóa vĩnh viễn** của hàng. Modal nêu thao tác không thể khôi phục. Hủy rồi F5, hàng còn. Mở lại và xác nhận, Network có một PATCH đi tới `/admin/category/delete-destroy/<id>`. Kết quả về trang hiển thị 1/1, còn năm hàng. F5 giữ kết quả và từ khóa. Có thể chọn thêm người xóa **G1 Fixture Admin** để kiểm lọc.
+2. **Guard danh mục con.** Mở `/admin/category/trash?keyword=G2+Rac+Danh+Muc`. Thử xóa riêng **G2 Rác Danh Mục Cha**. Thông báo nhắc xóa danh mục con trước. Chọn đúng cha và con rồi thử bulk **Xóa vĩnh viễn**, cả hai vẫn còn sau F5. Nếu kiểm thành công theo thứ tự, xóa riêng **G2 Rác Danh Mục Con** trước, sau đó xóa cha ở một thao tác khác.
+3. **Bulk và guard tour.** Mở `/admin/category/trash?keyword=G21+Bulk`. Có ba mục **G21 Bulk Trống 01–03** và **G21 Bulk Có Tour**. Chọn cả bốn, áp dụng **Xóa vĩnh viễn** và xác nhận. Trang báo còn tour tham chiếu, F5 vẫn đủ bốn. Chọn lại chỉ ba mục trống, thử hủy modal rồi xác nhận. Có một PATCH tới `/admin/category/trash/change-multi` với `option` là `delete-destroy` và đúng ba ID. F5 chỉ còn **G21 Bulk Có Tour**. `/admin/tour/trash?keyword=G21+Tour` vẫn có **G21 Tour Đã Xóa Mềm**.
+4. **Quyền và khôi phục.** Mở lại `/admin/category/trash?keyword=G21` bằng **g2-trash@g1.example.com**. Xem được dữ liệu, không có checkbox, nút Áp dụng hoặc nút sửa dữ liệu. Với admin, có thể khôi phục một mục **G21 Xóa Trang** còn lại. Sau F5 mục rời trash, xuất hiện trong `/admin/category/list?keyword=G21+Xoa+Trang`.
+
+Ghi **PASS / FAIL** cho từng nhóm cùng Run ID và viewport. Dừng fixture bằng Ctrl+C trong terminal launcher hoặc chạy lệnh sau và nhập mã từ dòng **Run ID**.
+
+~~~powershell
+$fixtureRun = Read-Host 'Nhập Run ID của fixture'
+node scripts/acceptance-g1.cjs --stop $fixtureRun
+~~~
+
+## G2 · Nghiệm thu danh mục, tour và đơn
+
+Chủ dự án đã xác nhận **6/6 nhóm** của lượt này. Phần dưới lưu các ca G2 để đối chiếu.
+
+### Khởi động fixture
+
+Tại D:\vietnam-travel, chạy lệnh dưới đây bằng PowerShell. Launcher tạo Mongo replica set mới và kiểm tên DB, thư mục dữ liệu và tiến trình trước khi seed. Nếu cổng đã có tiến trình sử dụng, launcher sẽ dừng.
+
+~~~powershell
+node scripts/acceptance-g1.cjs --g2
+~~~
+
+Đợi dòng **READY** và lưu **Run ID**. Website ở **http://127.0.0.1:3302**, đăng nhập tại **/admin/account/login**. Các tài khoản này cùng dùng mật khẩu fixture **G16Fixture-2026!**.
+
+| Tài khoản | Phạm vi |
+|---|---|
+| admin@g1.example.com | Đủ quyền, hiển thị là **G1 Fixture Admin**. Dùng cho sáu nhóm chính. |
+| backup@g1.example.com | Đủ quyền, hiển thị là **G1 Fixture Backup**. Một số bản ghi được tạo hoặc xóa bởi tài khoản này. |
+| g2-reader@g1.example.com | Xem ba danh sách và chi tiết đơn. Các URL thùng rác trả 403. |
+| g2-trash@g1.example.com | Xem thùng rác danh mục và đơn. CTA khôi phục vắng mặt. URL thùng rác tour trả 403. |
+| g2-editor@g1.example.com | Tạo/sửa danh mục và tour, sửa đơn. Có bulk đổi trạng thái danh mục/tour. URL xóa và thùng rác trả 403. |
+
+Nếu thiếu Agent build, chạy các lệnh sau rồi khởi động lại fixture.
+
+~~~powershell
+Push-Location smartcard
+.\gradlew.bat :agent:installDist
+Pop-Location
+~~~
+
+Agent fixture dùng 127.0.0.1:32033. Sáu nhóm bên dưới dùng dữ liệu đã seed. Khi cần quan sát Agent, chạy **node scripts/simulator-console.cjs** ở terminal khác rồi mở **http://[::1]:3304/**. Console có bốn slot. Khi cần Tiny Cloud, đặt **G18_TINYMCE_API_KEY** trong terminal launcher và dùng hostname đã duyệt. Ô HTML vẫn dùng được khi thiếu cấu hình editor. Mail, ảnh và thanh toán dùng mock cục bộ.
+
+Hai mốc UTC **27/11/2026 16:59:59.999** và **17:00:00.000** thuộc hai ngày **27/11** và **28/11** theo giờ Việt Nam. Khi nhập bộ lọc, dùng ngày hiển thị trên website.
+
+### 1 · Danh mục đang quản lý
+
+1. Mở **/admin/category/list**, nhập **G2 Da Nang** và Enter. Thấy 13 bản ghi. Chọn cỡ 5, trang 2 rồi thử F5, Back, Forward và mở lại URL. Hai trang có các mục riêng. Thử các cỡ 10/20/50/100 và đối chiếu khoảng hiển thị.
+2. Chọn đồng thời **Hoạt động**, người tạo **G1 Fixture Admin** và ngày **28/11/2026** ở hai ô. Mỗi lần chọn áp dụng ngay và về trang đầu. Còn 12 kết quả, **G2 Đà Nẵng 12** nằm ngoài bộ lọc. Bấm **Xóa bộ lọc** để về danh sách mặc định.
+3. Ở 360 px, bấm một ô rồi bấm chọn tất cả. Kích thước ô là 18 × 18 px, ô đầu bảng hiện trạng thái chọn một phần khi mới tích một mục. Chọn **Dừng hoạt động**, bấm **Áp dụng** rồi hủy modal, kiểm Network có 0 PATCH. Lặp lại với riêng **G2 Đà Nẵng 03**, xác nhận rồi bật lại bằng hành động **Hoạt động**.
+4. Tạo **G2 Danh mục nghiệm thu**, cha **G2 Đà Nẵng Gốc**, vị trí 101. Bấm sửa, đổi mô tả và tải lại. Ảnh đã lưu giữ nguyên khi chưa xóa hoặc thay. Thử vị trí -1, nhận lỗi và kiểm dữ liệu cũ. Khi sửa danh mục gốc, cây chọn cha loại chính nó và các nhánh con. Thử xóa danh mục gốc hoặc **G2 Đà Nẵng 01**, nhận lỗi do còn con hoặc tour. Xóa mềm mục vừa tạo để chuyển sang nhóm 2.
+
+### 2 · Thùng rác danh mục
+
+1. Bấm **Thùng rác** hoặc mở **/admin/category/trash**. Tìm **G2 Phan Trang Rac Danh Muc**, chọn cỡ 5 rồi trang 2, thấy **6–10 của 12**. Reset rồi tìm **G2 Rac Danh Muc**. Lọc người xóa **G1 Fixture Admin** và ngày **28/11/2026**. Còn hai hàng **G2 Rác Danh Mục Cha** và **G2 Rác Danh Mục Con**.
+2. Khôi phục riêng dòng con, xác nhận và thấy lỗi vì cha vẫn trong thùng rác. Chọn cả cha và con, áp dụng **Khôi phục**. Hủy một lượt rồi xác nhận. Hai hàng rời thùng rác. Trạng thái của cha là **Hoạt động**, của con là **Tạm dừng**.
+3. Reset và tìm **G2 Rác Danh Mục Cũ**. Cột người/ngày/trạng thái trước xóa hiện **Không có dữ liệu**. Khôi phục đơn lẻ, kết quả **Tạm dừng**. Khôi phục mục vừa xóa ở nhóm 1. Trang gồm các thao tác khôi phục đã duyệt.
+4. Thử phiên **g2-reader** và **g2-trash**. Reader nhận 403 khi mở URL. Trash role thấy dữ liệu, các checkbox và nút khôi phục được ẩn. Log Mongo đã bao phủ cạnh tranh xóa danh mục và gắn tour ở hai tiến trình.
+
+### 3 · Tour đang quản lý
+
+1. Mở **/admin/tour/list**, tìm **G2 Chuyen Da Lat**, thử cỡ 5 và trang 2. Kết hợp danh mục **G2 Đà Nẵng 01**, **Hoạt động**, **G1 Fixture Admin**, **Từ 2 đến dưới 4 triệu** và ngày tạo **28/11/2026**. Còn 11 tour. Giá lọc dựa trên giá bán người lớn. Ngày khởi hành nằm trong form tour.
+2. Chọn **G2 Chuyến Đà Lạt 01**, áp dụng **Dừng hoạt động** rồi xác nhận. Tour rời kết quả **Hoạt động**. Mở qua bộ lọc **Tạm dừng**, bật lại. Thử chọn tất cả trên trang và hủy modal.
+3. Tạo **G2 Tour nghiệm thu**. Chọn danh mục **G2 Đà Nẵng 01**, điểm xuất phát **Hà Nội - G1 fixture**, vị trí 120, ngày khởi hành 29/11/2031, thời lượng **2 ngày**, giá người lớn cũ **1.000.000**, giá mới **900.000**, giá em bé **0** và chỗ người lớn **7**. Thử giá mới **1.200.000** để xem lỗi. Nhập hai lịch trình, mô tả và vài ảnh album. Lưu, mở trang sửa, đổi phương tiện, sắp ảnh và tải lại. Đối chiếu VND, giá em bé, chỗ, thứ tự ảnh và định dạng mô tả.
+4. Đưa tour vừa tạo vào thùng rác bằng chọn hàng và **Xóa**, thử hủy trước rồi xác nhận. Tour rời danh sách. URL chi tiết Client của tour trả 404. Kho, vé và đơn lịch sử giữ nguyên.
+
+### 4 · Thùng rác tour
+
+1. Mở **/admin/tour/trash**. Tìm **G2 Phan Trang Rac Tour**, thử cỡ 5 và trang 2. Reset, tìm **G2 Rac Tour**, chọn người xóa **G1 Fixture Admin** và ngày **28/11/2026**. Còn **G2 Rác Tour Chưa Đặt**. Xác nhận khôi phục và kiểm trạng thái **Hoạt động**.
+2. Tìm **G2 Rác Tour Có Vé**, xác nhận **Xóa vĩnh viễn** và kiểm thông báo chặn do có đơn lịch sử. Dùng **G1 Trash Thiếu Danh Mục** để kiểm chặn khôi phục. Chọn tập nhiều mục có một mục không đủ điều kiện và đối chiếu cả tập giữ nguyên.
+3. Tìm **G2 Tour nghiệm thu** vừa xóa. Hủy modal xóa hẳn một lượt và kiểm Network. Xác nhận sau đó với bản ghi fixture chưa có đơn. Tìm lại tên này phải rỗng.
+
+### 5 · Đơn đang quản lý
+
+1. Mở **/admin/order/list**. Tìm **G2-LIST-**, **Dang Ha G2** hoặc số fixture **0900000044**. Với **G2-LIST-**, chọn cỡ 5 và trang 2, sau đó lọc **Khởi tạo**, **Chuyển khoản ngân hàng**, **Chưa thanh toán**, ngày đặt **28/11/2026**. Trước khi thử hủy có 5 kết quả.
+2. Mở **G2-LIST-02**, sửa ghi chú, lưu và tải lại. Bấm **Quay lại danh sách** để kiểm query đã dùng. Đối chiếu mã đơn, tổng, giảm giá và snapshot tour. **G2-LIST-01** là ZaloPay đã thanh toán, có trường phương thức và trạng thái thanh toán chỉ đọc.
+3. Tại **G2-LIST-02**, chọn **Hủy**, bấm **Cập nhật**, thử hủy modal và kiểm Network. Xác nhận lần sau, thấy đơn **Hủy**. Về danh sách, tìm mã đơn rồi **Ẩn đơn**. **G2-USED** có vé đã check-in và không chọn được Hủy. **g2-reader** mở được chi tiết ở chế độ chỉ đọc.
+4. Để thử ghi nhận thanh toán tay, dùng đơn fixture chưa thanh toán bằng tiền mặt hoặc chuyển khoản. Sau khi kiểm số tiền fixture, chọn **Đã thanh toán** và xác nhận modal. Đơn gateway/ví giữ quy trình callback hoặc biên nhận của G1.
+5. Khi kiểm dự phòng, chặn JavaScript trên trang sửa đơn fixture. Dùng **G2-LIST-03**, sửa ghi chú và lưu. Network hiển thị POST tới URL sửa đơn rồi 303, trang tải lại có ghi chú mới. Thử đổi trạng thái đơn và lưu khi script còn bị chặn. Trang báo cần bật JavaScript để xác nhận, trạng thái giữ nguyên.
+
+### 6 · Thùng rác đơn và dữ liệu lịch sử
+
+1. Mở **/admin/order/trash**, tìm **G2-ARCH-PAGING-**, chọn cỡ 5, đổi trang và F5. Reset, tìm **Dang Ha G2**, lọc **Hủy**, **Đã thanh toán**, **Ví thẻ thành viên**. Có **G2-ARCH-PENDING** và **G2-ARCH-DONE**. Lọc thêm người xóa **G1 Fixture Admin** và ngày **28/11/2026** để chỉ còn **G2-ARCH-PENDING**. Dùng **G2-ARCH-LEGACY** để kiểm metadata thiếu.
+2. Bỏ lọc người/ngày, chọn cả hai đơn ví và áp dụng **Khôi phục**. Thử hủy trước rồi xác nhận. Hai đơn xuất hiện ở danh sách Admin, vẫn **Hủy** và **Đã thanh toán**. Chi tiết chỉ đọc còn mã hoàn, một khoản chờ ghi lên thẻ và một khoản đã ghi. Khôi phục đơn khách **G2-LIST-02** đơn lẻ, đơn vẫn **Hủy**. Các bản ghi chỉ mở lại để tra cứu Admin.
+3. Xem [kiểm thử G2](G2_REPORT.md#kiểm-thử) để đối chiếu snapshot Mongo, kho, vé, ledger, restore lặp và rollback. Trang đơn chỉ cung cấp các thao tác khôi phục đã duyệt.
+4. Tìm **G1-TRASH-ORDER** và khôi phục. Bản ghi legacy này có trạng thái **Khởi tạo**. Nó rời thùng rác, xuất hiện trong danh sách Admin và trang chi tiết chỉ đọc hiển thị **Đơn lịch sử đã khôi phục để tra cứu**. Trạng thái gốc giữ nguyên qua ca này.
+
+Kiểm các thao tác chính ở desktop và mobile. Có thể dùng DevTools ở 320, 360, 390, 768, 1024 và 1440 px. Bảng cuộn trong vùng bảng, bộ lọc và nút vẫn sử dụng được. Ghi kết quả từng nhóm và che tên khách, điện thoại, thông tin phiên trong ảnh hoặc log nếu dùng dữ liệu ngoài fixture.
+
+Dừng launcher bằng Ctrl+C hoặc **node scripts/acceptance-g1.cjs --stop RUN_ID** với ID vừa in. Nếu đã mở Console, dừng terminal Console bằng Ctrl+C. Lượt fixture mới tạo lại bộ dữ liệu ban đầu.
 
 ## Admin
 

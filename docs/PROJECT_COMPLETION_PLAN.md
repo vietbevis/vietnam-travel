@@ -1,23 +1,23 @@
 # Kế hoạch hoàn thiện — Vietnam Travel
 
-**G1.9 đã nghiệm thu 4/4 nhóm · Chuẩn bị chốt G1 · HEAD `2fcc368` · 27/11/2026**
+**G1 đã nghiệm thu · Checkpoint `6902f24` · G2 và G2.1 đã nghiệm thu · 28/11/2026**
 
-Chủ dự án đã chấp nhận phạm vi bàn giao G1.1–G1.5 và xác nhận các nhóm nghiệm thu G1.8 và G1.9. G1.6 cập nhật Role, guest checkout, idempotency và môi trường nghiệm thu. Giai đoạn 1 chờ xác nhận chốt tổng thể. G2 chờ duyệt riêng. [Tracker](PROJECT_FEATURE_TRACKER.md)
+Chủ dự án đã xác nhận chốt G1, gồm 6/6 nhóm G1.8, 4/4 nhóm G1.9 và phần checkbox. Đã triển khai G2 trên checkpoint local với quyền và policy hiện hành. Chủ dự án xác nhận manual PASS 6/6 nhóm G2 và 2/2 nhóm G2.1. [Tracker](PROJECT_FEATURE_TRACKER.md) · [Báo cáo G2](G2_REPORT.md)
 
 ## Checkpoint Giai đoạn 1
 
 | Lát | Trạng thái | File, kiểm thử, quyết định và việc tiếp theo |
 |---|---|---|
-| G1.1 | IMPLEMENTED · chờ nghiệm thu | `routes/admin`, `routes/client`, `middlewares/http-route.middleware.js`, `middlewares/admin/permission.middleware.js`. Guard trước upload, trang đích theo quyền, 401 JSON, lỗi Express, UI-04/05/07. Mapping trên dữ liệu thật chờ duyệt. |
-| G1.2 | IMPLEMENTED · chờ nghiệm thu | `profile.controller.js`, `setting.controller.js`, `admin-token.helper.js`, `image-upload.middleware.js`, `tour-rich-text.helper.js`. Chỉ sửa trường được phép, thu hồi phiên sau đổi quyền/thông tin xác thực, kiểm nhóm quyền và quản trị viên cuối. Thêm một dependency parse5 được khóa phiên bản. Chưa kiểm Cloudinary thật. |
-| G1.3 | IMPLEMENTED · chờ nghiệm thu | `controllers/{admin/tour,client/order}.controller.js`, `public/assets/js/script.js`. DTO checkout, kiểm ngày/điểm xuất phát, điều kiện xóa/restore cùng guard tại thời điểm ghi. G1.6 bổ sung sở hữu guest và chống tạo đơn lặp. |
-| G1.4 | IMPLEMENTED · chờ nghiệm thu | `admin-otp.helper.js`, `account.controller.js`, `auth.middleware.js`, `scripts/admin-card-recover.js`. Giới hạn OTP, hash mới, reset-only, JWT phiên bản và transaction audit. Giữ `--force` hiện có. |
-| G1.5 | IMPLEMENTED · chờ nghiệm thu | `admin-pagination.helper.js`, `list-pagination.pug`, `category.controller.js`, Admin JS. Áp dụng cho danh mục và giữ các trang còn lại cho G2–G5. |
-| G1.6 | IMPLEMENTED · chờ nghiệm thu toàn G1 | Kiểm kê Role chỉ đọc, ánh xạ và rollback trên fixture, guest cookie, checkout intent 24 giờ, tra đơn khi mất phản hồi. Có script khởi động/dừng fixture riêng và regression mới. |
+| G1.1 | Đã nghiệm thu trong phạm vi G1 | `routes/admin`, `routes/client`, `middlewares/http-route.middleware.js`, `middlewares/admin/permission.middleware.js`. Guard trước upload, trang đích theo quyền, 401 JSON, lỗi Express, UI-04/05/07. Mapping trên dữ liệu thật chờ duyệt. |
+| G1.2 | Đã nghiệm thu trong phạm vi G1 | `profile.controller.js`, `setting.controller.js`, `admin-token.helper.js`, `image-upload.middleware.js`, `tour-rich-text.helper.js`. Chỉ sửa trường được phép, thu hồi phiên sau đổi quyền/thông tin xác thực, kiểm nhóm quyền và quản trị viên cuối. Thêm một dependency parse5 được khóa phiên bản. Chưa kiểm Cloudinary thật. |
+| G1.3 | Đã nghiệm thu trong phạm vi G1 | `controllers/{admin/tour,client/order}.controller.js`, `public/assets/js/script.js`. DTO checkout, kiểm ngày/điểm xuất phát, điều kiện xóa/restore cùng guard tại thời điểm ghi. G1.6 bổ sung sở hữu guest và chống tạo đơn lặp. |
+| G1.4 | Đã nghiệm thu trong phạm vi G1 | `admin-otp.helper.js`, `account.controller.js`, `auth.middleware.js`, `scripts/admin-card-recover.js`. Giới hạn OTP, hash mới, reset-only, JWT phiên bản và transaction audit. Giữ `--force` hiện có. |
+| G1.5 | Đã nghiệm thu trong phạm vi G1 | `admin-pagination.helper.js`, `list-pagination.pug`, `category.controller.js`, Admin JS. Áp dụng cho danh mục và giữ các trang còn lại cho G2–G5. |
+| G1.6 | Đã nghiệm thu trong phạm vi G1 | Kiểm kê Role chỉ đọc, ánh xạ và rollback trên fixture, guest cookie, checkout intent 24 giờ, tra đơn khi mất phản hồi. Có script khởi động/dừng fixture riêng và regression mới. |
 
 G5 sẽ triển khai thông báo Admin N01. G6 sẽ triển khai lịch sử đơn của khách đã xác thực bằng thẻ N02. Console N03 đã được nghiệm thu ở phạm vi hiện có. N04 giữ nghiệp vụ đối soát hiện tại, mọi quy trình ngoại lệ mới chờ duyệt riêng.
 
-Mốc đã duyệt G1.1–G1.5 giữ 869 PASS. G1.6 có kết quả theo suite riêng và hướng dẫn khởi động fixture. G1 dừng tại nghiệm thu chủ dự án. Giữ mốc ưu tiên các kịch bản Smart Card cho buổi báo cáo 05/12/2026. [Báo cáo G1.6](PROJECT_TEST_REPORT.md#hồi-quy-g16) · [Hướng dẫn nghiệm thu](MANUAL_TEST_GUIDE.md#g16--môi-trường-nghiệm-thu-riêng)
+Mốc đã duyệt G1.1–G1.5 giữ 869 PASS. G1.6 có kết quả theo suite riêng và hướng dẫn khởi động fixture. Chủ dự án đã xác nhận chốt G1. Giữ mốc ưu tiên các kịch bản Smart Card cho buổi báo cáo 05/12/2026. [Báo cáo G1.6](PROJECT_TEST_REPORT.md#hồi-quy-g16) · [Hướng dẫn nghiệm thu](MANUAL_TEST_GUIDE.md#g16--môi-trường-nghiệm-thu-riêng)
 
 ### Ma trận đã duyệt và ánh xạ Role
 
@@ -90,16 +90,25 @@ Chủ dự án đã xác nhận 6/6 nhóm G1.8 trong luồng thường. Bằng c
 
 - Chủ dự án xác nhận 4/4 nhóm G1.9. Lượt chuẩn bị chốt G1 rà kích thước, căn lề và thao tác checkbox trên Admin/Client.
 - **REMOVED_BY_OWNER** áp dụng cho biên nhận check-in có chữ ký để tự đối soát và khóa chuyển slot giữa các lô APDU của N03. Hai yêu cầu rời phạm vi triển khai và không chuyển sang G4. Các guard check-in, khóa theo lô và Console hiện có được giữ.
-- Khách tự sửa thông tin định danh và đổi email thuộc **G4.6**. Chuẩn bị xác nhận chốt G1 trước khi duyệt G2. [Báo cáo G1.9](G1_9_REPORT.md) · [Hướng dẫn rà checkbox](MANUAL_TEST_GUIDE.md#rà-checkbox-trước-khi-chốt-g1)
+- Khách tự sửa thông tin định danh và đổi email thuộc **G4.6**. Chủ dự án xác nhận chốt G1 và duyệt triển khai G2. [Báo cáo G1.9](G1_9_REPORT.md) · [Hướng dẫn rà checkbox](MANUAL_TEST_GUIDE.md#rà-checkbox-trước-khi-chốt-g1)
 
 ## G2 · Quản lý dữ liệu Admin
 
-- **G2.1 Danh mục.** Dùng chính guard `validateParent`, `changeCategories` và kiểm tour/con. Áp dụng list chung, hiện người/ngày xóa. Thực hiện khôi phục một/hàng loạt theo tập đã xác minh, kiểm tổ tiên và toàn vẹn tham chiếu. Dùng fixture TEST 09 A/B/C và test concurrent. Khi chạy nhiều worker, kiểm cơ chế tuần tự hóa ở tầng DB trước khi claim race-safe.
+**G2 đã được chủ dự án nghiệm thu 6/6 nhóm trước bản sửa.** Chủ dự án đã nghiệm thu 2/2 bản sửa cuối UI-G2-001 và FUNC-G2-001. G2.3 giữ ẩn đơn lẻ theo policy G1 và bulk khôi phục. [Báo cáo](G2_REPORT.md#g21--hai-thay-đổi-cuối) · [Hướng dẫn](MANUAL_TEST_GUIDE.md#g21--nghiệm-thu-hai-thay-đổi-cuối)
+
+| Phạm vi | Xem thùng rác | Quyền thao tác thùng rác |
+|---|---|---|
+| Danh mục | category-trash | Khôi phục cần category-trash và category-edit. Xóa vĩnh viễn cần category-trash và category-delete. |
+| Tour | tour-trash | Khôi phục và xóa hẳn đủ điều kiện dùng tour-trash theo policy G1. |
+| Đơn hàng | order-trash | Khôi phục cần order-trash và order-edit. Bản ghi phục hồi chỉ đọc trong Admin và giữ chốt deleted cho nghiệp vụ. |
+
+- **G2.1 Danh mục.** Khôi phục kiểm tổ tiên và tập đã xác minh. Xóa vĩnh viễn chỉ áp dụng cho danh mục trong trash khi không còn con hoặc tour tham chiếu. Kiểm cả bản ghi đã xóa mềm trong cùng transaction và khóa cây. Bulk chỉ ghi khi toàn bộ tập đủ điều kiện.
+- **UI-G2-001.** Bỏ bộ đếm chung. Giữ checkbox 18 × 18 px, chọn một phần, chọn tất cả trên trang và bulk có xác nhận.
 - **G2.2 Tour.** Giữ form Pug, City, danh mục, lịch trình và album. Nối bộ lọc, bulk và trash đến dữ liệu thật. Chốt form về giá giảm và ngày khởi hành, validate số tiền/tồn/vị trí và field quan hệ. Tách xóa mềm, khôi phục và xóa hẳn. Kiểm tour đã có đơn/đã xóa mềm, race đặt tour và lịch sử snapshot.
-- **Backlog chuyển từ BUG-G17-006.** Tìm kiếm, lọc theo trạng thái/danh mục/người tạo/ngày, reset, page size 5/10/20/50/100 và bulk có quyền/xác nhận. Dùng lại mẫu danh mục. Trash danh mục/đơn theo policy cần duyệt. Kiểm giá demo cũ bằng lượt chỉ đọc riêng để xác minh ảnh hưởng parser lịch sử.
+- **Backlog chuyển từ BUG-G17-006.** Tìm kiếm, lọc theo trạng thái/danh mục/người tạo/ngày, reset, page size 5/10/20/50/100 và bulk có quyền/xác nhận. Dùng lại mẫu danh mục. Kiểm giá demo cũ bằng lượt chỉ đọc riêng để xác minh ảnh hưởng parser lịch sử.
 - **G2.3 Đơn.** Dùng query/filter backend hiện có, chuyển mẫu UI theo danh mục và giữ nút xác nhận cho bulk hoặc hủy/hoàn. Bổ sung log thay đổi nếu được duyệt, giữ CAS hủy/hoàn và cardTxRef. Trash restore phục hồi bản ghi, giữ trạng thái nghiệp vụ đã hủy và không tái trừ kho hoặc cấp vé. Chạy lại `order-card-refund`, `order-payment`, `card-pay`, `ticket-checkin`.
 
-**Gate G2** Empty state, trang vượt, toàn bộ page sizes, filter kết hợp, xóa/bulk/restore hợp lệ và bị chặn, role thiếu quyền, đồng thời, dữ liệu lịch sử. Nghiệm thu TEST 09 nhóm C trên fixture browser.
+**Gate G2** Chủ dự án đã nghiệm thu 6/6 nhóm G2 và 2/2 nhóm G2.1, cho phép checkpoint local và triển khai G3.
 
 ## G3 · Dashboard và quản lý khách hàng
 

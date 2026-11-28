@@ -41,6 +41,7 @@ const schema = new mongoose.Schema(
       type: Boolean,
       default: false
     },
+    statusBeforeDelete: String,
     deletedBy: String,
     deletedAt: Date
   },

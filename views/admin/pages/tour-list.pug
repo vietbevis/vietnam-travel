@@ -1,80 +1,39 @@
-extends ../layouts/default.pug
+﻿extends ../layouts/default.pug
 include ../mixins/list-pagination.pug
+include ../mixins/admin-list.pug
+include ../mixins/tour-list-table.pug
 
 block main
-  if (permissions.includes("tour-view"))
-    h1.box-title Quản lý tour
-
+  - const listUrl = `/${pathAdmin}/tour/list`
+  - const canEdit = permissions.includes("tour-edit")
+  - const canDelete = permissions.includes("tour-delete")
+  - const canSelect = canEdit || canDelete
+  h1.box-title Quản lý tour
+  form(method="get" action=listUrl data-admin-list data-resource="tour")
+    .section-4
+      .inner-wrap
+        .inner-item.inner-label
+          i.fa-solid.fa-filter(aria-hidden="true")
+          |  Bộ lọc
+        +listFilter("status", "Trạng thái", [{value:"active",label:"Hoạt động"},{value:"inactive",label:"Tạm dừng"}], filters.status)
+        +listActor("createdBy", "Người tạo", accountAdminList, filters.createdBy)
+        +listDates("tạo", filters)
+        +listFilter("category", "Danh mục", categoryList.map(item => ({value:item.id,label:item.name})), filters.category)
+        +listFilter("price", "Giá người lớn", [{value:"under-2m",label:"Dưới 2 triệu"},{value:"2m-4m",label:"Từ 2 đến dưới 4 triệu"},{value:"4m-8m",label:"Từ 4 đến dưới 8 triệu"},{value:"from-8m",label:"Từ 8 triệu"}], filters.price)
+        +listReset(listUrl)
     .section-5
       .inner-wrap
-        if (permissions.includes("tour-create"))
+        if canSelect
+          - const options = []
+          - if (canEdit) options.push({value:"active",label:"Hoạt động"},{value:"inactive",label:"Dừng hoạt động"})
+          - if (canDelete) options.push({value:"delete",label:"Xóa"})
+          +listBulk(`/${pathAdmin}/tour/change-multi`, options, tourList.length)
+        +listSearch("keyword", "Tìm kiếm tour", filters.keyword, pagination.limit)
+        if permissions.includes("tour-create")
           .inner-button-create
             a(href=`/${pathAdmin}/tour/create`) + Tạo mới
-        if (permissions.includes("tour-trash"))
+        if permissions.includes("tour-trash")
           .inner-button-trash
-            a(href=`/${pathAdmin}/tour/trash`) Thùng rác
-    //- End Section 5
-
-    //- Section 6
-    .section-6
-      .table-2
-        table
-          thead
-            tr
-              th Tên tour
-              th Ảnh đại diện
-              th(style="width: 130px") Giá
-              th Còn lại
-              th(class="inner-center") Vị trí
-              th(class="inner-center") Trạng thái
-              th Tạo bởi
-              th Cập nhật bởi
-              th Hành động
-          tbody
-            each item in tourList
-              tr
-                td #{item.name}
-                td
-                  img(src=item.avatar class="inner-avatar")
-                td
-                  div NL: #{item.priceNewAdult.toLocaleString("vi-VN")} đ
-                  div TE: #{item.priceNewChildren.toLocaleString("vi-VN")} đ
-                  div EB: #{item.priceNewBaby.toLocaleString("vi-VN")} đ
-                td
-                  div NL: #{item.stockAdult}
-                  div TE: #{item.stockChildren}
-                  div EB: #{item.stockBaby}
-                td(class="inner-center") #{item.position}
-                td(class="inner-center")
-                  if (item.status == "active")
-                    .badge.badge-green Hoạt động
-                  else if (item.status == "inactive")
-                    .badge.badge-red Tạm dừng
-                td
-                  div #{item.createdByFullName}
-                  div.inner-time #{item.createdAtFormat}
-                td
-                  div #{item.updatedByFullName}
-                  div.inner-time #{item.updatedAtFormat}
-                td
-                  .inner-buttons
-                    if (permissions.includes("tour-edit"))
-                      a(
-                        href=`/${pathAdmin}/tour/edit/${item.id}`
-                        class="inner-edit"
-                      ) <i class="fa-regular fa-pen-to-square"></i>
-                    if (permissions.includes("tour-delete"))
-                      button(
-                        class="inner-delete"
-                        button-delete
-                        data-confirm="trash"
-                        aria-label=`Chuyển ${item.name} vào thùng rác`
-                        data-api=`/${pathAdmin}/tour/delete/${item.id}`
-                      ) <i class="fa-regular fa-trash-can"></i>
-    //- End Section 6
-
-            else
-              tr
-                td(colspan="9") Chưa có tour.
-
-    +listPagination(pagination, tourList.length, 'Trang tour')
+            a(href=`/${pathAdmin}/tour/trash` data-list-return) Thùng rác
+  +tourListTable(tourList, false, canSelect, canEdit, canDelete, listError)
+  +listPagination(pagination, tourList.length, "Trang tour")

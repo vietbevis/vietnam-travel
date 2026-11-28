@@ -1,6 +1,6 @@
 # Feature tracker — Vietnam Travel
 
-**G1.9 nghiệm thu 4/4 nhóm · Chuẩn bị chốt G1 · HEAD `2fcc368` · 27/11/2026**
+**G1 đã nghiệm thu · Checkpoint `6902f24` · G2 đã nghiệm thu 6/6 nhóm · G2.1 đã nghiệm thu 2/2 nhóm · 28/11/2026**
 
 Mỗi ID đại diện một chức năng nghiệm thu. Một dòng có thể bao gồm nhiều route cùng nghiệp vụ. Mỗi chức năng có một trạng thái. **DONE** cần đủ tiêu chí V3, gồm bằng chứng đúng lớp cho backend, UI, quyền, lỗi và bảo toàn dữ liệu. **PARTIAL** còn phần nghiệp vụ/UX chưa đủ. **BROKEN** có sai lệch được xác nhận qua mã nguồn hoặc runtime. **UI_ONLY** có giao diện chưa có nghiệp vụ. **MISSING** chưa có luồng. **NEEDS_TEST** hiện có code và có thể đã có bằng chứng một phần, còn thiếu bằng chứng để nghiệm thu. **BLOCKED** có điều kiện chặn toàn bộ nghiệm thu. **OUT_OF_SCOPE** và đề xuất chưa duyệt đứng ngoài mẫu số.
 
@@ -8,9 +8,11 @@ Tiến độ = số dòng DONE / số dòng trong phạm vi. Chưa hoàn thành 
 
 **REMOVED_BY_OWNER** ghi quyết định rút yêu cầu khỏi lộ trình phát triển. Mục này đứng ngoài mẫu số.
 
-## Hiện trạng G1 · 66 ID
+**FIXED_TESTED** ghi bản sửa có bằng chứng kiểm thử. Việc chấp nhận bản sửa và tiêu chí DONE V3 được theo dõi riêng.
 
-G1.7 bổ sung phạm vi đã duyệt gồm BUG-G1-001–027, rà UI toàn website và N03 Simulator Console. Theo dõi trạng thái từng mục trong [báo cáo G1.7](G1_7_REPORT.md#27-hạng-mục). Bảng 66 ID bên dưới ghi nhận mốc G1.6. Chờ nghiệm thu của chủ dự án để cập nhật số DONE. N01, N02 và G2–G7 giữ theo kế hoạch hiện có.
+## Hiện trạng sau triển khai G2 · 66 ID
+
+G1.7 bổ sung phạm vi đã duyệt gồm BUG-G1-001–027, rà UI toàn website và N03 Simulator Console. G1.8, G1.9 và phần rà checkbox đã được chủ dự án xác nhận. Bảng 66 ID giữ tiêu chí DONE V3. G2 cập nhật ADM-02–13 theo bằng chứng tại [báo cáo G2](G2_REPORT.md). [Báo cáo G1.7](G1_7_REPORT.md#27-hạng-mục)
 
 G1.8 ghi kết quả 10 hạng mục sửa sau nghiệm thu G1.7 trong [báo cáo G1.8](G1_8_REPORT.md). Chủ dự án xác nhận 6/6 nhóm G1.8 trong luồng thường. BUG-G17-006 chuyển sang G2 theo quyết định của chủ dự án.
 
@@ -18,30 +20,30 @@ Chủ dự án nghiệm thu 4/4 nhóm G1.9. Phần mở rộng định danh/emai
 
 | Trục | Kết quả |
 |---|---|
-| Triển khai | 61 ID có mã nghiệp vụ ở các mức khác nhau. N01 có UI, N02 chưa có luồng. Những ID có bằng chứng triển khai G1 ghi chi tiết bên dưới. |
-| Nghiệm thu | Chủ dự án chấp nhận kết quả G1.1–G1.5 trong phạm vi bàn giao và nghiệm thu G1.9 đạt 4/4 nhóm. Chờ xác nhận chốt toàn G1. **0/66 DONE** theo tiêu chí V3 cấp tính năng. |
-| Kiểm thử tự động | Mốc G1.1–G1.5 có 869 PASS. Xem lượt chạy G1.6 theo chức năng trong [báo cáo kiểm thử](PROJECT_TEST_REPORT.md#hồi-quy-g16). |
+| Triển khai | G2 đã nối sáu danh sách/thùng rác. G2.1 bỏ bộ đếm lựa chọn và bổ sung xóa vĩnh viễn danh mục theo quyền và điều kiện tham chiếu đã duyệt. |
+| Nghiệm thu | Chủ dự án xác nhận manual PASS 6/6 nhóm G2 và 2/2 nhóm G2.1. Thẻ vật lý, dịch vụ và migration Role thật là NOT_RUN. **0/66 DONE** theo tiêu chí V3 cấp tính năng. [Hướng dẫn G2.1](MANUAL_TEST_GUIDE.md#g21--nghiệm-thu-hai-thay-đổi-cuối) |
+| Kiểm thử tự động | Baseline G1 có 911 PASS, G2 có 923 PASS, G2.1 có 929 PASS, 0 FAIL, 0 SKIP. [Báo cáo kiểm thử](PROJECT_TEST_REPORT.md#hồi-quy-g21) |
 | Phạm vi | N01 và N02 tính vào 66 ID. Console N03, các yêu cầu REMOVED_BY_OWNER và N04 đứng ngoài số đếm. |
 
-| DONE | PARTIAL | BROKEN | UI_ONLY | MISSING | NEEDS_TEST | BLOCKED |
-|---:|---:|---:|---:|---:|---:|---:|
-| 0 | 28 | 2 | 1 | 4 | 31 | 0 |
+| DONE | FIXED_TESTED | PARTIAL | BROKEN | UI_ONLY | MISSING | NEEDS_TEST | BLOCKED |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 0 | 1 | 23 | 1 | 1 | 2 | 38 | 0 |
 
-| ID | Trạng thái G1 | Ưu tiên | Chức năng | Bằng chứng theo chức năng hoặc điều kiện còn lại |
+| ID | Trạng thái | Ưu tiên | Chức năng | Bằng chứng theo chức năng hoặc điều kiện còn lại |
 |---|---|---|---|---|
 | ADM-01 | BROKEN | P1 | Dashboard và biểu đồ | Chart input, guard, HTTP 404 PASS. Doanh thu và dữ liệu biểu đồ còn sai lệch, G3. |
-| ADM-02 | NEEDS_TEST | P1 | Danh sách danh mục | Integration TEST 09 và Chromium lọc/tìm/đổi cỡ/reset PASS. Chờ G1-A07. |
-| ADM-03 | NEEDS_TEST | P1 | Tạo và sửa danh mục | Kế thừa G0. Xem tiêu chí còn lại tại dòng cùng ID trong bảng lịch sử. |
-| ADM-04 | NEEDS_TEST | P0 | Danh mục bulk và xóa mềm | Kế thừa G0. Xem tiêu chí còn lại tại dòng cùng ID trong bảng lịch sử. |
-| ADM-05 | MISSING | P1 | Thùng rác danh mục | Kế thừa G0. Xem tiêu chí còn lại tại dòng cùng ID trong bảng lịch sử. |
-| ADM-06 | BROKEN | P1 | Danh sách tour | Kế thừa G0. Xem tiêu chí còn lại tại dòng cùng ID trong bảng lịch sử. |
-| ADM-07 | PARTIAL | P0 | Tạo/sửa tour và album/lịch trình | Unit rich-text, route upload và HTTP render PASS. Album/lịch trình còn G2. |
-| ADM-08 | PARTIAL | P1 | Xóa mềm tour | Integration cạnh tranh với checkout và khôi phục PASS. UX bulk còn G2. |
-| ADM-09 | PARTIAL | P0 | Trash tour, phục hồi và xóa hẳn | Integration trash PASS cho đơn thường/xóa mềm, CAS và cạnh tranh. Danh sách trash và UX bulk còn G2. |
-| ADM-10 | PARTIAL | P1 | Danh sách đơn | Kế thừa G0. Xem tiêu chí còn lại tại dòng cùng ID trong bảng lịch sử. |
-| ADM-11 | PARTIAL | P1 | Chi tiết/sửa đơn và thay đổi trạng thái | Kế thừa G0. Xem tiêu chí còn lại tại dòng cùng ID trong bảng lịch sử. |
-| ADM-12 | NEEDS_TEST | P0 | Hủy đơn và hoàn kho | Integration hoàn kho, ví và vé đã check-in PASS. Chờ luồng tay. |
-| ADM-13 | MISSING | P1 | Thùng rác đơn | Kế thừa G0. Xem tiêu chí còn lại tại dòng cùng ID trong bảng lịch sử. |
+| ADM-02 | NEEDS_TEST | P1 | Danh sách danh mục | TEST 09 A/B và Chromium bộ lọc, biên ngày VN, tìm, trang và reset. Thuộc nhóm G2 đã nghiệm thu. |
+| ADM-03 | NEEDS_TEST | P1 | Tạo và sửa danh mục | TEST 09 C, cây/ảnh/vị trí và create/edit qua Chromium. Thuộc nhóm G2 đã nghiệm thu. |
+| ADM-04 | NEEDS_TEST | P0 | Danh mục bulk và xóa mềm | Guard con/tour, checkbox và tranh chấp ghi ở hai tiến trình. Thuộc nhóm G2 đã nghiệm thu. |
+| ADM-05 | FIXED_TESTED | P1 | Thùng rác danh mục | List, phân trang và khôi phục đã nghiệm thu theo G2. Xóa hẳn một/nhiều với guard và transaction đã qua suite và Chromium. Chủ dự án đã nghiệm thu bản sửa. |
+| ADM-06 | NEEDS_TEST | P1 | Danh sách tour | Lọc danh mục/trạng thái/actor/giá/ngày tạo, tìm và phân trang theo dữ liệu. Thuộc nhóm G2 đã nghiệm thu. |
+| ADM-07 | NEEDS_TEST | P0 | Tạo/sửa tour và album/lịch trình | Kiểm VND, City, ngày, lịch trình, sanitizer, CAS tồn và FilePond. Thuộc nhóm G2 đã nghiệm thu. |
+| ADM-08 | NEEDS_TEST | P1 | Xóa mềm tour | Bulk theo quyền và trạng thái, guard checkout, lưu metadata. Thuộc nhóm G2 đã nghiệm thu. |
+| ADM-09 | NEEDS_TEST | P0 | Trash tour, phục hồi và xóa hẳn | List và restore/xóa đơn hoặc bulk. Chặn tham chiếu kể cả đơn đã xóa mềm. Thuộc nhóm G2 đã nghiệm thu. |
+| ADM-10 | NEEDS_TEST | P1 | Danh sách đơn | Lọc tự áp dụng, tìm mã/tên/điện thoại, xác minh trang và query. Thuộc nhóm G2 đã nghiệm thu. |
+| ADM-11 | NEEDS_TEST | P1 | Chi tiết/sửa đơn và thay đổi trạng thái | Allowlist, giữ snapshot, ngăn đổi thanh toán ví/cổng và modal nghiệp vụ. Thuộc nhóm G2 đã nghiệm thu. |
+| ADM-12 | NEEDS_TEST | P0 | Hủy đơn và hoàn kho | Tái chạy kiểm kho/ví/vé, browser hủy và ẩn đơn khách vãng lai. Thuộc nhóm G2 đã nghiệm thu. |
+| ADM-13 | NEEDS_TEST | P1 | Thùng rác đơn | List, restore nguyên tử, đối chiếu payment/kho/vé/refund. Bản ghi phục hồi chỉ tra cứu trong Admin. Thuộc nhóm G2 đã nghiệm thu. |
 | ADM-14 | PARTIAL | P1 | Danh sách khách | Kế thừa G0. Xem tiêu chí còn lại tại dòng cùng ID trong bảng lịch sử. |
 | ADM-15 | MISSING | P2 | Chi tiết khách | Kế thừa G0. Xem tiêu chí còn lại tại dòng cùng ID trong bảng lịch sử. |
 | ACC-01 | NEEDS_TEST | P1 | Đăng nhập mật khẩu và đăng xuất | Kế thừa G0. Xem tiêu chí còn lại tại dòng cùng ID trong bảng lịch sử. |
@@ -96,9 +98,18 @@ Chủ dự án nghiệm thu 4/4 nhóm G1.9. Phần mở rộng định danh/emai
 | N01 | UI_ONLY | P1 | Thông báo Admin | Có UI. Nghiệp vụ theo quyền người nhận thuộc G5. |
 | N02 | MISSING | P1 | Lịch sử đơn của khách thẻ | Thuộc G6. G1.6 kiểm quyền xem từng đơn. |
 
+### Hai hạng mục G2.1
+
+| ID | Trạng thái | Bằng chứng và điều kiện còn lại |
+|---|---|---|
+| UI-G2-001 | FIXED_TESTED | Bỏ bộ đếm ở mixin dùng chung. Lượt Chromium đo checkbox, vị trí thanh thao tác và đối chiếu tập ID. Chủ dự án đã nghiệm thu. |
+| FUNC-G2-001 | FIXED_TESTED | Xóa vĩnh viễn danh mục theo ADM-05. Có ca quyền, tham chiếu, rollback, tranh chấp nhiều tiến trình và browser. Chủ dự án đã nghiệm thu. |
+
+Hai ID trên theo dõi bản sửa của G2. Mẫu số tiêu chí V3 vẫn là 66. [Báo cáo G2.1](G2_REPORT.md#g21--hai-thay-đổi-cuối)
+
 ### Lỗi và quyết định còn mở
 
-- ADM-01 còn sai lệch báo cáo và biểu đồ G3. ADM-06 còn thiếu dữ liệu danh sách tour và bộ lọc G2. Các mã DATA, SC và UI còn mở được ghi trong [audit](PROJECT_AUDIT.md#phát-hiện-ưu-tiên).
+- ADM-01 còn sai lệch báo cáo và biểu đồ thuộc G3. Đã xác nhận chốt G2 và G2.1. Các mã DATA, SC và UI còn mở được ghi trong [audit](PROJECT_AUDIT.md#phát-hiện-ưu-tiên).
 - Nghiệm thu tay G1 theo [hướng dẫn](MANUAL_TEST_GUIDE.md) trên fixture riêng. G2–G7 theo [kế hoạch](PROJECT_COMPLETION_PLAN.md).
 - Chờ duyệt riêng ánh xạ Role đang dùng, quyền tường minh cho quản trị viên và tắt fallback. [Bản đồ Role](G1_6_ROLE_MAPPING.md)
 - Khôi phục guest ở trình duyệt khác theo kênh xác minh được hoãn. Đơn lịch sử thiếu chứng cứ sở hữu vẫn bị chặn. Quy tắc tự hủy và giải phóng tồn còn chờ chính sách.

@@ -3,6 +3,9 @@ include ../mixins/box-breadcrumb.pug
 
 block main
   - const defaultAdult = tourDetail.stockAdult > 0 ? 1 : 0
+  - const validPrice = value => Number.isSafeInteger(value) && value >= 0
+  - const canBook = [tourDetail.priceNewAdult, tourDetail.priceNewChildren, tourDetail.priceNewBaby].every(validPrice)
+  - const showPrice = value => validPrice(value) ? value.toLocaleString("vi-VN") : "Chưa xác định"
   // Breadcrumb
   +box-breadcrumb(breadcrumb)
   // End Breadcrumb
@@ -107,7 +110,7 @@ block main
                   .inner-item-price
                     span(stock-adult) #{defaultAdult}
                     span x
-                    span.inner-highlight #{tourDetail.priceNewAdult.toLocaleString("vi-VN")}
+                    span.inner-highlight= showPrice(tourDetail.priceNewAdult)
                 .inner-item
                   .inner-item-label Trẻ em:
                   .inner-item-input
@@ -122,7 +125,7 @@ block main
                   .inner-item-price
                     span(stock-children) 0
                     span x
-                    span.inner-highlight #{tourDetail.priceNewChildren.toLocaleString("vi-VN")}
+                    span.inner-highlight= showPrice(tourDetail.priceNewChildren)
                 .inner-item
                   .inner-item-label Em bé:
                   .inner-item-input
@@ -137,11 +140,14 @@ block main
                   .inner-item-price
                     span(stock-baby) 0
                     span x
-                    span.inner-highlight #{tourDetail.priceNewBaby.toLocaleString("vi-VN")}
+                    span.inner-highlight= showPrice(tourDetail.priceNewBaby)
             .inner-total
               .inner-total-label Tổng cộng:
               .inner-total-price
-                span(total-price) #{(defaultAdult * tourDetail.priceNewAdult).toLocaleString("vi-VN")}
-                span đ
-            button.inner-button-add-cart(tour-id=tourDetail.id) Thêm Vào Giỏ Hàng
+                span(total-price)= canBook ? showPrice(defaultAdult * tourDetail.priceNewAdult) : "Chưa xác định"
+                if canBook
+                  span đ
+            if !canBook
+              p(role="status") Chuyến đi chưa có đủ thông tin giá để đặt chỗ.
+            button.inner-button-add-cart(type="button" tour-id=tourDetail.id disabled=!canBook) Thêm Vào Giỏ Hàng
   // End Section 10

@@ -1,11 +1,13 @@
 const Tour = require("../../models/tour.model");
 const moment = require("moment");
 const slugify = require('slugify');
+const { publicTourCategoryFilter } = require('../../helpers/category.helper');
 
 module.exports.list = async (req, res) => {
   const find = {
     status: "active",
-    deleted: false
+    deleted: false,
+    ...publicTourCategoryFilter(res.locals.categoryList)
   };
 
   // Điểm đi

@@ -6,13 +6,14 @@ const Tx = require("../../models/card-transaction.model");
 const Card = require("../../models/card.model");
 const Customer = require("../../models/customer.model");
 const variableConfig = require("../../config/variable");
-const moment = require("moment");
 const ticketHelper = require("../../helpers/ticket.helper");
 const orderPaymentHelper = require("../../helpers/order-payment.helper");
 const cardOpHelper = require("../../helpers/card-op.helper");
 const cardLogHelper = require("../../helpers/card-log.helper");
 const cardCrypto = require("../../helpers/card-crypto.helper");
 const { restoreOrderStock } = require("../../helpers/order-stock.helper");
+const inTransaction = require("../../helpers/mongo-transaction.helper");
+const { vietnamDate, selectedIds, personSearch, listPage, listActors } = require("../../helpers/admin-list.helper");
 
 // Debit ví thẻ đã gửi/đã ký mà chưa done: thẻ có thể đã trừ tiền, chỉ biên nhận của thẻ mới kết thúc được giao dịch.
 const IN_FLIGHT_MESSAGE = "Đơn đang có giao dịch ví thẻ chưa đối soát; hãy để khách cắm thẻ đồng bộ trước";
@@ -20,6 +21,11 @@ const PAID_BY_CARD_MESSAGE = "Đơn đã được thanh toán bằng ví thẻ, 
 const SETTLE_FAILED_MESSAGE = "Không thể ghi nhận thanh toán cho đơn hàng này!";
 const INVALID_MESSAGE = "Thông tin đơn hàng không hợp lệ!";
 const GUARDED_FIELDS = ["paymentMethod", "paymentStatus", "status"];
+const CONTACT_FIELDS = { fullName: 100, phone: 25, note: 1000 };
+const MANUAL_PAYMENT = ["money", "bank"];
+const liveOrder = { deleted: { $ne: true } };
+const orderTrash = { deleted: true, adminVisibleAfterRestore: { $ne: true } };
+const adminVisibleOrder = { $and: [{ $or: [liveOrder, { adminVisibleAfterRestore: true }] }] };
 const FIELD_OPTIONS = {
   paymentMethod: variableConfig.paymentMethod,
   paymentStatus: variableConfig.paymentStatus,
@@ -220,178 +226,86 @@ function refundStatusLabel(tx) {
   return REFUND_STATUS_LABELS[tx.status] || tx.status;
 }
 
-module.exports.list = async (req, res) => {
-  try {
-    const text = value =>
-      typeof value === "string" ? value.trim() : "";
-
-    const escapeRegex = value =>
-      value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-    const query = {
-      deleted: false
-    };
-
-    // Tìm kiếm mã đơn, tên hoặc số điện thoại
-    const q = text(req.query.q).slice(0, 80);
-
-    if (q) {
-      const keyword = new RegExp(escapeRegex(q), "i");
-
-      query.$or = [
-        { orderCode: keyword },
-        { fullName: keyword },
-        { phone: keyword }
-      ];
-    }
-
-    // Trạng thái đơn
-    const status = text(req.query.status);
-    if (variableConfig.orderStatus.some(x => x.value === status)) {
-      query.status = status;
-    }
-
-    // Phương thức thanh toán
-    const paymentMethod = text(req.query.paymentMethod);
-    if (variableConfig.paymentMethod.some(
-      x => x.value === paymentMethod
-    )) {
-      query.paymentMethod = paymentMethod;
-    }
-
-    // Trạng thái thanh toán
-    const paymentStatus = text(req.query.paymentStatus);
-    if (variableConfig.paymentStatus.some(
-      x => x.value === paymentStatus
-    )) {
-      query.paymentStatus = paymentStatus;
-    }
-
-    // Lọc ngày tạo đơn theo giờ Việt Nam
-    const startDate = text(req.query.startDate);
-    const endDate = text(req.query.endDate);
-
-    const parseDay = value => {
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
-
-      const date = new Date(`${value}T00:00:00+07:00`);
-
-      if (Number.isNaN(date.getTime())) return null;
-
-      const back = new Date(
-        date.getTime() + 7 * 60 * 60 * 1000
-      ).toISOString().slice(0, 10);
-
-      return back === value ? date : null;
-    };
-
-    const start = parseDay(startDate);
-    const end = parseDay(endDate);
-
-    if (start || end) {
-      query.createdAt = {};
-
-      if (start) query.createdAt.$gte = start;
-
-      if (end) {
-        query.createdAt.$lt = new Date(
-          end.getTime() + 24 * 60 * 60 * 1000
-        );
-      }
-    }
-
-    // Phân trang
-    const limit = 10;
-    const totalOrders = await Order.countDocuments(query);
-    const totalPages = Math.max(
-      1,
-      Math.ceil(totalOrders / limit)
-    );
-
-    const requestedPage = Number(req.query.page);
-
-    const page =
-      Number.isSafeInteger(requestedPage) && requestedPage > 0
-        ? Math.min(requestedPage, totalPages)
-        : 1;
-
-    const skip = (page - 1) * limit;
-
-    const orderList = await Order.find(query)
-      .sort({ createdAt: -1, _id: -1 })
-      .skip(skip)
-      .limit(limit);
-
+function orderList(trash) {
+  return async (req, res) => {
+    const where = trash ? orderTrash : adminVisibleOrder;
+    const page = await listPage(Order, req.query, {
+      where, searchKey: "q", search: personSearch,
+      enums: Object.fromEntries(Object.entries(FIELD_OPTIONS).map(([field, options]) => [field, options.map(option => option.value)])),
+      idFields: trash ? ["deletedBy"] : [], dateField: trash ? "deletedAt" : "createdAt",
+      sort: trash ? { deletedAt: -1, _id: -1 } : { createdAt: -1, _id: -1 }
+    });
+    const orderList = page.rows;
+    const accountAdminList = trash ? await listActors(Order, where, orderList, ["deletedBy"]) : [];
+    const deletable = !trash && req.permissions.includes("order-delete") ? orderList.filter(canHideOrder).map(order => order.id) : [];
+    const transactions = deletable.length ? await Tx.distinct("orderId", { orderId: { $in: deletable } }) : [];
+    const canHide = new Set(deletable);
+    for (const id of transactions) canHide.delete(id);
     for (const order of orderList) {
-      order.paymentMethodName =
-        variableConfig.paymentMethod.find(
-          x => x.value === order.paymentMethod
-        )?.label || order.paymentMethod || "Không rõ";
-
-      order.paymentStatusName =
-        variableConfig.paymentStatus.find(
-          x => x.value === order.paymentStatus
-        )?.label || order.paymentStatus || "Không rõ";
-
-      order.statusName =
-        variableConfig.orderStatus.find(
-          x => x.value === order.status
-        )?.label || order.status || "Không rõ";
-
-      order.createdAtTime =
-        moment(order.createdAt).format("HH:mm");
-
-      order.createdAtDate =
-        moment(order.createdAt).format("DD/MM/YYYY");
+      order.paymentMethodName = labelOf("paymentMethod", order.paymentMethod);
+      order.paymentStatusName = labelOf("paymentStatus", order.paymentStatus);
+      order.statusName = labelOf("status", order.status);
+      order.createdAtTime = vietnamDate(order.createdAt, "HH:mm");
+      order.createdAtDate = vietnamDate(order.createdAt, "DD/MM/YYYY");
+      order.deletedAtFormat = vietnamDate(order.deletedAt);
     }
-
-    res.render("admin/pages/order-list", {
-      pageTitle: "Quản lý đơn hàng",
-      orderList,
-      totalOrders,
-      totalPages,
-      page,
-      pages: Array.from(
-        { length: totalPages },
-        (_, i) => i + 1
-      ),
-      startRecord: totalOrders === 0 ? 0 : skip + 1,
-      endRecord: Math.min(skip + limit, totalOrders),
-      filters: {
-        q,
-        status,
-        paymentMethod,
-        paymentStatus,
-        startDate,
-        endDate
-      },
-      orderStatuses: variableConfig.orderStatus,
-      paymentMethods: variableConfig.paymentMethod,
+    return res.status(page.listError ? 400 : 200).render("admin/pages/order-list", {
+      ...page, pageTitle: trash ? "Thùng rác đơn hàng" : "Quản lý đơn hàng",
+      orderList, accountAdminList, canHide, trash,
+      orderStatuses: variableConfig.orderStatus, paymentMethods: variableConfig.paymentMethod,
       paymentStatuses: variableConfig.paymentStatus
     });
-  } catch (error) {
-    console.error("Order list error:", error);
-    res.status(500).send("Không tải được danh sách đơn hàng.");
-  }
-};
+  };
+}
+
+const labelOf = (field, value) => FIELD_OPTIONS[field].find(item => item.value === value)?.label || value || "Không có dữ liệu";
+const canHideOrder = order => order.deleted !== true && order.status === "cancel" && order.paymentStatus === "unpaid" &&
+  order.customerId === undefined && order.cardTxRef === undefined && !hasActiveOrderTicket(order);
+const hasActiveOrderTicket = order => order.items?.some(item =>
+  (item.ticketStatus && item.ticketStatus !== "none") || item.checkedInAt || item.writeSignedAt || item.checkinOpId);
+const canEditPayment = order => order.status !== "cancel" && order.paymentStatus === "unpaid" &&
+  MANUAL_PAYMENT.includes(order.paymentMethod) && !order.cardTxRef && !order.refundTxRef;
+
+module.exports.list = orderList(false);
+module.exports.trash = orderList(true);
+
+async function restoreOrders(req, res, values, option) {
+  const ids = selectedIds(values);
+  if (!ids || option !== "undo") return res.status(400).json({ code: "error", message: "Thao tác hoặc danh sách đơn hàng không hợp lệ." });
+  const restored = await inTransaction(async session => {
+    const filter = { _id: { $in: ids }, ...orderTrash };
+    if (await Order.countDocuments(filter, { session }) !== ids.length) return false;
+    // Giữ deleted cho cả đơn đã hủy, vì đồng bộ vé vẫn dùng nó để chặn lệnh xóa vé cũ.
+    const result = await Order.updateMany(filter, { $set: { adminVisibleAfterRestore: true } },
+      { session, timestamps: false });
+    if (result.matchedCount !== ids.length) throw new Error("Đơn hàng đã thay đổi trong lúc khôi phục.");
+    return true;
+  });
+  if (!restored) return res.status(409).json({ code: "error", message: "Tất cả đơn được chọn phải còn trong thùng rác." });
+  req.flash("success", "Đã khôi phục khả năng hiển thị của đơn hàng.");
+  return res.json({ code: "success", count: ids.length });
+}
+
+module.exports.undoPatch = (req, res) => restoreOrders(req, res, [req.params.id], "undo");
+module.exports.trashChangeMultiPatch = (req, res) => restoreOrders(req, res, req.body?.ids, req.body?.option);
 
 
-module.exports.edit = async (req, res) => {
+async function renderOrderEdit(req, res, formError) {
   try {
     const id = req.params.id;
 
     const orderDetail = await Order.findOne({
       _id: id,
-      deleted: false
+      ...adminVisibleOrder
     })
     if (!orderDetail) return res.status(404).render("admin/pages/error-404", { pageTitle: "Không tìm thấy đơn hàng" });
 
-    orderDetail.createdAtFormat = moment(orderDetail.createdAt).format("YYYY-MM-DDTHH:mm");
+    orderDetail.createdAtFormat = vietnamDate(orderDetail.createdAt, "YYYY-MM-DDTHH:mm");
 
     for (const item of orderDetail.items) {
       const city = OBJECT_ID.test(String(item.locationFrom || "")) ? await City.findById(item.locationFrom) : null;
       item.locationFromName = city?.name || "Chưa xác định";
-      item.departureDateFormat = moment(item.departureDate).format("DD/MM/YYYY");
+      item.departureDateFormat = vietnamDate(item.departureDate, "DD/MM/YYYY");
     }
 
     // Đơn có vé đã check-in: không cho huỷ (và hoàn tiền tự động) từ form.
@@ -431,11 +345,15 @@ module.exports.edit = async (req, res) => {
     res.render("admin/pages/order-edit", {
       pageTitle: `Đơn hàng: ${orderDetail.orderCode}`,
       orderDetail: orderDetail,
+      viewOnly: orderDetail.deleted === true,
+      formError,
       cardRefund,
       refundInfo,
       usedTicket,
       pendingCheckin,
-      paymentMethod: variableConfig.paymentMethod,
+      paymentEditable: canEditPayment(orderDetail),
+      paymentMethod: canEditPayment(orderDetail)
+        ? variableConfig.paymentMethod.filter(item => MANUAL_PAYMENT.includes(item.value)) : variableConfig.paymentMethod,
       paymentStatus: variableConfig.paymentStatus,
       orderStatus: variableConfig.orderStatus
     })
@@ -444,77 +362,67 @@ module.exports.edit = async (req, res) => {
   }
 }
 
-module.exports.editPatch = async (req, res) => {
+module.exports.edit = (req, res) => renderOrderEdit(req, res);
+
+async function editOrder(req, res, native = false) {
+  const reply = (data, status = 200) => {
+    if (!native) return res.status(status).json(data);
+    if (data.code === "success") return res.redirect(303, req.baseUrl + "/edit/" + req.params.id);
+    return renderOrderEdit(req, res.status(status === 200 ? 400 : status), data.message);
+  };
+  if (!req.permissions?.includes("order-edit")) return reply({ code: "error", message: "Bạn không có quyền sửa đơn hàng." }, 403);
   try {
     const id = req.params.id;
 
     const order = await Order.findOne({
       _id: id,
-      deleted: false
+      ...liveOrder
     });
 
     if (!order) {
-      res.json({
-        code: "error",
-        message: INVALID_MESSAGE
-      })
-      return;
+      return reply({ code: "error", message: INVALID_MESSAGE });
     }
 
     // Huỷ đơn là trạng thái cuối: vé đã được dọn khỏi thẻ, không cho mở lại.
-    if (order.status === "cancel" && req.body.status !== undefined && req.body.status !== "cancel") {
-      res.json({
-        code: "error",
-        message: "Đơn hàng đã huỷ, không thể đổi sang trạng thái khác!"
-      })
-      return;
+    if (order.status === "cancel" && req.body?.status !== undefined && req.body.status !== "cancel") {
+      return reply({ code: "error", message: "Đơn hàng đã huỷ, không thể đổi sang trạng thái khác!" });
     }
 
     // Chỉ ghi các trường form sửa đơn gửi lên; không nhận ticketStatus, orderCode, items... từ body.
     const update = {};
-    for (const field of ["fullName", "phone", "note", "paymentMethod", "paymentStatus", "status"]) {
-      if (typeof req.body[field] === "string") {
-        update[field] = req.body[field];
+    for (const field of [...Object.keys(CONTACT_FIELDS), ...GUARDED_FIELDS]) {
+      const value = req.body?.[field];
+      if (value === undefined || value === order[field]) continue;
+      if (typeof value !== "string" || (CONTACT_FIELDS[field] !== undefined && value.length > CONTACT_FIELDS[field])) {
+        throw new EditRefusal(INVALID_MESSAGE);
       }
+      if ((field === "fullName" || field === "phone") && !value.trim()) throw new EditRefusal(INVALID_MESSAGE);
+      update[field] = value;
+    }
+
+    if (native && GUARDED_FIELDS.some(field => update[field] !== undefined)) {
+      return reply({ code: "error", message: "Hãy bật JavaScript để mở hộp xác nhận thay đổi trạng thái hoặc thanh toán." }, 409);
     }
 
     // Trạng thái và phương thức thanh toán chỉ nhận giá trị có trong cấu hình.
     for (const field of GUARDED_FIELDS) {
       if (update[field] !== undefined && !FIELD_OPTIONS[field].some(item => item.value === update[field])) {
-        res.json({
-          code: "error",
-          message: INVALID_MESSAGE
-        })
-        return;
+        return reply({ code: "error", message: INVALID_MESSAGE });
       }
     }
-
-    // Form luôn gửi lại đủ trường: giá trị không đổi thì không coi là thay đổi tiền/trạng thái.
-    for (const field of GUARDED_FIELDS) {
-      if (update[field] === order[field]) {
-        delete update[field];
-      }
-    }
-
 
     // Hủy đơn, hoàn tồn kho, hoàn tiền ví thẻ (nếu đơn đã trừ ví) và dọn vé trong cùng một transaction.
     if (update.status === "cancel") {
-      if (!req.permissions?.includes("order-edit")) {
-        return res.status(403).json({
-          code: "error",
-          message: "Bạn không có quyền sửa đơn hàng."
-        });
-      }
 
       // Không cho vừa hủy vừa đổi thanh toán.
       if (
         update.paymentMethod !== undefined ||
         update.paymentStatus !== undefined
       ) {
-        return res.status(409).json({
+        return reply({
           code: "error",
           message: "Hãy xử lý thanh toán riêng trước khi hủy."
-        });
+        }, 409);
       }
 
       const session = await mongoose.startSession();
@@ -530,7 +438,7 @@ module.exports.editPatch = async (req, res) => {
           // Đọc trạng thái mới nhất bên trong transaction.
           const current = await Order.findOne({
             _id: id,
-            deleted: false
+            ...liveOrder
           }).session(session).lean();
 
           if (
@@ -600,15 +508,13 @@ module.exports.editPatch = async (req, res) => {
             updatedBy: req.account.id
           };
 
-          for (const field of ["fullName", "phone", "note"]) {
-            if (typeof req.body[field] === "string") {
-              fieldsToSet[field] = req.body[field];
-            }
+          for (const field of Object.keys(CONTACT_FIELDS)) {
+            if (update[field] !== undefined) fieldsToSet[field] = update[field];
           }
 
           const compare = {
             _id: id,
-            deleted: false,
+            ...liveOrder,
             status: current.status,
             paymentStatus: current.paymentStatus,
             paymentMethod: current.paymentMethod,
@@ -691,7 +597,7 @@ module.exports.editPatch = async (req, res) => {
       if (refund) {
         const message = refundMessage(refund);
         req.flash("success", message);
-        return res.json({
+        return reply({
           code: "success",
           message,
           refund: {
@@ -705,7 +611,7 @@ module.exports.editPatch = async (req, res) => {
 
       req.flash("success", "Đã hủy đơn và hoàn số chỗ.");
 
-      return res.json({
+      return reply({
         code: "success",
         message: "Đã hủy đơn và hoàn tồn kho."
       });
@@ -714,65 +620,44 @@ module.exports.editPatch = async (req, res) => {
 
     const orderId = String(order._id);
     const guardedChange = GUARDED_FIELDS.some(field => update[field] !== undefined);
-    // Chuyển sang đã thanh toán phải đi qua settlement chung để vé điện tử và chi tiêu khách được cập nhật.
+    const paymentChange = update.paymentMethod !== undefined || update.paymentStatus !== undefined;
     const markPaid = update.paymentStatus === "paid";
-    // Chỉ engine xác minh biên nhận mới được ghi nhận thanh toán ví; form admin không có chứng cứ debit.
-    const manualCardPayment = (markPaid && (update.paymentMethod || order.paymentMethod) === "card") ||
-      update.paymentMethod === "card" ||
-      (order.paymentMethod === "card" && order.paymentStatus === "paid" && update.paymentMethod !== undefined);
     const fields = { ...update };
-    if (markPaid) {
-      delete fields.paymentStatus;
-    }
+    delete fields.paymentStatus;
 
-    // Lưu lại đơn đã huỷ vẫn chạy lại phần dọn dẹp (idempotent).
-    const cancelled = (update.status || order.status) === "cancel";
-    let voided = [];
-    const apply = async session => {
-      voided = [];
-      const options = session ? { session } : {};
-      if (guardedChange) {
-        if (await Tx.exists({ orderId, type: "debit", status: { $ne: "done" }, $or: [{ status: "sent" }, { signedOpId: { $exists: true } }] }).session(session || null)) {
-          throw new EditRefusal(IN_FLIGHT_MESSAGE);
-        }
-        if (manualCardPayment) throw new EditRefusal("Thanh toán ví thẻ chỉ được xác nhận bằng biên nhận trừ tiền hợp lệ!");
-        // Huỷ thanh toán không hoàn tiền ví (spec 1.2); mở lại đơn đã trừ ví sẽ cho phép trừ lần hai.
-        if (order.paymentStatus === "paid" && update.paymentStatus !== undefined && await Tx.exists({ orderId, type: "debit", status: "done" }).session(session || null)) {
-          throw new EditRefusal(PAID_BY_CARD_MESSAGE);
-        }
+    const voided = await inTransaction(async session => {
+      const current = await Order.findOne({ _id: id, ...liveOrder }).session(session).lean();
+      if (!current || (guardedChange && GUARDED_FIELDS.some(field => current[field] !== order[field]))) {
+        throw new EditRefusal("Trạng thái đơn đã thay đổi. Hãy tải lại trang.");
       }
-      if (Object.keys(fields).length) {
-        await Order.updateOne({
-          _id: id,
-          deleted: false
-        }, { $set: fields }, options);
+      if (guardedChange && await Tx.exists(cardOpHelper.unresolvedFilter({ orderId, type: "debit" })).session(session)) {
+        throw new EditRefusal(IN_FLIGHT_MESSAGE);
       }
-      if (markPaid) {
-        const method = update.paymentMethod || order.paymentMethod;
-        const settled = session
-          ? await orderPaymentHelper.markOrderPaidInSession({ _id: orderId }, method, session)
-          : await orderPaymentHelper.markOrderPaid({ _id: orderId }, method);
-        if (!settled) {
-          throw new EditRefusal(SETTLE_FAILED_MESSAGE);
+      if (paymentChange) {
+        if (current.paymentMethod === "card" && current.paymentStatus === "paid") throw new EditRefusal(PAID_BY_CARD_MESSAGE);
+        if (current.paymentMethod === "card" || update.paymentMethod === "card") {
+          throw new EditRefusal("Thanh toán ví thẻ chỉ được xác nhận bằng biên nhận trừ tiền hợp lệ!");
+        }
+        if (!canEditPayment(current) || (update.paymentMethod && !MANUAL_PAYMENT.includes(update.paymentMethod)) ||
+            (update.paymentStatus !== undefined && !markPaid)) {
+          throw new EditRefusal("Chỉ có thể xác nhận thanh toán tiền mặt hoặc chuyển khoản đang chờ. Giao dịch đã ghi nhận và thanh toán online cần đối soát riêng.");
         }
       }
-      // Debit chưa từng ký của đơn huỷ chắc chắn chưa tới thẻ: đóng lại để không cản thu hồi/cấp lại thẻ.
-      if (cancelled) {
-        voided = await cardOpHelper.voidUnsignedDebits({ orderId }, session);
+      if (Object.keys(fields).length || markPaid) {
+        const changed = await Order.updateOne(
+          { _id: id, ...liveOrder, status: current.status, paymentMethod: current.paymentMethod, paymentStatus: current.paymentStatus },
+          { $set: { ...fields, updatedBy: req.account.id } }, { session }
+        );
+        if (!changed.matchedCount) throw new EditRefusal("Trạng thái đơn đã thay đổi. Hãy tải lại trang.");
       }
-    };
-
-    // Đơn gắn khách hàng có thể có giao dịch ví thẻ: kiểm tra và ghi trong cùng transaction với việc ký debit.
-    if (order.customerId && guardedChange) {
-      const session = await mongoose.startSession();
-      try {
-        await session.withTransaction(() => apply(session));
-      } finally {
-        await session.endSession();
+      if (markPaid && !await orderPaymentHelper.markOrderPaidInSession({ _id: orderId }, update.paymentMethod || current.paymentMethod, session)) {
+        throw new EditRefusal(SETTLE_FAILED_MESSAGE);
       }
-    } else {
-      await apply(null);
-    }
+      if (native || current.status !== "cancel") return [];
+      const transactions = await cardOpHelper.voidUnsignedDebits({ orderId }, session);
+      await ticketHelper.onOrderCancelled(current, req.account.id, session);
+      return transactions;
+    });
 
     if (voided.length) {
       await cardLogHelper.write({
@@ -786,137 +671,53 @@ module.exports.editPatch = async (req, res) => {
       });
     }
 
-    // Huỷ đơn: dọn vé điện tử (written -> pending-delete, pending -> none); idempotent nên lưu lại lần nữa là an toàn.
-    if (cancelled) {
-      await ticketHelper.onOrderCancelled(order, req.account?.id);
-    }
-
     req.flash("success", "Cập nhật đơn hàng thành công!");
 
-    res.json({
-      code: "success"
-    })
+    return reply({ code: "success" });
   } catch (error) {
-    res.json({
+    return reply({
       code: "error",
       message: error instanceof EditRefusal ? error.message : INVALID_MESSAGE
-    })
+    });
   }
 }
 
-module.exports.deletePatch = async (req, res) => {
-  try {
-    if (!req.permissions?.includes("order-delete")) {
-      return res.status(403).json({
-        code: "error",
-        message: "Bạn không có quyền xóa đơn hàng."
-      });
-    }
-
-    const origin = req.get("origin");
-    const expectedOrigin =
-      `${req.protocol}://${req.get("host")}`;
-
-    if (origin !== expectedOrigin) {
-      return res.status(403).json({
-        code: "error",
-        message: "Yêu cầu không hợp lệ."
-      });
-    }
-
-    const id = req.params.id;
-
-    if (!/^[a-fA-F0-9]{24}$/.test(id)) {
-      return res.status(400).json({
-        code: "error",
-        message: "ID đơn hàng không hợp lệ."
-      });
-    }
-
-    const order = await Order.findOne({
-      _id: id,
-      deleted: false
-    }).lean();
-
-    if (!order) {
-      return res.status(404).json({
-        code: "error",
-        message: "Không tìm thấy đơn hàng."
-      });
-    }
-
-    // Không xóa đơn đang hoạt động, đã thanh toán
-    // hoặc có liên kết khách hàng / Smart Card.
-    if (
-      order.status !== "cancel" ||
-      order.paymentStatus !== "unpaid" ||
-      order.customerId ||
-      order.cardTxRef
-    ) {
-      return res.status(409).json({
-        code: "error",
-        message: "Chỉ có thể ẩn đơn khách vãng lai đã hủy và chưa thanh toán."
-      });
-    }
-
-    // Không ẩn đơn nếu vẫn có trạng thái vé cần xử lý.
-    if (order.items?.some(item =>
-      (item.ticketStatus &&
-        item.ticketStatus !== "none") ||
-      item.checkedInAt ||
-      item.writeSignedAt
-    )) {
-      return res.status(409).json({
-        code: "error",
-        message: "Đơn còn dữ liệu vé cần đối soát."
-      });
-    }
-
-    // Dù chưa thanh toán cũng phải kiểm tra
-    // xem đã từng phát sinh giao dịch thẻ hay chưa.
-    if (await Tx.exists({ orderId: String(order._id) })) {
-      return res.status(409).json({
-        code: "error",
-        message: "Đơn có lịch sử giao dịch thẻ, không thể ẩn."
-      });
-    }
-
-    const result = await Order.updateOne(
-      {
-        _id: id,
-        deleted: false,
-        status: "cancel",
-        paymentStatus: "unpaid",
-        customerId: { $exists: false },
-        cardTxRef: { $exists: false }
-      },
-      {
-        $set: {
-          deleted: true,
-          deletedBy: req.account.id,
-          deletedAt: new Date()
-        }
-      }
-    );
-
-    if (result.modifiedCount !== 1) {
-      return res.status(409).json({
-        code: "error",
-        message: "Trạng thái đơn đã thay đổi. Hãy tải lại trang."
-      });
-    }
-
-    return res.json({
-      code: "success",
-      message: "Đã ẩn đơn hàng khỏi danh sách."
-    });
-  } catch (error) {
-    console.error("Order delete error:", error);
-
-    return res.status(500).json({
-      code: "error",
-      message: "Không thể xử lý đơn hàng."
-    });
+module.exports.editPatch = (req, res) => editOrder(req, res);
+module.exports.editPost = (req, res) => {
+  if (req.get("origin") !== req.protocol + "://" + req.get("host")) {
+    return res.status(403).send("Nguồn yêu cầu không hợp lệ.");
   }
+  return editOrder(req, res, true);
 };
 
+module.exports.deletePatch = async (req, res) => {
+  const fail = (status, message) => res.status(status).json({ code: "error", message });
+  if (!req.permissions?.includes("order-delete")) return fail(403, "Bạn không có quyền xóa đơn hàng.");
+  if (req.get("origin") !== req.protocol + "://" + req.get("host")) return fail(403, "Yêu cầu không hợp lệ.");
+  const id = req.params.id;
+  if (!OBJECT_ID.test(id)) return fail(400, "ID đơn hàng không hợp lệ.");
+
+  try {
+    const refusal = await inTransaction(async session => {
+      const order = await Order.findOne({ _id: id, ...liveOrder }).session(session).lean();
+      if (!order) return [404, "Không tìm thấy đơn hàng."];
+      if (order.status !== "cancel" || order.paymentStatus !== "unpaid" || order.customerId !== undefined || order.cardTxRef !== undefined) {
+        return [409, "Chỉ có thể ẩn đơn khách vãng lai đã hủy và chưa thanh toán."];
+      }
+      if (hasActiveOrderTicket(order)) return [409, "Đơn còn dữ liệu vé cần đối soát."];
+      if (await Tx.exists({ orderId: String(order._id) }).session(session)) {
+        return [409, "Đơn có lịch sử giao dịch thẻ, không thể ẩn."];
+      }
+      const changed = await Order.updateOne(
+        { _id: id, ...liveOrder, status: "cancel", paymentStatus: "unpaid", customerId: { $exists: false }, cardTxRef: { $exists: false } },
+        { $set: { deleted: true, deletedBy: req.account.id, deletedAt: new Date() } }, { session }
+      );
+      if (changed.modifiedCount !== 1) return [409, "Trạng thái đơn đã thay đổi. Hãy tải lại trang."];
+    });
+    if (refusal) return fail(...refusal);
+    req.flash("success", "Đã ẩn đơn hàng khỏi danh sách.");
+    return res.json({ code: "success", message: "Đã ẩn đơn hàng khỏi danh sách." });
+  } catch {
+    return fail(500, "Không thể xử lý đơn hàng.");
+  }
+};

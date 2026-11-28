@@ -1,5 +1,7 @@
 # Báo cáo kiểm thử baseline — Vietnam Travel
 
+**G2.1** có **929 PASS**, **0 FAIL**, **0 SKIP** trên fixture riêng. Ma trận Chromium đạt **294/294**, Pug đạt **70/70**. Chủ dự án xác nhận manual PASS 6/6 nhóm G2 và 2/2 nhóm G2.1. [Hồi quy G2.1](#hồi-quy-g21) · [Báo cáo theo ID](G2_REPORT.md)
+
 Kết quả mới và bằng chứng trước/sau nằm trong [báo cáo kiểm thử G1.7](G1_7_REPORT.md#kết-quả-kiểm-thử). Các số G0, G1.1–G1.5 và G1.6 bên dưới là kết quả theo từng mốc.
 
 **Giai đoạn 0 · 25/11/2026 · HEAD `2fcc3684b32478d5efe2c22682d452b7c3db253c`**
@@ -133,3 +135,34 @@ Chủ dự án xác nhận manual PASS **4/4 nhóm G1.9**. Hai yêu cầu phát 
 - **RED/GREEN checkbox.** Trước sửa, ô bỏ ảnh tour ở 1440 px đo 1.038 × 52 px, ô điều khoản ở 320 px đo 13 × 18 px. Sau sửa, 522 lượt đo trên form/bảng/giỏ và 36 lượt đo trên hồ sơ Client, chi tiết thẻ Admin, check-in đều đạt 18 × 18 px. Kiểm nhãn, phím Space, clear ảnh, trạng thái chọn một/nhiều vé và chọn tất cả. Xem `checkbox-red.log`, `checkbox-green.log`, `checkbox-card.log` và `media.log`.
 - **Browser và Pug.** 47 route/trạng thái × 6 viewport, 282 lượt, 0 vấn đề. Pug compile 67/67. Chromium với Mongo và jCardSim chạy lại hồ sơ, ví, hoàn tiền, check-in ba vé và retry HTTP confirm. Xem `site.log`, `pug.log` và `checkbox-card.log`.
 - **Lưu bằng chứng.** `.superpowers/g19-close/` giữ log suite, ảnh trước/sau và Git status. Fixture dùng dịch vụ mock và Agent jCardSim riêng. [Hướng dẫn rà checkbox](MANUAL_TEST_GUIDE.md#rà-checkbox-trước-khi-chốt-g1)
+
+## Hồi quy G2
+
+| Bộ chạy | Baseline ở checkpoint 6902f24 | Lượt G2 | FAIL | SKIP |
+|---|---:|---:|---:|---:|
+| Node và Agent fixture | 247 | 247 | 0 | 0 |
+| Mongo integration serial | 367 | 379 | 0 | 0 |
+| Applet Gradle offline | 266 | 266 | 0 | 0 |
+| Agent Gradle offline | 31 | 31 | 0 | 0 |
+| **Tổng** | **911** | **923** | **0** | **0** |
+
+- Suite G2 mới có **12** ca trong **g2-admin-lists.test.js**. TEST 09 A/B/C gồm biên ngày Việt Nam, page size, tìm danh mục, role, cây, xóa và khôi phục. Có test hai tiến trình Node, rollback sau update thật và kiểm song song restore. Suite hủy/hoàn/check-in/checkout G1 chạy lại trong tổng trên. [Suite G2](../test/integration/g2-admin-lists.test.js)
+- Lượt RED sáu ca thất bại tại baseline. Lượt GREEN đầu đạt sáu ca, các lượt sau kiểm legacy, giá Client, rollback và scope owner. Rà soát cuối tái hiện POST dự phòng, giá chuỗi Mongo và nguy cơ chọn lại vé chờ xóa. Tổng chỉ tính lượt hoàn chỉnh. Logs dưới **.superpowers/g2/handoff-verified-run-Jigtrn/**, baseline dưới **.superpowers/g2/baseline-source/**. [Báo cáo G2](G2_REPORT.md#kiểm-thử)
+- **Chromium** có ma trận 49 route/trạng thái ở sáu độ rộng và lượt click riêng trên sáu list/trash. FilePond lưu thứ tự ảnh qua reload. TinyMCE fallback lưu HTML qua reload. Kiểm GET lọc/tìm và POST dự phòng liên hệ khi chặn JS. Ảnh, log browser-matrix-final.log, browser-actions.log, browser-fallback-final.log, filepond-verified.log và tinymce-fallback-verified.log ở **.superpowers/g2/**.
+- **Manual** chủ dự án đã xác nhận chốt G1 và 6/6 nhóm G2 trong phạm vi luồng đã kiểm. PC/SC, gateway thật, SMTP/Cloudinary thật, Tiny Cloud G2, kiểm giá demo và migration Role thật vẫn **NOT_RUN**. [Nghiệm thu G2](MANUAL_TEST_GUIDE.md#g2--nghiệm-thu-danh-mục-tour-và-đơn)
+
+## Hồi quy G2.1
+
+| Bộ chạy | G2 | G2.1 PASS | FAIL | SKIP |
+|---|---:|---:|---:|---:|
+| Node và jCardSim riêng | 247 | 247 | 0 | 0 |
+| Mongo integration serial | 379 | 385 | 0 | 0 |
+| Applet Gradle offline | 266 | 266 | 0 | 0 |
+| Agent Gradle offline | 31 | 31 | 0 | 0 |
+| **Tổng** | **923** | **929** | **0** | **0** |
+
+- **Mongo.** Sáu ca mới gồm tập ID/quyền/Origin, danh mục con theo từng trạng thái, tour và lịch sử liên quan, rollback sau khi đã xóa một bản ghi trên Mongo và hai thứ tự thắng khóa giữa xóa với khôi phục khi có tiến trình tạo con/gắn tour. Tổng 385 đã gồm sáu ca mới và các suite kho, ví, receipt, vé, check-in, phân quyền. Xem `.superpowers/g2/g21-regression-run-mzE4OU/`. [Ca tích hợp](../test/integration/g2-admin-lists.test.js)
+- **Applet và Agent.** Chạy Gradle offline với JDK 17 và `--rerun-tasks`. Đếm từ báo cáo JUnit XML của hai subproject. Xem `.superpowers/g21/java.log`.
+- **Chromium và Pug.** Pug 70/70. Chromium 294/294, 49 route/trạng thái ở 320/360/390/768/1024/1440 px. Lượt bấm thật ở 360 và 1440 px chạy riêng qua sáu trang, gồm kiểm chọn, ID bulk, không dịch layout, xác nhận/hủy, quyền, xóa danh mục, kết quả F5 và clamp. Các lượt Chromium/Pug đứng ngoài tổng 929. Xem `.superpowers/g21/browser-matrix.log`, `browser-actions-360.log` và `browser-actions-1440.log`.
+- **Hồi quy thao tác G2.** Fixture mặc định khởi động từ `node scripts/acceptance-g1.cjs --g2`. Chạy lại tạo/sửa/xóa mềm/khôi phục danh mục, giá/tồn/lịch trình và trash tour, sửa/hủy/ẩn/khôi phục đơn và đối chiếu snapshot Mongo, kho, ledger. Xem `.superpowers/g21/browser-g2-regression.log`.
+- **Nghiệm thu chủ dự án.** Chủ dự án đã xác nhận 6/6 nhóm G2 và cả UI-G2-001, FUNC-G2-001. Thẻ vật lý, dịch vụ và migration Role thật vẫn NOT_RUN. [Hướng dẫn tập trung](MANUAL_TEST_GUIDE.md#g21--nghiệm-thu-hai-thay-đổi-cuối)

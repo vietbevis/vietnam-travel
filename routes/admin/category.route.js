@@ -37,12 +37,19 @@ function parseAvatar(req, res, next) {
 }
 
 router.get("/list", requirePermission("category-view"), asyncRoute(controller.list));
+router.get("/trash", requirePermission("category-trash"), asyncRoute(controller.trash));
 router.get("/create", requirePermission("category-create"), asyncRoute(controller.create));
 router.post("/create", requirePermission("category-create"), parseAvatar, save, asyncRoute(controller.createPost));
 router.get("/edit/:id", requirePermission("category-edit"), asyncRoute(controller.edit));
 router.patch("/edit/:id", requirePermission("category-edit"), validateId, parseAvatar, save, asyncRoute(controller.editPatch));
 router.patch("/delete/:id", requirePermission("category-delete"), validateId, asyncRoute(controller.deletePatch));
 router.patch("/change-multi", asyncRoute(controller.changeMultiPatch));
+router.patch("/undo/:id", requirePermission("category-trash"), requirePermission("category-edit"),
+  validateId, asyncRoute(controller.undoPatch));
+router.patch("/delete-destroy/:id", requirePermission("category-trash"), requirePermission("category-delete"),
+  validateId, asyncRoute(controller.deleteDestroyPatch));
+router.patch("/trash/change-multi", requirePermission("category-trash"),
+  asyncRoute(controller.trashChangeMultiPatch));
 
 router.use((error, req, res, next) => {
   if (res.headersSent) return next(error);
